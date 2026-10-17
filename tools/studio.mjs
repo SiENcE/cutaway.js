@@ -10,16 +10,20 @@
 //     "layers": { "room": "game/rooms/{id}.geo.js", "texts": "game/strings/{lang}.texts.js",
 //                 "edits": "game/edits.js", "sounds": "game/sounds.edit.js",
 //                 "art": "art/import", "artAtlas": "assets/imported.js", "audio": "assets/audio.js" },
-//     "tasks": { "validate": ["node", "lib/cutaway/tools/validate.mjs", "index.html"], ... } }
+//     "tasks": { "validate": ["node", "lib/cutaway/tools/validate.mjs", "index.html"], ... },
+//     "palette": ["art/palette.px.js"] }               files whose "#rrggbb" colours are the paint view's game palette
+// The editor's Art tab runs the task "art: imported" (when there is one) after it writes into the
+// "art" layer: it should pack that folder into "artAtlas" (tools/build-atlas.mjs art/import assets/imported.js).
 // API (under /__studio/, header x-studio-token):
 //   GET config                 studio.json, filled in with the defaults
 //   GET read?path=p            a file's bytes
 //   PUT write?path=p           write the request's body (folders are made as needed)
+//   DELETE remove?path=p       remove a file (only where write may write: a reverted import)
 //   GET list?dir=d             [{ name, dir, size }]
 //   POST run?task=t            run a task: { code, output }
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +33,7 @@ const DEFAULTS = {
   layers: { room: "game/rooms/{id}.geo.js", texts: "game/strings/{lang}.texts.js", edits: "game/edits.js", sounds: "game/sounds.edit.js",
     art: "art/import", artAtlas: "assets/imported.js", audio: "assets/audio.js" },
   tasks: {},
+  palette: [],
 };
 /**
  * A studio for the game whose page this is. `start(port)` (0: any free port) resolves to the address
@@ -97,6 +102,14 @@ export function studio(pagePath, { quiet = false, root = "" } = {}) {
       mkdirSync(dirname(f), { recursive: true });
       writeFileSync(f, await body(req));
       log(`wrote ${relative(ROOT, f)}`);
+      return send(res, 200, { ok: true });
+    }
+    if (what === "remove" && req.method === "DELETE") {
+      const f = inside(q.get("path"));
+      if (!f || !writable(f)) return send(res, 403, { error: `not writable: ${q.get("path")} (studio.json "write" lists ${config().write.join(", ")})` });
+      if (!existsSync(f) || !statSync(f).isFile()) return send(res, 404, { error: "no such file" });
+      unlinkSync(f);
+      log(`removed ${relative(ROOT, f)}`);
       return send(res, 200, { ok: true });
     }
     if (what === "list" && req.method === "GET") {

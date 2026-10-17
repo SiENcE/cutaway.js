@@ -177,9 +177,9 @@
     const all = collect(), q = search.toLowerCase();
     const list = all.filter((t) => (!onlyRoom || t.room === room) && (!q || t.text.toLowerCase().includes(q) || current(t.text, lang).toLowerCase().includes(q) || t.where.toLowerCase().includes(q)));
     const pending = Object.values(changed).reduce((n, c) => n + Object.keys(c).length, 0);
-    const langSel = /** @type {HTMLSelectElement} */ (el("select", { style: { font: "inherit", background: "#2c2540", color: "#eee" }, onchange: () => { lang = langSel.value; E.refresh(); } },
+    const langSel = /** @type {HTMLSelectElement} */ (el("select", { onchange: () => { lang = langSel.value; E.refresh(); } },
       languages().map((l) => el("option", { value: l, textContent: l + (l === source() ? " (source)" : ""), selected: l === lang }))));
-    const find = /** @type {HTMLInputElement} */ (el("input", { type: "search", value: search, placeholder: "search", style: { font: "inherit", width: "120px", background: "#221c30", color: "#eee", border: "1px solid #4a4066" },
+    const find = /** @type {HTMLInputElement} */ (el("input", { type: "search", value: search, placeholder: "search", style: { width: "120px" },
       onchange: () => { search = find.value; shown = 200; E.refresh(); } }));
     const file = /** @type {HTMLInputElement} */ (el("input", { type: "file", accept: ".csv,.json", style: { display: "none" },
       onchange: () => { const f = file.files?.[0]; if (f) importFile(f).catch((e) => E.setStatus("import failed: " + e.message)); } }));
@@ -187,13 +187,13 @@
       el("div", {}, ["language ", langSel, " ", find, " ", el("label", {}, [el("input", { type: "checkbox", checked: onlyRoom, onchange: () => { onlyRoom = !onlyRoom; E.refresh(); } }), "this room"])]),
       el("div", { style: { margin: "6px 0" } }, [button(`Save${pending ? ` (${pending})` : ""}`, () => { save().catch((e) => E.setStatus("save failed: " + e.message)); }, "write the text layer of each changed language"),
         button("Export CSV", exportCsv), button("Export JSON", exportJson), button("Import", () => file.click(), "CSV or JSON from an export"), file]),
-      el("div", { style: { color: "#aaa" } }, [`${list.length} of ${all.length} texts`]),
+      el("div", { className: "cw-dim" }, [`${list.length} of ${all.length} texts`]),
     );
-    const rows = el("div", { style: { maxHeight: "62vh", overflow: "auto", borderTop: "1px solid #3a3350" } });
+    const rows = el("div", { style: { borderTop: "1px solid #3a3350" } });
     for (const t of list.slice(0, shown)) {
       const now = current(t.text, lang), differs = now !== t.text;
       const area = /** @type {HTMLTextAreaElement} */ (el("textarea", { value: now, rows: Math.min(4, 1 + Math.floor(now.length / 46)),
-        style: { width: "100%", boxSizing: "border-box", font: "inherit", background: "#221c30", color: lang === source() && !differs ? "#eee" : "#ffe9a0", border: "1px solid #3a3350", resize: "vertical" },
+        style: { width: "100%", boxSizing: "border-box", color: lang === source() && !differs ? "#eee" : "#ffe9a0", borderColor: "#3a3350", resize: "vertical" },
         oninput: () => set(t.text, lang, area.value) }));
       rows.append(el("div", { style: { padding: "4px 0", borderBottom: "1px solid #2a2340" } }, [
         el("div", { style: { color: "#8a84a0", fontSize: "11px" } }, [t.where]),
@@ -204,7 +204,7 @@
     box.append(rows);
   }
 
-  E.tab({ id: "texts", label: "Texts", build, onRoom() { shown = 200; } });
+  E.tab({ id: "texts", label: "Texts", build, onRoom() { shown = 200; }, save: () => save() });
   Cutaway.editor.modules.texts = { collect, current, set, layerText, parseCsv, save,
     get unsaved() { return Object.values(changed).reduce((n, c) => n + Object.keys(c).length, 0); } };
 })();

@@ -1,10 +1,14 @@
 // Cutaway.js editor, in the running game. Open it with F10 or `?edit` (the engine loads this file on
-// demand; games don't list it). Its tabs: Room (this file: the shapes), and the modules it loads next to
-// it: Texts, Things, Art, Sound, Dialogue, State, Issues, Checks, Help (editor-*.js; the guide is
-// docs/editor.md). It edits the live game data, so changes can be
-// tried at once (F10 closes it and plays). It opens in a window of its own (an about:blank popup the
-// game page builds and drives: same origin, so it works from file://, and the game keeps its size), or
-// docked beside the game when popups are blocked (?edit on load) or wanted (Dock).
+// demand; games don't list it). Its workspaces (tabs): Room (this file: the shapes), and the modules it
+// loads next to it: Texts, Things, Art (+ Paint: the pixel editor), Sound, Dialogue, State, Issues,
+// Checks, Help (editor-*.js; the guide is docs/editor.md). It edits the live game data, so changes can
+// be tried at once (F10 closes it and plays).
+// The layout (docked in the game's page): a menu bar on top (File Edit View Room Art Play Tools Help),
+// the workspaces and a browser (rooms, the room's things, sprites) on the left, the inspector (the
+// active tab's panel) on the right, a status bar (and an output pane) at the bottom; the game picture
+// fits into the centre (Cutaway.display.reserve), unless a workspace puts a view of its own there (the
+// paint view). View > "Inspector in its own window" moves the inspector into an about:blank popup the
+// game page builds and drives (same origin, so it works from file://).
 // It saves layer files the game loads after its own code:
 // with the studio (tools/studio.mjs) straight into the game's folder, else through the browser's file
 // picker or as a download. The Room tab saves the shapes as `rooms/<id>.geo.js` (Cutaway.room.geometry).
@@ -37,22 +41,58 @@
  */
 
 /**
- * An editor tab (Room is built in; modules add theirs with Cutaway.editor.tab).
+ * An item of a menu in the menu bar.
+ * @typedef {object} MenuItem
+ * @property {string} [label]
+ * @property {string} [key]          its shortcut, shown right-aligned (the keys themselves are handled elsewhere)
+ * @property {() => void} [run]
+ * @property {boolean} [enabled]     default true; false greys it out
+ * @property {boolean} [checked]     a check item (shown with a tick when true)
+ * @property {boolean} [sep]         a separator line
+ * @property {string} [head]         a heading line (not clickable)
+ * @property {string} [title]        the tooltip
+ */
+
+/**
+ * Something that takes over the centre while its workspace is active (the paint view): the game
+ * picture hides behind it. Edit > Undo / Redo / Delete / Select none go to it first.
+ * @typedef {object} EditorView
+ * @property {HTMLElement} el
+ * @property {(e: KeyboardEvent) => boolean} [key]   a key pressed (not in a text field); true: handled
+ * @property {() => void} [undo]
+ * @property {() => void} [redo]
+ * @property {() => void} [del]
+ * @property {() => void} [selectNone]
+ * @property {() => void} [shown]                    it was put into the centre (it may measure itself)
+ */
+
+/**
+ * An editor workspace (Room is built in; modules add theirs with Cutaway.editor.tab).
  * @typedef {object} EditorTab
  * @property {string} id
  * @property {string} label
- * @property {(box: HTMLElement) => void} build       fill the panel (again when the tab asks: refresh)
+ * @property {(box: HTMLElement) => void} build       fill the inspector (again when the tab asks: refresh)
  * @property {(ctx: CanvasRenderingContext2D) => void} [render]  draw over the room (room pixels)
  * @property {(p: Pt, button: number) => void} [pick] a click on the room picture (room pixels)
  * @property {() => void} [onRoom]                    another room was opened
+ * @property {(all?: boolean) => any} [save]          File > Save, Ctrl+S (all: File > Save all, everything it has)
+ * @property {() => void} [undo]                      Edit > Undo, Ctrl+Z
+ * @property {() => void} [redo]                      Edit > Redo, Ctrl+Y
+ * @property {() => void} [del]                       Edit > Delete
+ * @property {() => void} [selectNone]                Edit > Select none, Esc
+ * @property {(e: KeyboardEvent) => boolean} [key]    a key while it is active (not in a text field); true: handled
+ * @property {() => Record<string, MenuItem[]>} [menu] its items in the menu bar, by menu title ("Art": [...])
+ * @property {number | boolean | string} [unsaved]    what isn't saved (a getter; else its module's `unsaved`)
+ * @property {() => EditorView | null} [view]         while it returns a view, that view takes the centre
+ * @property {(box: HTMLElement) => void} [browse]    its part of the left panel's browser (else the room's things)
  */
 
 Cutaway.editor = (function () {
-  const PANEL = 380, GRAB = 2.5;
-  const MODULES = ["editor-texts.js", "editor-things.js", "editor-art.js", "editor-sound.js", "editor-dialogue.js", "editor-state.js",
+  const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170;
+  const MODULES = ["editor-texts.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-dialogue.js", "editor-state.js",
     "editor-issues.js", "editor-checks.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
-  let isOpen = false;
+  let isOpen = false, showHud = false;
   /** @type {string | null} */
   let selKey = null;
   let selHandle = -1;
@@ -70,22 +110,32 @@ Cutaway.editor = (function () {
   const show = { walk: true, hole: true, hotspot: true, prop: true, lamp: true, fx: true };
   /** @type {Map<string, any>} file handles per room (File System Access API) */
   const fileHandles = new Map();
-  /** @type {HTMLDivElement | null} */
+  /** @type {HTMLDivElement | null} the inspector: the active tab's panel */
   let panel = null;
-  /** @type {Window | null} the editor's own window (null: docked beside the game) */
+  /** @type {Window | null} the inspector's own window (null: docked beside the game) */
   let win = null;
-  let wantWindow = true, pollTimer = 0;
-  let status = "", panelDirty = true;
+  /** @type {{left: boolean, right: boolean, output: boolean, window: boolean}} what is shown (kept in localStorage) */
+  const layout = { left: true, right: true, output: false, window: false };
+  try { Object.assign(layout, JSON.parse(localStorage.getItem("cutaway.editor.layout") ?? "{}")); } catch { /* none kept */ }
+  let wantWindow = layout.window, pollTimer = 0, raf = 0;
+  let status = "", panelDirty = true, outputDirty = true;
+  /** @type {string[]} the output pane: status messages and task output */
+  const log = [];
+  /** @type {string | null} a view's own cursor text for the status bar (the paint view: the pixel) */
+  let cursorText = null;
   /** @type {EditorTab[]} */
   const tabs = [];
   let active = "room", modulesLoaded = false, roomDirty = false, beforeHelp = "room";
 
-  /** What isn't saved yet, per tab ("Room", "Texts 3", ...): the modules report theirs (`unsaved`). */
+  /** What a tab has unsaved: its own `unsaved`, else its module's. @param {EditorTab} t */
+  function unsavedOf(t) { return "unsaved" in t ? t.unsaved : /** @type {Record<string, any>} */ (api.modules)[t.id]?.unsaved; }
+
+  /** What isn't saved yet, per tab ("Room", "Texts 3", ...). */
   function unsaved() {
-    const out = roomDirty ? ["Room"] : [];
-    for (const [k, m] of Object.entries(/** @type {Record<string, any>} */ (api.modules))) {
-      const n = m?.unsaved;
-      if (n) out.push(k[0].toUpperCase() + k.slice(1) + (typeof n === "number" ? ` ${n}` : ""));
+    const out = [];
+    for (const t of tabs) {
+      const n = unsavedOf(t);
+      if (n) out.push(t.label + (typeof n === "number" ? ` ${n}` : ""));
     }
     return out;
   }
@@ -99,6 +149,8 @@ Cutaway.editor = (function () {
     const token = q ?? sessionStorage.getItem("cutaway.studio") ?? "";
     /** @type {any} */
     let cfg = null;
+    /** @type {Promise<boolean> | null} */
+    let connecting = null;
     /** @param {string} path @param {RequestInit} [o] */
     async function call(path, o = {}) {
       const r = await fetch("/__studio/" + path, { ...o, headers: { "x-studio-token": token } });
@@ -110,10 +162,14 @@ Cutaway.editor = (function () {
       /** Is the studio there? (Connected when the editor opens.) */
       get available() { return !!cfg; },
       get config() { return cfg; },
-      async connect() {
-        if (!token || location.protocol === "file:") return false;
-        try { cfg = await (await call("config")).json(); } catch { cfg = null; }
-        return !!cfg;
+      /** Connect (once; the modules may ask again). @returns {Promise<boolean>} */
+      connect() {
+        connecting ??= (async () => {
+          if (!token || location.protocol === "file:") return false;
+          try { cfg = await (await call("config")).json(); } catch { cfg = null; }
+          return !!cfg;
+        })();
+        return connecting;
       },
       /** The path of a layer file ("room", "texts", "edits", "sounds", "art", "artAtlas", "audio"). @param {string} kind @param {Record<string, string>} [vars] */
       layer(kind, vars = {}) { return String(cfg?.layers?.[kind] ?? "").replace(/\{(\w+)\}/g, (/** @type {string} */ _m, /** @type {string} */ k) => vars[k] ?? ""); },
@@ -125,6 +181,8 @@ Cutaway.editor = (function () {
       async exists(path) { try { await call("read?path=" + enc(path)); return true; } catch { return false; } },
       /** @param {string} path @param {string | Uint8Array | Blob} data */
       async write(path, data) { await call("write?path=" + enc(path), { method: "PUT", body: /** @type {any} */ (data) }); },
+      /** Remove a file (only where the studio may write: an import that is reverted). @param {string} path */
+      async remove(path) { await call("remove?path=" + enc(path), { method: "DELETE" }); },
       /** @param {string} dir @returns {Promise<{name: string, dir: boolean, size: number}[]>} */
       async list(dir) { return (await call("list?dir=" + enc(dir))).json(); },
       /** Run one of the game's tasks (studio.json). @param {string} task @returns {Promise<{code: number, output: string}>} */
@@ -355,8 +413,7 @@ Cutaway.editor = (function () {
   async function save() {
     const d = room();
     if (!d) return;
-    try { status = await saveFile(studio.layer("room", { id: d.id }) || `${d.id}.geo.js`, text()); roomDirty = false; } catch (e) { status = "save failed: " + String(/** @type {any} */ (e)?.message ?? e); }
-    panelDirty = true;
+    try { setStatus(await saveFile(studio.layer("room", { id: d.id }) || `${d.id}.geo.js`, text())); roomDirty = false; } catch (e) { setStatus("save failed: " + String(/** @type {any} */ (e)?.message ?? e)); }
   }
 
   // ------------------------------------------------------------------ checks
@@ -487,6 +544,7 @@ Cutaway.editor = (function () {
 
   /** @param {PointerEvent} e */
   function onDown(e) {
+    if (menuOutside(e) && e.target === Cutaway.display.screen) { e.stopPropagation(); e.preventDefault(); return; }
     if (e.target !== Cutaway.display.screen) return;
     e.stopPropagation(); e.preventDefault();
     const p = worldOf(e);
@@ -560,7 +618,7 @@ Cutaway.editor = (function () {
   }
 
   /** @param {"walk" | "hole" | "hotspot"} group */
-  function startDrawing(group) { drawing = { group, pts: [] }; selKey = null; status = "click the corners; click the first one again (or Enter) to close"; panelDirty = true; }
+  function startDrawing(group) { active = "room"; drawing = { group, pts: [] }; selKey = null; setStatus("click the corners; click the first one again (or Enter) to close"); }
 
   function finishDrawing() {
     const d = room();
@@ -583,6 +641,8 @@ Cutaway.editor = (function () {
 
   /** @param {KeyboardEvent} e */
   function onKey(e) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (menuBox && e.code === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
     if (e.code === "F10") { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.code === "F1") {                               // the help, at the section for this tab; again: back
       e.preventDefault(); e.stopPropagation();
@@ -590,21 +650,21 @@ Cutaway.editor = (function () {
       panelDirty = true;
       return;
     }
+    if (mod && e.code === "KeyS") { e.preventDefault(); e.stopPropagation(); if (e.shiftKey) saveAll(); else saveActive(); return; }   // in text fields too
     const tag = /** @type {any} */ (e.target)?.tagName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
     if (["F9", "F11"].includes(e.code)) return;            // the debug overlay and fullscreen still work
     e.stopPropagation();
+    if (mod && e.code === "KeyZ") { e.preventDefault(); route(e.shiftKey ? "redo" : "undo"); return; }
+    if (mod && e.code === "KeyY") { e.preventDefault(); route("redo"); return; }
+    const v = currentView(), t = activeTab();
+    if (v?.key?.(e) || t.key?.(e)) { e.preventDefault(); return; }
+    if (e.code === "Escape") { route("selectNone"); return; }
+    if (e.code === "Delete" || e.code === "Backspace") { if (route("del")) e.preventDefault(); return; }
     if (active !== "room") return;
     const it = selKey ? find(selKey) : null;
-    if (e.code === "Escape") { if (drawing) drawing = null; else { selKey = null; selHandle = -1; } panelDirty = true; }
-    else if (e.code === "Enter" && drawing) finishDrawing();
-    else if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") undoRedo(!e.shiftKey);
-    else if ((e.ctrlKey || e.metaKey) && e.code === "KeyY") undoRedo(false);
-    else if ((e.ctrlKey || e.metaKey) && e.code === "KeyS") { e.preventDefault(); save(); }
-    else if ((e.code === "Delete" || e.code === "Backspace") && it) {
-      if (selHandle >= 0 && it.remove) { pushUndo(); if (it.remove(selHandle)) { selHandle = -1; changed(); } else undoStack.pop(); }
-      else if (it.group === "walk" || it.group === "hole") removeShape(it);
-    } else if (it && e.code.startsWith("Arrow")) {
+    if (e.code === "Enter" && drawing) finishDrawing();
+    else if (it && e.code.startsWith("Arrow")) {
       const k = e.shiftKey ? 10 : 1, dx = e.code === "ArrowLeft" ? -k : e.code === "ArrowRight" ? k : 0, dy = e.code === "ArrowUp" ? -k : e.code === "ArrowDown" ? k : 0;
       pushUndo();
       if (selHandle >= 0) { const p = it.handles[selHandle]; it.move(selHandle, p.x + dx, p.y + dy); } else it.translate?.(dx, dy);
@@ -612,6 +672,17 @@ Cutaway.editor = (function () {
     } else return;
     e.preventDefault();
   }
+
+  /** Delete in the Room tab: the selected corner, else the selected walk area or hole. */
+  function deleteSelected() {
+    const it = selKey ? find(selKey) : null;
+    if (!it) return;
+    if (selHandle >= 0 && it.remove) { pushUndo(); if (it.remove(selHandle)) { selHandle = -1; changed(); } else undoStack.pop(); }
+    else if (it.group === "walk" || it.group === "hole") removeShape(it);
+  }
+
+  /** Esc in the Room tab: stop drawing, else clear the selection. */
+  function roomSelectNone() { if (drawing) drawing = null; else { selKey = null; selHandle = -1; } panelDirty = true; }
 
   /** @param {EditItem} it */
   function removeShape(it) {
@@ -625,7 +696,98 @@ Cutaway.editor = (function () {
     changed();
   }
 
-  // ------------------------------------------------------------------ the panel
+  // ------------------------------------------------------------------ the layout
+
+  // one style sheet for the whole editor (in the game's page and in the inspector's own window)
+  const CSS = `
+.cw-ed { position: fixed; left: 0; top: 0; right: 0; bottom: 0; pointer-events: none; z-index: 10; }
+.cw-ed, .cutaway-editor, .cw-menu { font: 12px/1.35 Consolas, Menlo, monospace; color: #ddd; }
+.cw-ed > div { pointer-events: auto; position: absolute; box-sizing: border-box; }
+.cw-ed *, .cutaway-editor * { scrollbar-width: thin; scrollbar-color: #4a4066 #16121f; }
+.cw-bar { left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 1px; padding: 0 4px; background: #1c1729;
+  border-bottom: 1px solid #3a3350; white-space: nowrap; user-select: none; overflow: hidden; }
+.cw-bar .brand { color: #ffe14a; font-weight: bold; padding: 0 10px 0 4px; }
+.cw-bar .m { padding: 2px 8px; border-radius: 3px; cursor: default; }
+.cw-bar .m:hover, .cw-bar .m.open { background: #2c2540; color: #ffe14a; }
+.cw-bar .sp { flex: 1; }
+.cw-bar .right { display: flex; align-items: center; gap: 6px; }
+.cw-bar select { padding: 0 2px; }
+.cw-bar button { padding: 0 8px; margin: 0; }
+.cw-left { left: 0; background: #16121f; border-right: 1px solid #3a3350; overflow: auto; padding: 2px 0 12px; user-select: none; }
+.cw-left .hd { color: #8a84a0; padding: 8px 8px 2px; font-size: 11px; letter-spacing: 1px; }
+.cw-left .row { padding: 1px 8px 1px 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cw-left .row:hover { background: #221c30; color: #ffe14a; }
+.cw-left .row.on { background: #2c2540; color: #ffe14a; border-left: 2px solid #ffe14a; padding-left: 12px; }
+.cw-left .ws { padding-left: 8px; }
+.cw-left .ws.on { padding-left: 6px; }
+.cw-left .sub { color: #6c6484; padding: 4px 8px 0 10px; font-size: 11px; }
+.cw-left .dot, .cw-dirty { color: #ff9a6a; }
+.cutaway-editor { background: #16121f; white-space: pre-line; }
+.cw-ed > .cutaway-editor { right: 0; border-left: 1px solid #3a3350; overflow: auto; padding: 0 8px 16px; }
+.cw-pop .cutaway-editor { min-height: 100vh; box-sizing: border-box; padding: 0 8px 16px; }
+.cw-title { position: sticky; top: 0; z-index: 1; background: #16121f; color: #ffe14a; font-weight: bold; padding: 6px 0 4px;
+  margin-bottom: 4px; border-bottom: 1px solid #3a3350; display: flex; gap: 8px; align-items: baseline; }
+.cw-title .cw-dirty { font-weight: normal; }
+.cw-status { left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 14px; padding: 0 8px; background: #1c1729;
+  border-top: 1px solid #3a3350; white-space: nowrap; overflow: hidden; user-select: none; }
+.cw-status .msg { color: #ffe14a; overflow: hidden; text-overflow: ellipsis; cursor: pointer; min-width: 0; flex: 0 1 auto; }
+.cw-status .sp { flex: 1; }
+.cw-status .ok { color: #7c7; }
+.cw-status .no { color: #c96; }
+.cw-status button { padding: 0 6px; margin: 0; }
+.cw-out { background: #100d18; border-top: 1px solid #3a3350; overflow: auto; padding: 4px 8px; white-space: pre-wrap; color: #ccc; }
+.cw-out .e { border-bottom: 1px solid #221c30; padding: 2px 0; }
+.cw-centre { background: #0e0b14; overflow: hidden; }
+.cw-menu { position: fixed; z-index: 30; min-width: 230px; max-height: calc(100vh - 40px); overflow: auto; background: #221c30;
+  border: 1px solid #4a4066; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5); padding: 3px 0; user-select: none; }
+.cw-menu .it { display: flex; gap: 28px; padding: 3px 12px 3px 24px; position: relative; white-space: nowrap; cursor: default; }
+.cw-menu .it:hover { background: #ffe14a; color: #1a1426; }
+.cw-menu .it .k { margin-left: auto; color: #8a84a0; }
+.cw-menu .it:hover .k { color: #1a1426; }
+.cw-menu .it.off, .cw-menu .it.off:hover { color: #5c5470; background: none; }
+.cw-menu .it.off .k { color: #4a4460; }
+.cw-menu .it.on::before { content: "✓"; position: absolute; left: 8px; }
+.cw-menu .sep { border-top: 1px solid #3a3350; margin: 3px 0; }
+.cw-menu .hd { color: #8a84a0; padding: 3px 12px; font-size: 11px; }
+.cw-ed button, .cutaway-editor button { margin: 2px; padding: 2px 7px; background: #2c2540; color: #eee; border: 1px solid #4a4066;
+  border-radius: 3px; cursor: pointer; font: inherit; }
+.cw-ed button:hover, .cutaway-editor button:hover { border-color: #ffe14a; }
+.cw-ed button.on, .cutaway-editor button.on { background: #ffe14a; color: #1a1426; border-color: #ffe14a; }
+.cw-ed button:disabled, .cutaway-editor button:disabled { opacity: 0.45; cursor: default; border-color: #4a4066; }
+.cw-ed input, .cw-ed select, .cw-ed textarea, .cutaway-editor input, .cutaway-editor select, .cutaway-editor textarea {
+  font: inherit; background: #221c30; color: #eee; border: 1px solid #4a4066; }
+.cw-ed input[type=checkbox], .cutaway-editor input[type=checkbox] { vertical-align: middle; accent-color: #ffe14a; margin: 0 3px 0 0; }
+.cw-ed input[type=color], .cutaway-editor input[type=color] { padding: 0; width: 28px; height: 20px; vertical-align: middle; }
+.cutaway-editor .cw-sec { margin-top: 8px; border-top: 1px solid #3a3350; padding-top: 4px; }
+.cutaway-editor .cw-h { color: #ffe14a; }
+.cw-dim { color: #8a84a0; }
+.cutaway-editor .cw-list { width: 100%; background: #1c1729; color: #ddd; border: 1px solid #3a3350; }
+.cutaway-editor .cw-sw { display: inline-block; width: 15px; height: 15px; border: 1px solid rgba(0, 0, 0, 0.5); margin: 1px; cursor: pointer; vertical-align: middle; box-sizing: border-box; }
+.cutaway-editor .cw-sw:hover { outline: 1px solid #ffe14a; }
+.cutaway-editor .cw-sw.t, .cutaway-editor .cw-big.t { background: repeating-conic-gradient(#555 0 25%, #888 0 50%) 0 0 / 8px 8px; }
+.cutaway-editor .cw-big { display: inline-block; width: 34px; height: 34px; border: 2px solid #4a4066; vertical-align: middle; margin-right: 4px; box-sizing: border-box; }
+.cutaway-editor .cw-pals { white-space: normal; line-height: 0; margin: 2px 0 4px; }
+`;
+
+  /** @type {HTMLDivElement | null} */ let root = null;
+  /** @type {HTMLElement | null} */ let barEl = null;
+  /** @type {HTMLElement | null} */ let barRight = null;
+  /** @type {HTMLElement | null} */ let leftEl = null;
+  /** @type {HTMLElement | null} */ let statusEl = null;
+  /** @type {HTMLElement | null} */ let outputEl = null;
+  /** @type {HTMLElement | null} */ let centreEl = null;
+  /** @type {HTMLElement | null} the open dropdown */ let menuBox = null;
+  let menuOpen = "";
+  /** @type {EditorView | null} the view in the centre now */ let mounted = null;
+  /** @type {Record<string, HTMLElement>} */ const statusParts = {};
+
+  /** The style sheet, once per document. @param {Document} doc */
+  function ensureCss(doc) {
+    if (doc.getElementById("cw-editor-css")) return;
+    const st = doc.createElement("style");
+    st.id = "cw-editor-css"; st.textContent = CSS;
+    doc.head.append(st);
+  }
 
   /** @param {string} tag @param {Record<string, any>} [props] @param {(Node | string)[]} [kids] */
   function el(tag, props = {}, kids = []) {
@@ -636,41 +798,361 @@ Cutaway.editor = (function () {
     for (const c of kids) e.append(c);
     return /** @type {HTMLElement} */ (e);
   }
-  /** @param {string} label @param {() => void} fn @param {string} [title] */
+  /** A button in the editor's style (the style sheet). @param {string} label @param {() => void} fn @param {string} [title] */
   function button(label, fn, title = "") {
-    return el("button", { textContent: label, title, onclick: fn, style: { margin: "2px", padding: "3px 7px", background: "#2c2540", color: "#eee", border: "1px solid #4a4066", borderRadius: "3px", cursor: "pointer", font: "inherit" } });
+    return el("button", { textContent: label, title, onclick: fn });
   }
 
-  /** The panel: the title, the room, the studio, the tabs, then the active tab. */
+  function activeTab() { return tabs.find((t) => t.id === active) ?? tabs[0]; }
+  /** The active workspace's view in the centre, if it has one now. */
+  function currentView() { return isOpen ? activeTab()?.view?.() ?? null : null; }
+
+  /** Edit > Undo, Redo, Delete, Select none: to the view in the centre first, else the active tab. @param {"undo" | "redo" | "del" | "selectNone"} name */
+  function route(name) {
+    const v = currentView(), f = v?.[name] ?? activeTab()[name];
+    if (!f) return false;
+    f(); panelDirty = true;
+    return true;
+  }
+  /** @param {"undo" | "redo" | "del" | "selectNone"} name */
+  const canRoute = (name) => !!(currentView()?.[name] ?? activeTab()[name]);
+
+  /** @param {any} e */
+  const errText = (e) => String(e?.message ?? e);
+
+  /** File > Save (Ctrl+S): the active workspace's save. */
+  async function saveActive() {
+    const t = activeTab();
+    if (!t.save) { setStatus(`${t.label}: nothing to save here`); return; }
+    try { await t.save(false); } catch (e) { setStatus("save failed: " + errText(e)); }
+    panelDirty = true;
+  }
+
+  /** File > Save all (Ctrl+Shift+S): every tab with unsaved work that can save. */
+  async function saveAll() {
+    const done = [];
+    for (const t of tabs) {
+      if (!t.save || !unsavedOf(t)) continue;
+      try { await t.save(true); done.push(t.label); } catch (e) { done.push(`${t.label} FAILED (${errText(e)})`); }
+    }
+    setStatus(done.length ? "saved: " + done.join(", ") : "nothing to save");
+  }
+
+  /**
+   * Run one of the game's tasks (studio.json) with its output in the output pane.
+   * @param {string} task @returns {Promise<{code: number, output: string}>}
+   */
+  async function runTask(task) {
+    if (!studio.available) { setStatus("the tasks run in the studio (tools/studio.mjs)"); return { code: -1, output: "" }; }
+    setLayout("output", true);
+    setStatus(`${task} ...`);
+    try {
+      const r = await studio.run(task);
+      output(`$ ${task}\n${r.output.trim() || "(no output)"}`);
+      setStatus(`${task}: ${r.code === 0 ? "done" : "FAILED (exit " + r.code + ")"}`);
+      return r;
+    } catch (e) {
+      setStatus(`${task}: ${errText(e)}`);
+      return { code: -1, output: errText(e) };
+    }
+  }
+
+  /** The status line; it also goes into the output pane (whole, when it has several lines). @param {string} s */
+  function setStatus(s) {
+    status = s;
+    if (s) output(s);
+    panelDirty = true;
+  }
+
+  /** Add to the output pane. @param {string} s */
+  function output(s) {
+    log.push(s);
+    if (log.length > 200) log.splice(0, log.length - 200);
+    outputDirty = true;
+  }
+
+  /** Show or hide a part of the layout. @param {"left" | "right" | "output"} part @param {boolean} [on] */
+  function setLayout(part, on) {
+    layout[part] = on ?? !layout[part];
+    keepLayout();
+    place();
+  }
+  function keepLayout() { try { localStorage.setItem("cutaway.editor.layout", JSON.stringify(layout)); } catch { /* private mode */ } }
+
+  /** Size the parts and keep their room free in the display (the picture fits into the centre). */
+  function place() {
+    if (!root) return;
+    const L = layout.left ? LEFT_W : 0, R = layout.right && !win ? RIGHT_W : 0, O = layout.output ? OUT_H : 0;
+    /** @param {HTMLElement | null} e @param {Record<string, string>} st */
+    const at = (e, st) => { if (e) Object.assign(e.style, st); };
+    at(barEl, { height: MENU_H + "px" });
+    at(leftEl, { display: L ? "" : "none", top: MENU_H + "px", bottom: STATUS_H + "px", width: L + "px" });
+    if (!win) at(panel, { display: R ? "" : "none", top: MENU_H + "px", bottom: STATUS_H + "px", width: R + "px" });
+    at(outputEl, { display: O ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + "px", height: O + "px" });
+    at(centreEl, { left: L + "px", right: R + "px", top: MENU_H + "px", bottom: STATUS_H + O + "px" });
+    at(statusEl, { height: STATUS_H + "px" });
+    Cutaway.display.reserve({ left: L, top: MENU_H, right: R, bottom: STATUS_H + O });
+    mounted?.shown?.();
+  }
+
+  /** Show a workspace. @param {string} id */
+  function showTab(id) { if (id !== "help") beforeHelp = id; active = id; panelDirty = true; }
+
+  // ------------------------------------------------------------------ the menus
+
+  /** The menu bar's menus, made when one opens (so they show the state now). @returns {[string, MenuItem[]][]} */
+  function menus() {
+    const t = activeTab(), d = room(), mods = /** @type {Record<string, any>} */ (api.modules);
+    /** @type {Record<string, MenuItem[]>} */
+    const ext = {};
+    for (const tab of tabs) {
+      if (!tab.menu) continue;
+      try { for (const [k, list] of Object.entries(tab.menu())) (ext[k] ??= []).push(...list); } catch (e) { console.warn(e); }
+    }
+    const tasks = Object.keys(studio.config?.tasks ?? {});
+    /** @param {() => void} fn */
+    const inRoom = (fn) => () => { showTab("room"); fn(); };
+    const acts = Cutaway.act.ids();
+    /** @type {[string, MenuItem[]][]} */
+    const list = [
+      ["File", [
+        { label: `Save (${t.label})`, key: "Ctrl+S", run: saveActive, enabled: !!t.save },
+        { label: "Save all", key: "Ctrl+Shift+S", run: saveAll, enabled: unsaved().length > 0 },
+        { sep: true },
+        { label: "Reload game", run: () => location.reload(), title: "load the game's files again (the editor opens again with ?edit or the studio)" },
+        { label: "Close editor and play", key: "F10", run: close },
+      ]],
+      ["Edit", [
+        { label: "Undo", key: "Ctrl+Z", run: () => route("undo"), enabled: canRoute("undo") },
+        { label: "Redo", key: "Ctrl+Y", run: () => route("redo"), enabled: canRoute("redo") },
+        { sep: true },
+        { label: "Delete", key: "Del", run: () => route("del"), enabled: canRoute("del") },
+        { label: "Select none", key: "Esc", run: () => route("selectNone"), enabled: canRoute("selectNone") },
+      ]],
+      ["View", [
+        { label: "Debug overlay", key: "F9", checked: Cutaway.debug.on, run: () => Cutaway.debug.toggle() },
+        { label: "Game interface", checked: showHud, run: () => { showHud = !showHud; Cutaway.ui.setHud(showHud); } },
+        { sep: true }, { head: "Room shapes" },
+        ...Object.keys(show).map((g) => ({ label: g, checked: show[g], run: () => { show[g] = !show[g]; panelDirty = true; } })),
+        { sep: true },
+        { label: "Left panel", checked: layout.left, run: () => setLayout("left") },
+        { label: "Inspector", checked: layout.right, run: () => setLayout("right"), enabled: !win },
+        { label: "Output", checked: layout.output, run: () => setLayout("output") },
+        { label: "Inspector in its own window", checked: !!win, run: () => { wantWindow = !win; layout.window = wantWindow; keepLayout(); close(); open(); } },
+        { label: "Fullscreen", key: "F11", run: () => Cutaway.display.toggleFullscreen() },
+      ]],
+      ["Room", [
+        { head: "Open" },
+        ...Cutaway.room.ids().map((id) => ({ label: id, checked: id === d?.id, run: () => { openRoom(id); } })),
+        { sep: true },
+        { label: "+ Walk area", run: inRoom(() => startDrawing("walk")), enabled: !!d },
+        { label: "+ Hole", run: inRoom(() => startDrawing("hole")), enabled: !!d },
+        { label: "+ Hotspot", run: inRoom(() => startDrawing("hotspot")), enabled: !!d },
+        { sep: true },
+        { label: "Save the shapes", run: () => { save(); }, enabled: !!d, title: "rooms/<id>.geo.js" },
+      ]],
+      ["Art", []],
+      ["Play", [
+        { label: "Play from here", key: "F10", run: close },
+        ...(acts.length ? [{ sep: true }, { head: "Begin an act (a new game)" },
+          ...acts.map((id) => ({ label: id, checked: Cutaway.acts.current === id, run: () => mods.state?.beginAct(id), enabled: !!mods.state }))] : []),
+        { sep: true },
+        { label: "Test dialogue", run: () => { if (mods.dialogue) mods.dialogue.test(); else showTab("dialogue"); }, enabled: Cutaway.dialog.ids().length > 0,
+          title: "close the editor and start the dialogue picked in the Dialogue tab" },
+      ]],
+      ["Tools", [
+        ...(tasks.length ? [{ head: "Tasks (studio.json)" }, ...tasks.map((k) => ({ label: k, run: () => { runTask(k); }, title: (studio.config.tasks[k] ?? []).join(" ") }))]
+          : [{ label: studio.available ? "no tasks in studio.json" : "tasks: start the studio", enabled: false }]),
+        { sep: true },
+        { label: "Issues", run: () => { showTab("issues"); mods.issues?.check(); }, title: "check the game as it is now" },
+        { label: "Checks", run: () => showTab("checks") },
+        { label: "State (the developer's menu)", run: () => showTab("state") },
+      ]],
+      ["Help", [
+        { label: "Editor guide", key: "F1", run: () => mods.help?.open(active === "help" ? beforeHelp : active) },
+        { label: "Reference", run: () => mods.help?.open(undefined, "reference") },
+        { label: "Keys", run: () => mods.help?.open(undefined, "editor", "keys") },
+      ]],
+    ];
+    for (const [title, items] of list) {
+      const more = ext[title] ?? [];
+      if (more.length && items.length) items.push({ sep: true });
+      items.push(...more);
+      if (!items.length) items.push({ label: "(nothing here yet)", enabled: false });
+    }
+    return list;
+  }
+
+  /** Open a menu under its title. @param {string} title */
+  function openMenu(title) {
+    closeMenu();
+    if (!barEl) return;
+    const def = menus().find((m) => m[0] === title), head = /** @type {HTMLElement | null} */ (barEl.querySelector(`[data-menu="${title}"]`));
+    if (!def || !head) return;
+    const box = el("div", { className: "cw-menu" });
+    for (const it of def[1]) {
+      if (it.sep) { box.append(el("div", { className: "sep" })); continue; }
+      if (it.head) { box.append(el("div", { className: "hd", textContent: it.head })); continue; }
+      const off = it.enabled === false;
+      const row = el("div", { className: "it" + (off ? " off" : "") + (it.checked ? " on" : ""), title: it.title ?? "" },
+        [el("span", { textContent: it.label ?? "" }), el("span", { className: "k", textContent: it.key ?? "" })]);
+      if (!off) row.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); it.run?.(); panelDirty = true; });
+      box.append(row);
+    }
+    const r = head.getBoundingClientRect();
+    box.style.left = Math.max(0, Math.min(r.left, window.innerWidth - 250)) + "px"; box.style.top = r.bottom + "px";
+    document.body.append(box);
+    menuBox = box; menuOpen = title;
+    head.classList.add("open");
+  }
+
+  function closeMenu() {
+    menuBox?.remove(); menuBox = null; menuOpen = "";
+    barEl?.querySelectorAll(".m.open").forEach((m) => m.classList.remove("open"));
+  }
+
+  /** A press anywhere outside the open menu closes it (and does nothing else). @param {PointerEvent} e */
+  function menuOutside(e) {
+    if (!menuBox) return false;
+    const t = /** @type {Node} */ (e.target);
+    if (menuBox.contains(t) || barEl?.contains(t)) return false;
+    closeMenu();
+    return true;
+  }
+
+  // ------------------------------------------------------------------ the parts
+
+  /** The menu bar: Cutaway, the menus; on the right the room, Play and the studio. */
+  function buildBar() {
+    if (!barEl) return;
+    barEl.replaceChildren(el("span", { className: "brand", textContent: "Cutaway" }));
+    for (const [title] of menus()) {
+      const m = el("span", { className: "m", textContent: title,
+        onpointerdown: (/** @type {PointerEvent} */ e) => { e.stopPropagation(); if (menuOpen === title) closeMenu(); else openMenu(title); },
+        onpointerenter: () => { if (menuOpen && menuOpen !== title) openMenu(title); } });
+      m.dataset.menu = title;
+      barEl.append(m);
+    }
+    barRight = el("span", { className: "right" });
+    barEl.append(el("span", { className: "sp" }), barRight);
+  }
+
+  /** The right of the menu bar (again when the room or the studio changes). */
+  function buildBarRight() {
+    if (!barRight) return;
+    const d = room();
+    const select = /** @type {HTMLSelectElement} */ (el("select", { title: "open a room", onchange: () => openRoom(select.value) },
+      Cutaway.room.ids().map((id) => el("option", { value: id, textContent: id, selected: id === d?.id }))));
+    barRight.replaceChildren(el("span", { className: "cw-dim", textContent: "room" }), select, button("▶ Play", close, "close the editor and play from here (F10)"),
+      el("span", { style: { color: studio.available ? "#7c7" : "#c96", padding: "0 4px" },
+        title: studio.available ? "the studio is connected: saves go into the game's folder, tasks run" : "no studio: saves go through the browser (start tools/studio.mjs)",
+        textContent: studio.available ? "studio ●" : "studio ○" }));
+  }
+
+  /** The left panel: the workspaces, the rooms, and the room's things (or the active tab's own list). */
+  function buildLeft() {
+    if (!leftEl) return;
+    const box = leftEl, d = room(), mods = /** @type {Record<string, any>} */ (api.modules);
+    const keep = box.scrollTop;
+    box.replaceChildren(el("div", { className: "hd", textContent: "WORKSPACES" }));
+    for (const t of tabs) {
+      const n = unsavedOf(t);
+      box.append(el("div", { className: "row ws" + (t.id === active ? " on" : ""), onclick: () => showTab(t.id), title: n ? "not saved" : "" },
+        [t.label, ...(n ? [el("span", { className: "dot", textContent: " ●" })] : [])]));
+    }
+    box.append(el("div", { className: "hd", textContent: "ROOMS" }));
+    for (const id of Cutaway.room.ids()) box.append(el("div", { className: "row" + (id === d?.id ? " on" : ""), textContent: id, onclick: () => { openRoom(id); } }));
+    const t = activeTab();
+    if (t.browse) t.browse(box);
+    else if (d) {
+      const things = mods.things?.selected ?? "";
+      /** @param {string} title @param {[string, string][]} list */
+      const group = (title, list) => {
+        if (!list.length) return;
+        box.append(el("div", { className: "sub", textContent: title }));
+        for (const [key, label] of list) {
+          const on = active === "things" ? things === key : selKey === key;
+          box.append(el("div", { className: "row" + (on ? " on" : ""), textContent: label, title: key, onclick: () => selectThing(key) }));
+        }
+      };
+      box.append(el("div", { className: "hd", textContent: "IN " + d.id.toUpperCase() }));
+      group("hotspots", Object.keys(d.hotspots ?? {}).map((id) => [`hot:${id}`, id]));
+      group("props", (d.props ?? []).filter((p) => p.id).map((p) => [`prop:${p.id}`, /** @type {string} */ (p.id)]));
+      group("actors", Cutaway.actors.all().filter((a) => a.room === d.id).map((a) => [`actor:${a.id}`, a.id]));
+      group("lamps", (d.light?.lamps ?? []).map((l, i) => [`lamp:${l.id ?? i}`, String(l.id ?? i)]));
+      group("effects", (d.fx ?? []).map((f, i) => [`fx:${f.id ?? i}`, `${f.kind} ${f.id ?? i}`]));
+    }
+    box.scrollTop = keep;
+  }
+
+  /** A thing picked in the browser: its shape in Room, or its properties in Things (actors; or when Things is open). @param {string} key */
+  function selectThing(key) {
+    const things = /** @type {Record<string, any>} */ (api.modules).things;
+    if (things && (key.startsWith("actor:") || active === "things" || !find(key))) { showTab("things"); things.select(key); return; }
+    showTab("room"); selKey = key; selHandle = -1;
+  }
+
+  /** The inspector: the active tab's panel. */
   function buildPanel() {
     if (!panel) return;
-    const d = room();
-    panel.replaceChildren();
-    const select = /** @type {HTMLSelectElement} */ (el("select", { style: { font: "inherit", background: "#2c2540", color: "#eee" }, onchange: () => openRoom(select.value) },
-      Cutaway.room.ids().map((id) => el("option", { value: id, textContent: id, selected: id === d?.id }))));
-    panel.append(
-      el("div", { style: { fontWeight: "bold", color: "#ffe14a", marginBottom: "4px" } }, ["Cutaway editor"]),
-      el("div", { style: { color: studio.available ? "#7a7" : "#c96", marginBottom: "4px" } }, [studio.available
-        ? "studio: saves go into the game's folder" : "no studio: saves go through the browser. Start it with\nnode lib/cutaway/tools/studio.mjs"]),
-      ...(unsaved().length ? [el("div", { style: { color: "#ff9a6a" } }, ["● not saved: " + unsaved().join(", ")])] : []),
-      el("div", {}, ["room ", select, " ", button("Play", close, "close the editor and play (F10)"),
-        button(win ? "Dock" : "Window", () => { wantWindow = !win; close(); open(); }, win ? "dock the editor beside the game" : "open the editor in a window of its own")]),
-      el("div", { style: { margin: "6px 0", borderBottom: "1px solid #3a3350" } }, tabs.map((t) => el("button", { textContent: t.label, onclick: () => { active = t.id; panelDirty = true; },
-        style: { margin: "0 2px -1px 0", padding: "3px 8px", font: "inherit", cursor: "pointer", color: t.id === active ? "#1a1426" : "#ddd",
-          background: t.id === active ? "#ffe14a" : "#2c2540", border: "1px solid #4a4066", borderRadius: "3px 3px 0 0" } }))),
-    );
+    const t = activeTab(), n = unsavedOf(t);
+    panel.replaceChildren(el("div", { className: "cw-title" }, [t.label,
+      ...(n ? [el("span", { className: "cw-dirty", textContent: "● not saved" + (typeof n === "number" ? ` (${n})` : "") })] : [])]));
     const box = el("div", {});
     panel.append(box);
-    (tabs.find((t) => t.id === active) ?? tabs[0]).build(box);
-    panel.append(el("div", { style: { marginTop: "6px", color: "#ffe14a", minHeight: "1em", whiteSpace: "pre-wrap" } }, [status]));
-    panelDirty = false;
+    try { t.build(box); } catch (e) { box.append(el("div", { style: { color: "#ff6a5a" } }, [`${t.label}: ${errText(e)}`])); console.error(e); }
+  }
+
+  /** The status bar: the message, the cursor, what isn't saved, the studio. */
+  function buildStatus() {
+    if (!statusEl) return;
+    const p = statusParts;
+    p.msg = el("span", { className: "msg", title: "the output (all of it)", onclick: () => setLayout("output") });
+    p.cursor = el("span", { className: "cw-dim" });
+    p.dirty = el("span", { className: "cw-dirty" });
+    p.studio = el("span", {});
+    statusEl.replaceChildren(p.msg, el("span", { className: "sp" }), p.cursor, p.dirty, p.studio,
+      button("Output", () => setLayout("output"), "the output pane: every message and the tasks' output"));
+  }
+
+  /** Every frame (the editor's own loop: the game's clock may stand still with ?manual). */
+  function tick() {
+    if (!isOpen) return;
+    raf = requestAnimationFrame(tick);
+    const v = currentView();
+    if (v !== mounted && centreEl) {
+      centreEl.replaceChildren(...(v ? [v.el] : []));
+      centreEl.style.display = v ? "" : "none";
+      mounted = v;
+      cursorText = null;                                  // the view sets its own again
+      v?.shown?.();
+    }
+    if (panelDirty) {
+      panelDirty = false;
+      buildPanel(); buildLeft(); buildBarRight();
+    }
+    if (outputDirty && outputEl) {
+      outputDirty = false;
+      outputEl.replaceChildren(...log.map((s) => el("div", { className: "e", textContent: s })));
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+    const p = statusParts;
+    if (!p.msg) return;
+    const lines = status.split("\n"), msg = lines[0] + (lines.length > 1 ? `   (+${lines.length - 1} lines: Output)` : "");
+    if (p.msg.textContent !== msg) p.msg.textContent = msg;
+    const c = cursorText ?? (mounted ? "" : `room ${cursor.x}, ${cursor.y}${drawing ? `   ${drawing.group}: ${drawing.pts.length} corners` : ""}`);
+    if (p.cursor.textContent !== c) p.cursor.textContent = c;
+    const u = unsaved(), us = u.length ? "● not saved: " + u.join(", ") : "";
+    if (p.dirty.textContent !== us) p.dirty.textContent = us;
+    const st = studio.available ? "studio connected" : "no studio";
+    if (p.studio.textContent !== st) { p.studio.textContent = st; p.studio.className = studio.available ? "ok" : "no"; }
   }
 
   /** The Room tab: the room's shapes. @param {HTMLElement} panel */
   function buildRoom(panel) {
     const d = room();
     panel.append(
-      el("div", { style: { margin: "6px 0" } }, [button("Save", save, "write rooms/<id>.geo.js (Ctrl+S)"), button("Copy", () => { navigator.clipboard?.writeText(text()); status = "copied"; panelDirty = true; }),
+      el("div", { style: { margin: "6px 0" } }, [button("Save", save, "write rooms/<id>.geo.js (Ctrl+S)"), button("Copy", () => { navigator.clipboard?.writeText(text()); setStatus("copied the shapes file"); }, "the rooms/<id>.geo.js text"),
         button("Undo", () => undoRedo(true), "Ctrl+Z"), button("Redo", () => undoRedo(false), "Ctrl+Y")]),
       el("div", {}, [button("+ Walk area", () => startDrawing("walk")), button("+ Hole", () => startDrawing("hole")), button("+ Hotspot", () => startDrawing("hotspot"))]),
       el("div", { style: { margin: "6px 0" } }, Object.keys(show).map((g) => el("label", { style: { marginRight: "6px", color: /** @type {any} */ (COLORS)[g] } }, [
@@ -678,7 +1160,7 @@ Cutaway.editor = (function () {
     );
     const sel = selKey ? find(selKey) : null;
     if (sel) panel.append(selectedBox(sel));
-    const list = el("div", { style: { marginTop: "6px", maxHeight: "34vh", overflow: "auto", borderTop: "1px solid #3a3350" } });
+    const list = el("div", { className: "cw-sec" });
     for (const it of items()) {
       list.append(el("div", { textContent: it.label, onclick: () => { selKey = it.key; selHandle = -1; panelDirty = true; },
         style: { cursor: "pointer", padding: "1px 4px", color: it.key === selKey ? "#1a1426" : it.color, background: it.key === selKey ? it.color : "transparent" } }));
@@ -686,8 +1168,7 @@ Cutaway.editor = (function () {
     panel.append(list);
     const probs = problems();
     panel.append(el("div", { style: { marginTop: "6px", color: probs.length ? "#ff6a5a" : "#7a7" } }, [probs.length ? probs.join("\n") : "no problems"]));
-    panel.append(el("div", { id: "cutaway-editor-cursor", style: { color: "#aaa" } }, [""]));
-    panel.append(el("pre", { style: { color: "#888", whiteSpace: "pre-wrap", marginTop: "8px", font: "inherit" } }, [
+    panel.append(el("pre", { className: "cw-dim", style: { whiteSpace: "pre-wrap", marginTop: "8px", font: "inherit" } }, [
       "click: select   drag: move\ndrag a corner   right click: delete it\ndouble-click an edge: new corner\narrows: nudge (Shift 10)   Del: delete\nCtrl+Z / Ctrl+Y: undo / redo\nF10: play   F9: debug overlay"]));
   }
 
@@ -754,15 +1235,15 @@ Cutaway.editor = (function () {
     panelDirty = true;
   }
 
-  /** The editor's own window, if the browser lets one open. @returns {Window | null} */
+  /** The inspector's own window, if the browser lets one open. @returns {Window | null} */
   function popup() {
     /** @type {Window | null} */
     let w = null;
-    try { w = window.open("", "cutaway-editor", "width=600,height=940"); } catch { w = null; }
+    try { w = window.open("", "cutaway-editor", "width=420,height=940"); } catch { w = null; }
     if (!w) return null;
     try { void w.document.body; } catch { try { w.close(); } catch { /* gone */ } return null; }   // left from before a reload
     w.document.open();
-    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Cutaway editor</title></head><body style="margin:0;background:#16121f"></body></html>');
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Cutaway editor</title></head><body class="cw-pop" style="margin:0;background:#16121f"></body></html>');
     w.document.close();
     return w;
   }
@@ -770,43 +1251,62 @@ Cutaway.editor = (function () {
   function open() {
     if (isOpen) return;
     isOpen = true;
-    studio.connect().then(() => { panelDirty = true; });
-    loadModules();
+    studio.connect().then(() => { panelDirty = true; if (barEl) buildBar(); });
+    loadModules().then(() => { if (barEl) buildBar(); });
     win = wantWindow ? popup() : null;
-    panel = /** @type {HTMLDivElement} */ (el("div", { className: "cutaway-editor", style: {
-      ...(win ? { minHeight: "100vh" } : { position: "fixed", right: "0", top: "0", width: `${PANEL}px`, height: "100vh", overflow: "auto", zIndex: "10", borderLeft: "1px solid #3a3350" }),
-      boxSizing: "border-box", padding: "8px", background: "#16121f", color: "#ddd", font: "12px/1.35 Consolas, Menlo, monospace", whiteSpace: "pre-line" } }));
+    ensureCss(document);
+    root = /** @type {HTMLDivElement} */ (el("div", { className: "cw-ed" }));
+    barEl = el("div", { className: "cw-bar" });
+    leftEl = el("div", { className: "cw-left" });
+    centreEl = el("div", { className: "cw-centre", style: { display: "none" } });
+    outputEl = el("div", { className: "cw-out" });
+    statusEl = el("div", { className: "cw-status" });
+    panel = /** @type {HTMLDivElement} */ (el("div", { className: "cutaway-editor" }));
+    root.append(barEl, leftEl, centreEl, outputEl, statusEl);
     if (win) {
       const w = win;
+      ensureCss(w.document);
       w.document.body.append(panel);
       w.addEventListener("keydown", onKey, true);
+      w.addEventListener("pointerdown", () => closeMenu(), true);
       w.addEventListener("pagehide", () => { if (win === w) { win = null; close(); } });
       pollTimer = window.setInterval(() => { if (win === w && w.closed) { win = null; close(); } }, 500);
       w.focus();
-    } else {
-      document.body.append(panel);
-      Cutaway.display.reserve(PANEL);
-    }
+    } else root.append(panel);
+    document.body.append(root);
+    buildBar(); buildStatus();
+    place();
+    mounted = null;
     Cutaway.ui.setVisible(false);
+    Cutaway.ui.setHud(showHud);                          // the portraits and buttons would cover the shapes
     Cutaway.display.screen.style.cursor = "crosshair";
     for (const [type, fn] of listeners) window.addEventListener(type, fn, true);
-    panelDirty = true;
+    panelDirty = true; outputDirty = true;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
   }
 
   function close() {
     if (!isOpen) return;
     isOpen = false;
     drawing = null; drag = null;
-    panel?.remove(); panel = null;
+    cancelAnimationFrame(raf);
+    closeMenu();
+    root?.remove(); panel?.remove();
+    root = panel = null; barEl = barRight = leftEl = statusEl = outputEl = centreEl = null; mounted = null;
+    for (const k of Object.keys(statusParts)) delete statusParts[k];
     clearInterval(pollTimer);
     if (win && !win.closed) { const w = win; win = null; w.close(); }
+    win = null;
     Cutaway.display.reserve(0);
     Cutaway.ui.setVisible(true);
+    Cutaway.ui.setHud(true);
     Cutaway.display.screen.style.cursor = "none";
     for (const [type, fn] of listeners) window.removeEventListener(type, fn, true);
   }
 
-  tabs.push({ id: "room", label: "Room", build: buildRoom });
+  tabs.push({ id: "room", label: "Room", build: buildRoom, save, undo: () => undoRedo(true), redo: () => undoRedo(false), del: deleteSelected,
+    selectNone: roomSelectNone, get unsaved() { return roomDirty; } });
   // the game page goes (a reload): its editor window goes with it; unsaved changes ask first
   window.addEventListener("pagehide", () => { if (win && !win.closed) win.close(); });
   window.addEventListener("beforeunload", (e) => { if (unsaved().length) { e.preventDefault(); e.returnValue = ""; } });
@@ -814,32 +1314,38 @@ Cutaway.editor = (function () {
     if (!isOpen) return;
     if (active === "room") render(ctx); else tabs.find((t) => t.id === active)?.render?.(ctx);
   });
-  Cutaway.clock.onRender(() => {
-    if (!isOpen || !panel) return;
-    if (panelDirty) buildPanel();
-    const c = panel.ownerDocument.getElementById("cutaway-editor-cursor");
-    if (c) c.textContent = `cursor ${cursor.x}, ${cursor.y}${drawing ? `   ${drawing.group}: ${drawing.pts.length} corners` : ""}`;
-  });
   Cutaway.events.on("room.entered", () => { panelDirty = true; });
 
   const api = {
-    open, close, text, geometry, items, problems, save, openRoom, studio, saveFile, download, el, button, fmt, unsaved,
+    open, close, text, geometry, items, problems, save, openRoom, studio, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
     /** What the tab modules share with each other and the tests. @type {Record<string, any>} */
     modules: {},
     get isOpen() { return isOpen; },
-    /** The editor's own window, or null when docked. */
+    /** The inspector's own window, or null when docked. */
     get window() { return win; },
-    /** Open docked (false) or in a window of its own (true) from now on. @param {boolean} v */
+    /** Open the inspector docked (false, the default) or in a window of its own (true) from now on. @param {boolean} v */
     useWindow(v) { wantWindow = v; },
     /** Add a tab (the modules do). @param {EditorTab} t */
     tab(t) { const i = tabs.findIndex((x) => x.id === t.id); if (i >= 0) tabs[i] = t; else tabs.push(t); panelDirty = true; },
     /** Show a tab. @param {string} id */
-    show(id) { active = id; panelDirty = true; },
+    show: showTab,
     get activeTab() { return active; },
-    /** Rebuild the panel (a tab after its data changed). */
+    /** Rebuild the inspector and the browser (a tab after its data changed). */
     refresh() { panelDirty = true; },
-    /** The status line. @param {string} s */
-    setStatus(s) { status = s; panelDirty = true; },
+    /** The status line (and the output pane). @param {string} s */
+    setStatus,
+    /** A view's own text for the cursor in the status bar (null: the room's x, y). @param {string | null} s */
+    setCursor(s) { cursorText = s; },
+    /** Show or hide a part: "left", "right" (the inspector), "output". @param {"left" | "right" | "output"} part @param {boolean} [on] */
+    setLayout,
+    get layout() { return { ...layout, window: !!win }; },
+    /** The menu bar's menus as they are now (tests, tools). */
+    menus,
+    /** Open a menu of the menu bar (tests, screenshots). @param {string} title */
+    openMenu,
+    closeMenu,
+    /** The centre's element (where views go), or null while the editor is closed. */
+    get centre() { return centreEl; },
     /** Select a shape by key (tools, tests). @param {string | null} key */
     select(key) { selKey = key; selHandle = -1; panelDirty = true; },
     get selected() { return selKey; },

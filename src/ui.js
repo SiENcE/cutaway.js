@@ -62,7 +62,7 @@ Cutaway.ui = (function () {
   const layers = [];
   /** @type {string | null} the inventory item on the cursor */
   let held = null;
-  let clickSeq = 0, pointerType = "mouse", visible = true, textSpeed = 1, markUntil = 0, markHeld = false;
+  let clickSeq = 0, pointerType = "mouse", visible = true, hud = true, textSpeed = 1, markUntil = 0, markHeld = false;
   /** the click that started the current approach was a double click: run there */
   let running = false;
   /** @type {{text: string, x: number, y: number, until: number} | null} what a finger is on */
@@ -343,7 +343,7 @@ Cutaway.ui = (function () {
   function render(ctx) {
     const f = font(), W = Cutaway.display.width;
     refreshHover();
-    renderMarks(ctx);
+    if (hud) renderMarks(ctx);
     if (line) {
       const lh = f.lineHeight, n = line.lines.length;
       let x = W / 2, y = 6;
@@ -356,7 +356,7 @@ Cutaway.ui = (function () {
       y = Math.max(2, Math.round(y));
       line.lines.forEach((l, i) => f.draw(ctx, l, x, y + i * lh, { color: line?.color, outline: skin.outline, align: "center" }));
     }
-    for (const l of layers.slice().sort((a, b) => a.z - b.z)) l.render?.(ctx);
+    if (hud) for (const l of layers.slice().sort((a, b) => a.z - b.z)) l.render?.(ctx);
     if (touchLabel && pointerType !== "mouse" && Cutaway.clock.time < touchLabel.until && !line) {
       const lw = f.measure(touchLabel.text);           // above the finger, where it can be seen
       const lx = Cutaway.util.clamp(touchLabel.x - Math.floor(lw / 2), 2, W - lw - 2), ly = Cutaway.util.clamp(touchLabel.y - 22, 2, Cutaway.display.height - 10);
@@ -444,5 +444,8 @@ Cutaway.ui = (function () {
     skip() { finishLine(); },
     /** Hide the cursor and labels (cutscenes). @param {boolean} v */
     setVisible(v) { visible = v; },
+    /** Draw the interface's layers (portraits, satchel, buttons, menus) and marks; subtitles always show (the editor turns them off). @param {boolean} v */
+    setHud(v) { hud = v; },
+    get hud() { return hud; },
   };
 })();

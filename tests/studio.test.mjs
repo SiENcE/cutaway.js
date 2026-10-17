@@ -21,6 +21,13 @@ export default async function (t) {
     t.ok("studio: writes inside an allowed folder", (await call("write?path=game/rooms/b.geo.js", { method: "PUT", body: "// b" })).ok && readFileSync(join(dir, "game", "rooms", "b.geo.js"), "utf8") === "// b");
     const refused = await Promise.all(["../evil.js", "index.html", "art/x.js", "game/x.exe", "/etc/passwd"].map(async (p) => (await call("write?path=" + encodeURIComponent(p), { method: "PUT", body: "x" })).status));
     t.ok("studio: refuses to write elsewhere", refused.every((c) => c === 403) && !existsSync(join(dir, "..", "evil.js")), refused.join(" "));
+    writeFileSync(join(dir, "game", "gone.png"), "x");
+    const removed = (await call("remove?path=game/gone.png", { method: "DELETE" })).status;
+    const notThere = (await call("remove?path=game/gone.png", { method: "DELETE" })).status;
+    const outside = await Promise.all(["index.html", "../evil.js", "studio.json", "game/a.exe"].map(async (p) => (await call("remove?path=" + encodeURIComponent(p), { method: "DELETE" })).status));
+    t.ok("studio: removes a file where it may write, nowhere else", removed === 200 && !existsSync(join(dir, "game", "gone.png")) && notThere === 404
+      && outside.every((c) => c === 403) && existsSync(join(dir, "index.html")) && existsSync(join(dir, "studio.json")), [removed, notThere, ...outside].join(" "));
+    t.ok("studio: the palette list (empty by default)", Array.isArray(cfg.palette) && cfg.palette.length === 0);
     t.ok("studio: reads", (await (await call("read?path=game/a.js")).text()) === "// a" && (await call("read?path=../x")).status === 404);
     const list = await (await call("list?dir=game")).json();
     t.ok("studio: lists a folder", list.some((e) => e.name === "rooms" && e.dir) && list.some((e) => e.name === "a.js"));

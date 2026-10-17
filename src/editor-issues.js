@@ -45,10 +45,10 @@
     box.append(el("div", { style: { margin: "4px 0" } }, [button(running ? "checking ..." : issues ? "Check again" : "Check", () => { if (!running) check(); }),
       el("label", {}, [el("input", { type: "checkbox", checked: showWarnings, onchange: () => { showWarnings = !showWarnings; E.refresh(); } }), "warnings"])]));
     if (failed) { box.append(el("div", { style: { color: "#c96", whiteSpace: "pre-wrap" } }, [failed])); return; }
-    if (!issues) { box.append(el("div", { style: { color: "#888" } }, ["Checks the game as it is now, with what you changed (saved or not)."])); return; }
+    if (!issues) { box.append(el("div", { className: "cw-dim" }, ["Checks the game as it is now, with what you changed (saved or not)."])); return; }
     const list = issues.filter((i) => showWarnings || i.level === "error");
     if (!list.length) { box.append(el("div", { style: { color: "#7a7" } }, ["no issues"])); return; }
-    const rows = el("div", { style: { maxHeight: "70vh", overflow: "auto" } });
+    const rows = el("div", {});
     for (const i of list) {
       rows.append(el("div", { onclick: () => { go(i.where); }, title: "open it",
         style: { cursor: "pointer", padding: "2px 4px", borderBottom: "1px solid #2a2340", color: i.level === "error" ? "#ff8a7a" : "#e6c86a" } },

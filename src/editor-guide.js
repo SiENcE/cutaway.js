@@ -12,7 +12,7 @@
   /** @typedef {{id: string, title: string, file: string, md: string, secs?: Section[]}} Book */
   let bookId = "editor", at = "intro", query = "";
   /** @type {Record<string, string>} the tabs and their sections in the editor's guide */
-  const FOR_TAB = { room: "room-shapes", texts: "texts", things: "things", art: "art", sound: "sound", dialogue: "dialogue",
+  const FOR_TAB = { room: "room-shapes", texts: "texts", things: "things", art: "art", paint: "paint", sound: "sound", dialogue: "dialogue",
     state: "state", issues: "issues", checks: "checks" };
 
   /** @param {string} s */
@@ -133,7 +133,7 @@
 
   /** @param {HTMLElement} box */
   function build(box) {
-    const doc = box.ownerDocument;
+    const doc = E.window?.document ?? box.ownerDocument;          // the inspector's own window has its own styles
     if (!doc.getElementById("cw-help-css")) { const st = doc.createElement("style"); st.id = "cw-help-css"; st.textContent = CSS; doc.head.append(st); }
     const all = books();
     if (!all.length) { box.append("The guides (editor-help.js) didn't load."); return; }
@@ -193,6 +193,7 @@
   /** Open the help at the section for a tab (F1), or at a book's section. @param {string} [tab] @param {string} [book] @param {string} [section] */
   function open(tab, book, section) {
     if (book) { bookId = book; at = section ?? "intro"; }
+    else if (tab === "art" && E.modules.art?.centre === "paint") { bookId = "editor"; at = FOR_TAB.paint; }   // painting: its section
     else if (tab && FOR_TAB[tab]) { bookId = "editor"; at = FOR_TAB[tab]; }
     E.show("help");
   }

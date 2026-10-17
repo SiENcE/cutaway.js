@@ -81,13 +81,17 @@ condition, acts, hints, light, effects, sound, music, layers) is in **[docs/refe
 ## The editor and the studio
 
 In a game's folder, `node path/to/cutaway/tools/studio.mjs` starts a small server on your own computer
-and opens the game with the editor, in a window of its own. What you change shows at once; saving
-writes layer files next to the game's code (nothing hand-written is overwritten). Its tabs:
+and opens the game with the editor, docked around it like most editors: a menu bar (File, Edit, View,
+Room, Art, Play, Tools, Help), the workspaces and a browser of the rooms and their things on the left,
+the game (or the paint view) in the centre, the inspector on the right, a status bar and an output
+pane below. What you change shows at once; saving writes layer files next to the game's code (nothing
+hand-written is overwritten). Its workspaces:
 
 - **Room** (walk areas, holes, hotspots, walk-to points, baselines, lamps, effect areas)
 - **Texts** (every text, live; CSV and JSON for translators)
 - **Things** (properties of rooms, hotspots, props, lamps, effects, actors, items)
-- **Art** (preview, PNG export and import as sprites or animations)
+- **Art** (preview, PNG export and import as sprites or animations; a **pixel editor** for sprites,
+  animations and backgrounds: tools, palette, frames, onion skin, undo; pxl sources edited and built)
 - **Sound** (synthesised sounds as data, WAV export, WAV/OGG/MP3 import, the music)
 - **Dialogue** (what is offered now, test it)
 - **State** (go anywhere, set flags, give items: the developer's menu)

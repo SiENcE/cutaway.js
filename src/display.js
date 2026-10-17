@@ -14,7 +14,9 @@ Cutaway.display = (function () {
   /** @type {CanvasRenderingContext2D} */
   let ctx;
   let width = 320, height = 180, scale = 1, offX = 0, offY = 0, dpr = 1;
-  let border = "#000", maxScale = Infinity, fixedScale = 0, reserved = 0;
+  let border = "#000", maxScale = Infinity, fixedScale = 0;
+  /** CSS pixels kept free on each side (the editor's panels); the picture fits into the rest. */
+  let reserved = { left: 0, top: 0, right: 0, bottom: 0 };
 
   /**
    * @typedef {object} DisplayOptions
@@ -60,11 +62,13 @@ Cutaway.display = (function () {
     dpr = window.devicePixelRatio || 1;
     const dw = Math.max(1, Math.round(window.innerWidth * dpr));
     const dh = Math.max(1, Math.round(window.innerHeight * dpr));
-    const aw = Math.max(1, dw - Math.round(reserved * dpr));          // a side panel (the editor) may take the right edge
+    // the editor's panels may take the edges: the picture fits into what is left, centred there
+    const l = Math.round(reserved.left * dpr), t = Math.round(reserved.top * dpr);
+    const aw = Math.max(1, dw - l - Math.round(reserved.right * dpr)), ah = Math.max(1, dh - t - Math.round(reserved.bottom * dpr));
     screen.width = dw; screen.height = dh;
-    scale = fixedScale || Math.max(1, Math.min(maxScale, Math.floor(Math.min(aw / width, dh / height))));
-    offX = Math.floor((aw - width * scale) / 2);
-    offY = Math.floor((dh - height * scale) / 2);
+    scale = fixedScale || Math.max(1, Math.min(maxScale, Math.floor(Math.min(aw / width, ah / height))));
+    offX = l + Math.floor((aw - width * scale) / 2);
+    offY = t + Math.floor((ah - height * scale) / 2);
     screenCtx.imageSmoothingEnabled = false;
     Cutaway.events.emit("resize", { scale, width, height });
     present();
@@ -107,8 +111,18 @@ Cutaway.display = (function () {
 
   return {
     init, resize, present, toLogical, toClient, toggleFullscreen,
-    /** Keep `px` CSS pixels on the right free (for a side panel) and fit the picture into the rest. @param {number} px */
-    reserve(px) { reserved = px; resize(); },
+    /**
+     * Keep CSS pixels free at the edges (the editor's panels) and fit the picture, centred, into the rest.
+     * A number keeps only the right edge free (a side panel); 0 or {} gives the whole window back.
+     * @param {number | {left?: number, top?: number, right?: number, bottom?: number}} r
+     */
+    reserve(r) {
+      reserved = typeof r === "number" ? { left: 0, top: 0, right: r, bottom: 0 }
+        : { left: r.left ?? 0, top: r.top ?? 0, right: r.right ?? 0, bottom: r.bottom ?? 0 };
+      resize();
+    },
+    /** What reserve() keeps free now (CSS pixels). */
+    get reserved() { return { ...reserved }; },
     /** The low-resolution drawing context. Draw everything here, in whole logical pixels. */
     get ctx() { return ctx; },
     get buffer() { return buffer; },

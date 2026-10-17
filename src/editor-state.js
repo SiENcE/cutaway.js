@@ -6,13 +6,12 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  const st = { font: "inherit", background: "#221c30", color: "#eee", border: "1px solid #4a4066" };
+  const st = {};
   /** @param {string[]} opts @param {string} v @param {(v: string) => void} set @param {string} [none] */
   const select = (opts, v, set, none) => el("select", { style: st, onchange: (/** @type {any} */ e) => set(e.target.value) },
     [...(none !== undefined ? [none] : []), ...opts].map((o) => el("option", { value: o === none ? "" : o, textContent: o, selected: o === v })));
   /** @param {string} title @param {(Node | string)[]} kids */
-  const section = (title, kids) => el("div", { style: { marginTop: "6px", borderTop: "1px solid #3a3350", paddingTop: "3px" } },
-    [el("div", { style: { color: "#ffe14a" } }, [title]), ...kids]);
+  const section = (title, kids) => el("div", { className: "cw-sec" }, [el("div", { className: "cw-h" }, [title]), ...kids]);
 
   /** Go to a room with the active actor, standing near where they stood (on that room's floor). @param {string} id */
   async function goTo(id) {
@@ -34,7 +33,7 @@
         return el("div", {}, [`${m}: ${x?.room ?? "(nowhere)"} `, button(locked ? "unlock" : "lock", () => { if (locked) Cutaway.party.unlock(m); else Cutaway.party.lock(m); E.refresh(); }),
           button("bring here", () => { if (x && room && a) { x.place(room.id, Math.round(a.x + 16), Math.round(a.y), a.facing); E.refresh(); } }, "put them beside the one played")]);
       })),
-      ...(Cutaway.act.ids().length ? [el("div", {}, ["act ", select(Cutaway.act.ids(), Cutaway.acts.current ?? "", (v) => { if (v && confirm(`Begin ${v} as a new game?`)) { E.close(); Cutaway.acts.begin(v, { fresh: true }); } }),
+      ...(Cutaway.act.ids().length ? [el("div", {}, ["act ", select(Cutaway.act.ids(), Cutaway.acts.current ?? "", (v) => { if (v) beginAct(v); }),
         " (begins it as a new game)"])] : []),
     ]));
     // flags
@@ -71,5 +70,13 @@
       button("Refresh", () => E.refresh())])]));
   }
 
+  /** Begin an act as a new game (it asks first). @param {string} id @param {boolean} [ask] */
+  function beginAct(id, ask = true) {
+    if (ask && !confirm(`Begin ${id} as a new game?`)) return;
+    E.close();
+    Cutaway.acts.begin(id, { fresh: true });
+  }
+
   E.tab({ id: "state", label: "State", build });
+  E.modules.state = { goTo, beginAct };
 })();

@@ -1,7 +1,7 @@
 // The editor with the studio, in headless Chrome on a copy of the demo: the tabs load, the Texts tab
 // lists the game's texts, a changed text shows in the game at once and is saved through the studio as
 // the language's text layer, which gives the same text when loaded again; the Checks tab runs a task.
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import vm from "node:vm";
@@ -14,8 +14,12 @@ export default async function (t) {
   const dir = mkdtempSync(join(tmpdir(), "cutaway-editor-"));
   cpSync(resolve("demo"), join(dir, "demo"), { recursive: true });
   cpSync(resolve("src"), join(dir, "src"), { recursive: true });
-  writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["texts", "layers"], layers: { texts: "texts/{lang}.texts.js", edits: "layers/edits.js", sounds: "layers/sounds.edit.js" },
-    tasks: { hello: ["node", "-e", "console.log('checked')"] } }));
+  writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["texts", "layers", "art"], layers: { texts: "texts/{lang}.texts.js", edits: "layers/edits.js", sounds: "layers/sounds.edit.js",
+    art: "art/import", artAtlas: "layers/imported.js" },
+    tasks: { hello: ["node", "-e", "console.log('checked')"], "art: imported": ["node", resolve("tools", "build-atlas.mjs"), "art/import", "layers/imported.js"] },
+    palette: ["art/palette.txt"] }));
+  mkdirSync(join(dir, "demo", "art"), { recursive: true });
+  writeFileSync(join(dir, "demo", "art", "palette.txt"), 'skin: "#f0c8a0", shade: "#3a2a4a"');
   const page = join(dir, "demo", "index.html");
   writeFileSync(page, readFileSync(page, "utf8").replace(/\.\.\/src\//g, "src/"));
   cpSync(join(dir, "src"), join(dir, "demo", "src"), { recursive: true });
@@ -63,6 +67,29 @@ export default async function (t) {
       const a = Cutaway.assets.get("crate"); return a.frames.length + "x" + a.frames[0].w;
     })()`);
     t.ok("art: an import shows in the game at once (2 frames of 4 px)", imported === "2x4", imported);
+    // Paint: a cut-out (its room position as an explicit anchor) painted, saved as an import with its
+    // anchor and packed; then reverted: the files go and the atlas is packed without it
+    await chrome.ev(`(() => { const a = Cutaway.assets.get("plant"), f = a.frames[0];
+      Cutaway.assets.anim("hall_cut", { image: a.image, frames: [[f.x, f.y, f.w, f.h, 100]], anchor: [-10, -20] }); return 1; })()`);
+    await chrome.ev("Cutaway.editor.modules.paint.open('hall_cut'); Cutaway.editor.modules.paint.setColors('#ff00ff'); 1");
+    await sleep(300);
+    const c = await chrome.ev("Cutaway.editor.modules.paint.clientOf(1, 1)");
+    await chrome.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: c.x, y: c.y });
+    await chrome.send("Input.dispatchMouseEvent", { type: "mousePressed", x: c.x, y: c.y, button: "left", buttons: 1, clickCount: 1 });
+    await chrome.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: c.x, y: c.y, button: "left", buttons: 0, clickCount: 1 });
+    const pal = await chrome.ev("(() => { const b = document.createElement('div'); Cutaway.editor.modules.paint.inspector(b); return new Promise((r) => setTimeout(() => { const b2 = document.createElement('div'); Cutaway.editor.modules.paint.inspector(b2); r(b2.textContent.includes('game palette') && !!b2.querySelector('[title^=\"game palette: #f0c8a0\"]')); }, 300)); })()");
+    t.ok("paint: the game palette from studio.json's files", pal === true);
+    await chrome.ev("Cutaway.editor.modules.paint.save()");
+    const imp = join(dir, "demo", "art", "import", "sprites");
+    const anchor = existsSync(join(imp, "hall_cut.anchor.json")) ? JSON.parse(readFileSync(join(imp, "hall_cut.anchor.json"), "utf8")).anchor : null;
+    const packed = existsSync(join(dir, "demo", "layers", "imported.js")) ? readFileSync(join(dir, "demo", "layers", "imported.js"), "utf8") : "";
+    t.ok("paint: Save writes the import with its anchor and packs it", existsSync(join(imp, "hall_cut.png")) && JSON.stringify(anchor) === "[-10,-20]"
+      && /"hall_cut": \{ image: "imported_atlas", frames: \[\[[\d, ]+\]\], anchor: \[-10,-20\] \}/.test(packed), packed.slice(-300));
+    t.ok("paint: the art list marks it as imported", await chrome.ev("Cutaway.editor.modules.art.isImported('hall_cut') && !Cutaway.editor.modules.art.isImported('plant')"));
+    await chrome.ev("Cutaway.editor.modules.paint.revert('hall_cut', false)");
+    const repacked = readFileSync(join(dir, "demo", "layers", "imported.js"), "utf8");
+    t.ok("paint: Revert removes the import files and packs again", !existsSync(join(imp, "hall_cut.png")) && !existsSync(join(imp, "hall_cut.anchor.json")) && !repacked.includes("hall_cut")
+      && await chrome.ev("!Cutaway.editor.modules.art.isImported('hall_cut')"));
     // Issues: the validator in the page, on the live data
     await chrome.ev("Cutaway.editor.modules.issues.check()");
     const issues = await chrome.ev("Cutaway.editor.modules.issues.issues");

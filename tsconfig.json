@@ -51,6 +51,7 @@
     "src/editor-texts.js",
     "src/editor-things.js",
     "src/editor-art.js",
+    "src/editor-paint.js",
     "src/editor-sound.js",
     "src/editor-dialogue.js",
     "src/editor-state.js",

@@ -247,7 +247,7 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 | `Cutaway.i18n.layer(lang, {...})` | texts as changed (Texts tab) |
 | `Cutaway.edits({ rooms, items, actors })` | properties (Things tab): objects merge, lists of things by id |
 | `Cutaway.sfx.layer(defs, file)` | sounds made or changed, recorded sounds (Sound tab) |
-| `Cutaway.assets.pack(...)` | imported art (Art tab, packed by `tools/build-atlas.mjs`) |
+| `Cutaway.assets.pack(...)` | imported and painted art (Art tab, the paint view; `art/import/` packed by `tools/build-atlas.mjs`): a name there replaces the game's own picture |
 
 The page loads each layer file after the game's own data.
 
@@ -267,7 +267,7 @@ The page loads each layer file after the game's own data.
 | `node tools/validate.mjs index.html` | every reference resolves, shapes are sound, texts are translated |
 | `node tools/solve.mjs index.html --full` | proves the game can be finished, lists soft-locks, checks hints |
 | `node tools/play.mjs index.html [--touch]` | plays it through in headless Chrome with real clicks (or taps) |
-| `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks |
+| `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks (`studio.json`: write, layers, tasks, palette) |
 | `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`) |
 | `node tools/build-atlas.mjs dir... out.js` | packs PNGs (pxl output) into an atlas script |
 | `node tools/render-music.mjs index.html --out f.wav` | renders the music offline |

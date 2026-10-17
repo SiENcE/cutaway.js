@@ -85,13 +85,13 @@
   }
 
   function build(/** @type {HTMLElement} */ box) {
-    const st = { font: "inherit", background: "#221c30", color: "#eee", border: "1px solid #4a4066" };
+    const st = {};
     const q = search.toLowerCase(), names = Cutaway.sfx.names().filter((n) => !n.startsWith("_") && (!q || n.includes(q))).sort();
     const find = /** @type {HTMLInputElement} */ (el("input", { type: "search", value: search, placeholder: "search", style: { ...st, width: "130px" }, onchange: () => { search = find.value; E.refresh(); } }));
     const file = /** @type {HTMLInputElement} */ (el("input", { type: "file", accept: "audio/*,.wav,.ogg,.mp3", style: { display: "none" },
       onchange: () => { const f = file.files?.[0]; if (f) importAudio(f).catch((e) => E.setStatus("import failed: " + e.message)); } }));
     box.append(el("div", {}, [find, " ", button(`Save${changed.size ? ` (${changed.size})` : ""}`, () => { save().catch((e) => E.setStatus("save failed: " + e.message)); }), file]));
-    box.append(el("select", { size: 9, style: { width: "100%", font: "inherit", background: "#1c1729", color: "#ddd", border: "1px solid #3a3350", marginTop: "4px" },
+    box.append(el("select", { size: 9, className: "cw-list", style: { marginTop: "4px" },
       onchange: (/** @type {any} */ e) => { sel = e.target.value; if (!Cutaway.sfx.get(sel)?.loop) Cutaway.sfx.play(sel); E.refresh(); } },
       names.map((n) => { const d = Cutaway.sfx.get(n); return el("option", { value: n, selected: n === sel,
         textContent: `${changed.has(n) ? "● " : ""}${n}${d?.loop ? "  (loop)" : ""}${d && isRecorded(d) ? "  (recorded)" : ""}` }); })));
@@ -110,7 +110,7 @@
             onchange: (/** @type {any} */ e) => { d.rate = Number(e.target.value) || 1; changed.add(sel); } })]));
       } else {
         const area = /** @type {HTMLTextAreaElement} */ (el("textarea", { value: JSON.stringify(d, null, 1), rows: 12, spellcheck: false,
-          style: { ...st, width: "100%", boxSizing: "border-box", font: "11px/1.25 Consolas, monospace" } }));
+          style: { width: "100%", boxSizing: "border-box", font: "11px/1.25 Consolas, monospace" } }));
         box.append(area, el("div", {}, [button("Apply and play", () => {
           try {
             const nd = JSON.parse(area.value);
@@ -122,7 +122,7 @@
           const n = (prompt("Name of the new sound:", sel + "_2") ?? "").trim();
           if (!n) return;
           try { Cutaway.sfx.define(n, JSON.parse(area.value)); changed.add(n); sel = n; E.refresh(); } catch (e) { E.setStatus("not JSON: " + /** @type {any} */ (e).message); }
-        })]), el("div", { style: { color: "#888" } }, ["parts: tone { wave, from, to, ms, gain, at, vibrato }, noise { filter, from, to, q, ms, gain, at }, inst { inst, notes, step }; loops: loop { noise, tone, gain, wobble, crackle }"]));
+        })]), el("div", { className: "cw-dim" }, ["parts: tone { wave, from, to, ms, gain, at, vibrato }, noise { filter, from, to, q, ms, gain, at }, inst { inst, notes, step }; loops: loop { noise, tone, gain, wobble, crackle }"]));
       }
     }
     // the music
@@ -132,8 +132,8 @@
       const sections = Object.keys(Cutaway.score.get(theme)?.sections ?? {});
       const msel = (/** @type {string[]} */ opts, /** @type {string} */ v, /** @type {(v: string) => void} */ set) => el("select", { style: st, onchange: (/** @type {any} */ e) => set(e.target.value) },
         opts.map((o) => el("option", { value: o, textContent: o || "(from the start)", selected: o === v })));
-      box.append(el("div", { style: { marginTop: "8px", borderTop: "1px solid #3a3350", paddingTop: "4px" } }, [
-        el("div", { style: { color: "#ffe14a" } }, ["music"]),
+      box.append(el("div", { className: "cw-sec" }, [
+        el("div", { className: "cw-h" }, ["music"]),
         el("div", {}, [msel(themes, theme, (v) => { theme = v; section = ""; E.refresh(); }), " ", msel(["", ...sections], section, (v) => { section = v; }),
           " intensity ", el("input", { type: "range", min: 0, max: 1, step: 0.05, value: intensity, onchange: (/** @type {any} */ e) => { intensity = Number(e.target.value); Cutaway.events.emit("music", { intensity }); } })]),
         el("div", {}, [button("Play", () => Cutaway.events.emit("music", { theme, ...(section ? { section } : {}), intensity })),
@@ -143,7 +143,7 @@
     }
   }
 
-  E.tab({ id: "sound", label: "Sound", build });
+  E.tab({ id: "sound", label: "Sound", build, save: () => save() });
   E.modules.sound = { get unsaved() { return changed.size; }, wav, importAudio, save, layerText, select(/** @type {string} */ n) { sel = n; E.refresh(); }, get changed() { return [...changed]; },
     /** Make or change a sound (as the tab does). @param {string} n @param {SfxDef} d */
     define(n, d) { Cutaway.sfx.define(n, d); changed.add(n); } };

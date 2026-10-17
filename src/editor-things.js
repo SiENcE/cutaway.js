@@ -77,7 +77,7 @@
 
   /** An input for a field. @param {Field} f @param {any} obj */
   function input(f, obj) {
-    const v = get(obj, f.path), st = { font: "inherit", background: "#221c30", color: "#eee", border: "1px solid #4a4066" };
+    const v = get(obj, f.path), st = {};
     /** @param {any} x */
     const set = (x) => { change(f, x); };
     if (f.type === "bool") return el("input", { type: "checkbox", checked: !!v, onchange: (/** @type {any} */ e) => set(e.target.checked) });
@@ -117,17 +117,17 @@
   function build(/** @type {HTMLElement} */ box) {
     const list = things();
     if (!list.some(([k]) => k === sel)) sel = "room";
-    const pick = el("select", { size: 12, style: { width: "100%", font: "inherit", background: "#1c1729", color: "#ddd", border: "1px solid #3a3350" },
+    const pick = el("select", { size: 12, className: "cw-list",
       onchange: (/** @type {any} */ e) => { sel = e.target.value; E.refresh(); } }, list.map(([k, label]) => el("option", { value: k, textContent: label, selected: k === sel })));
     box.append(el("div", { style: { margin: "4px 0" } }, [button(`Save${dirty ? " *" : ""}`, () => { save().catch((e) => E.setStatus("save failed: " + e.message)); }, "write the edits layer"),
-      el("span", { style: { color: "#888" } }, [" click a thing on the picture to pick it"])]), pick);
+      el("span", { className: "cw-dim" }, [" click a thing on the picture (or in the list on the left)"])]), pick);
     const obj = target(), kind = sel.split(":")[0];
     if (!obj) return;
-    const form = el("div", { style: { marginTop: "6px", borderTop: "1px solid #3a3350", paddingTop: "4px" } });
+    const form = el("div", { className: "cw-sec" });
     for (const f of FIELDS[kind] ?? []) {
-      form.append(el("div", { style: { margin: "3px 0" } }, [el("div", { style: { color: "#aaa" } }, [f.path + (f.hint ? `  (${f.hint})` : "")]), input(f, obj)]));
+      form.append(el("div", { style: { margin: "3px 0" } }, [el("div", { className: "cw-dim" }, [f.path + (f.hint ? `  (${f.hint})` : "")]), input(f, obj)]));
     }
-    if (kind === "hot" || kind === "item" || kind === "room" || kind === "actor") form.append(el("div", { style: { color: "#888", marginTop: "4px" } },
+    if (kind === "hot" || kind === "item" || kind === "room" || kind === "actor") form.append(el("div", { className: "cw-dim", style: { marginTop: "4px" } },
       ["Its name and texts: the Texts tab. Its shape and walk-to point: the Room tab. What it does: the game's code."]));
     box.append(form);
   }
@@ -161,6 +161,6 @@
     ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h, w + 1, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w, y, 1, h);
   }
 
-  E.tab({ id: "things", label: "Things", build, pick, render, onRoom() { sel = "room"; } });
-  E.modules.things = { get unsaved() { return dirty; }, save, target, select(/** @type {string} */ key) { sel = key; E.refresh(); }, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
+  E.tab({ id: "things", label: "Things", build, pick, render, onRoom() { sel = "room"; }, save: () => save(), selectNone() { sel = "room"; E.refresh(); } });
+  E.modules.things = { get unsaved() { return dirty; }, save, target, get selected() { return sel; }, select(/** @type {string} */ key) { sel = key; E.refresh(); }, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
 })();

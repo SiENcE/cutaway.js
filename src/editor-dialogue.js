@@ -22,13 +22,10 @@
     if (!ids.length) { box.append(el("div", { style: { color: "#888" } }, ["No dialogues (Cutaway.dialog)."])); return; }
     if (!ids.includes(sel)) sel = ids[0];
     const d = Cutaway.dialog.get(sel) ?? {}, who = speaker(sel);
-    box.append(el("div", {}, [el("select", { style: { font: "inherit", background: "#2c2540", color: "#eee" }, onchange: (/** @type {any} */ e) => { sel = e.target.value; E.refresh(); } },
+    box.append(el("div", {}, [el("select", { onchange: (/** @type {any} */ e) => { sel = e.target.value; E.refresh(); } },
       ids.map((i) => el("option", { value: i, textContent: i, selected: i === sel }))), " ",
-      button("Test in game", () => {
-        E.close();
-        Cutaway.script.run({ dialog: sel });
-      }, `close the editor and start it${who ? ` (${who} talks it)` : ""}`)]));
-    if (who) box.append(el("div", { style: { color: "#888" } }, [`${who} opens it when talked to`]));
+      button("Test in game", () => test(), `close the editor and start it${who ? ` (${who} talks it)` : ""}`)]));
+    if (who) box.append(el("div", { className: "cw-dim" }, [`${who} opens it when talked to`]));
     for (const [node, n] of Object.entries(d)) {
       const choices = Array.isArray(n) ? n : n.choices ?? [];
       const nodeBox = el("div", { style: { marginTop: "6px", border: "1px solid #3a3350", padding: "4px" } }, [el("div", { style: { color: "#ffe14a" } }, [`node ${node}`])]);
@@ -43,8 +40,17 @@
       }
       box.append(nodeBox);
     }
-    box.append(el("div", { style: { color: "#888", marginTop: "4px" } }, ["▸ offered now   · not now (its condition doesn't hold)"]));
+    box.append(el("div", { className: "cw-dim", style: { marginTop: "4px" } }, ["▸ offered now   · not now (its condition doesn't hold)"]));
+  }
+
+  /** Close the editor and start a dialogue (the one picked here). @param {string} [id] */
+  function test(id) {
+    const d = id ?? (Cutaway.dialog.ids().includes(sel) ? sel : Cutaway.dialog.ids()[0]);
+    if (!d) return;
+    E.close();
+    Cutaway.script.run({ dialog: d });
   }
 
   E.tab({ id: "dialogue", label: "Dialogue", build });
+  E.modules.dialogue = { test, get selected() { return sel || Cutaway.dialog.ids()[0] || ""; } };
 })();
