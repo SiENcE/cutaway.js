@@ -1,0 +1,21 @@
+{
+  "name": "cutaway.js",
+  "version": "0.1.0",
+  "description": "A point-and-click adventure engine for the web: plain scripts, pixel-perfect, runs from file://",
+  "license": "MIT",
+  "author": "SiENcE",
+  "private": true,
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node tests/run.mjs",
+    "validate": "node tools/validate.mjs demo/index.html",
+    "solve": "node tools/solve.mjs demo/index.html --full",
+    "play": "node tools/play.mjs demo/index.html",
+    "shot": "node tools/shot.mjs",
+    "studio": "node tools/studio.mjs demo/index.html --root .",
+    "help": "node tools/build-editor-help.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

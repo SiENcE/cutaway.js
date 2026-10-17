@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cutaway.js music lab</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; background: #15121f; color: #e8e4f4; margin: 20px; }
+  h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 14px; margin: 18px 0 6px; color: #ffd36a; }
+  button { background: #2c2640; color: #fff; border: 1px solid #4a4266; border-radius: 4px; padding: 5px 10px; margin: 2px; cursor: pointer; }
+  button.on { background: #f2d04a; color: #1a1426; border-color: #f2d04a; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  #pos { font: 600 22px ui-monospace, monospace; margin: 10px 0; }
+  .meter { display: inline-block; width: 120px; height: 10px; background: #2c2640; margin: 0 8px 0 4px; vertical-align: middle; }
+  .meter i { display: block; height: 100%; background: #6ae0e0; }
+  .err { color: #ff6a5a; } .ok { color: #9ce870; } small { color: #9a94b4; }
+  .beats span { display: inline-block; width: 18px; height: 18px; margin: 2px; background: #2c2640; border-radius: 3px; }
+  .beats span.on { background: #ff8ac0; }
+</style>
+</head>
+<body>
+<h1>Cutaway.js music lab</h1>
+<small>Plays the scores of a game live. Default: the engine demo's scores. Others: <code>?score=../../../game/music.js</code>
+(from a game's lib/cutaway/tools/; comma-separated, relative to this page).</small>
+<div id="pos">click a theme to start</div>
+<div class="beats" id="beats"></div>
+<h2>Themes</h2><div class="row" id="themes"></div>
+<h2>Sections <small>(change at the next jump point)</small></h2><div class="row" id="sections"></div>
+<h2>Intensity</h2>
+<div class="row"><input type="range" id="intensity" min="0" max="1" step="0.05" value="0.5" style="width:300px"> <span id="ival">0.50</span></div>
+<div id="layers"></div>
+<h2>Stingers</h2><div class="row" id="stingers"></div>
+<h2>Export</h2>
+<div class="row"><button id="render">Render 30 s of the current theme to WAV</button> <span id="rstat"></span></div>
+<h2>Score check</h2><div id="check"></div>
+
+<script>
+"use strict";
+(function () {
+  const params = new URLSearchParams(location.search);
+  const $ = (id) => document.getElementById(id);
+  // The engine sits in ../src/ (engine repo) or right above this folder (a game's lib/cutaway/).
+  const ENGINE = ["core.js", "audio.js", "music/synth.js", "music/sequencer.js", "music/score.js", "music/director.js"];
+  const load = (src) => new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = ok; s.onerror = () => { s.remove(); fail(new Error(src)); };
+    document.body.appendChild(s);
+  });
+  (async () => {
+    let base = "../src/";
+    try { await load(base + ENGINE[0]); } catch { base = "../"; await load(base + ENGINE[0]); }
+    for (const f of ENGINE.slice(1)) await load(base + f);
+    // a score file may refer to actors (voice profiles): give it an empty actor list
+    window.Cutaway.actors = window.Cutaway.actors ?? { get: () => null, all: () => [] };
+    const files = (params.get("score") ?? "../demo/music.js").split(",").filter(Boolean);
+    for (const f of files) {
+      try { await load(f); } catch { $("check").innerHTML += `<div class="err">could not load ${f}</div>`; }
+    }
+    ready();
+  })();
+
+  function button(parent, label, fn) { const b = document.createElement("button"); b.textContent = label; b.onclick = fn; parent.appendChild(b); return b; }
+
+  function ready() {
+    Cutaway.audio.hook();
+    Cutaway.music.init();
+    for (const id of Cutaway.score.ids()) button($("themes"), id, () => Cutaway.music.set({ theme: id, intensity: Number($("intensity").value) }));
+    for (const id of Cutaway.score.stingerIds()) button($("stingers"), id, () => Cutaway.music.stinger(id));
+    $("intensity").oninput = (e) => { $("ival").textContent = Number(e.target.value).toFixed(2); Cutaway.music.set({ intensity: Number(e.target.value) }); };
+    const out = [];
+    for (const id of Cutaway.score.ids()) {
+      const p = Cutaway.score.check(id);
+      out.push(p.length ? `<div class="err">${id}: ${p.join("; ")}</div>` : `<div class="ok">${id}: fine</div>`);
+    }
+    for (const id of Cutaway.score.stingerIds()) {
+      const p = Cutaway.score.checkStinger(id);
+      if (p.length) out.push(`<div class="err">stinger ${id}: ${p.join("; ")}</div>`);
+    }
+    $("check").innerHTML = out.join("");
+    $("render").onclick = async () => {
+      const theme = Cutaway.music.state.theme ?? Cutaway.score.ids()[0];
+      $("rstat").textContent = "rendering...";
+      const buf = await Cutaway.music.render({ seconds: 30, steps: [{ at: 0, set: { theme, intensity: Number($("intensity").value) } }] });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([Cutaway.music.wav(buf)], { type: "audio/wav" }));
+      a.download = theme + ".wav"; a.click();
+      $("rstat").textContent = "done";
+    };
+    requestAnimationFrame(show);
+  }
+
+  let shownTheme = "";
+  function show() {
+    const s = Cutaway.music.state, p = s.playing;
+    if (p) {
+      const t = Cutaway.score.get(p.theme), spb = t.stepsPerBeat ?? 4, bpb = t.beatsPerBar ?? 4;
+      $("pos").textContent = `${p.theme} / ${p.section}   bar ${p.bar + 1}/${t.sections[p.section].bars}   beat ${Math.floor(p.step / spb) + 1}/${bpb}   ${t.tempo} bpm, ${t.key ?? "C"}`;
+      $("beats").innerHTML = [...Array(bpb)].map((_, i) => `<span class="${i === Math.floor(p.step / spb) ? "on" : ""}"></span>`).join("");
+      if (shownTheme !== p.theme) {
+        shownTheme = p.theme;
+        $("sections").innerHTML = "";
+        for (const sec of Object.keys(t.sections)) button($("sections"), sec, () => Cutaway.music.set({ theme: p.theme, section: sec }));
+      }
+      for (const b of $("sections").children) b.classList.toggle("on", b.textContent === p.section);
+    }
+    for (const b of $("themes").children) b.classList.toggle("on", b.textContent === s.theme);
+    $("layers").innerHTML = Object.entries(s.layers).map(([k, v]) => `${k}<span class="meter"><i style="width:${v * 100}%"></i></span>`).join("");
+    requestAnimationFrame(show);
+  }
+})();
+</script>
+</body>
+</html>

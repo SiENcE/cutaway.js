@@ -1,0 +1,17 @@
+{
+  "write": ["demo/layers"],
+  "layers": {
+    "room": "demo/layers/{id}.geo.js",
+    "texts": "demo/layers/{lang}.texts.js",
+    "edits": "demo/layers/edits.js",
+    "sounds": "demo/layers/sounds.edit.js",
+    "art": "demo/layers/art",
+    "artAtlas": "demo/layers/imported.js",
+    "audio": "demo/layers/audio.js"
+  },
+  "tasks": {
+    "validate": ["node", "tools/validate.mjs", "demo/index.html"],
+    "solve": ["node", "tools/solve.mjs", "demo/index.html", "--full"],
+    "play": ["node", "tools/play.mjs", "demo/index.html"]
+  }
+}

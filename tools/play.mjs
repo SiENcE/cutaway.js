@@ -1,0 +1,130 @@
+// Headless playthrough: solve the game in Node, then replay the winning path in Chrome through real
+// mouse clicks (hotspots, portraits, the satchel, dialogue lines) on a manual clock. A title screen is
+// passed with "new game", the hint button is tried once, and the end card goes back to the title.
+//   node tools/play.mjs <index.html> [--path path.json] [--max states] [--shots dir] [--touch] [--size 844x390] [--dpr 3]
+// Must end with "all passed". --shots saves a screenshot after every move. --touch plays it like a
+// phone: a mobile viewport, taps for clicks and long presses for looks.
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { launch } from "./lib/chrome.mjs";
+import { loadGame } from "./lib/game.mjs";
+import { makeSolver, describe } from "./lib/solver.mjs";
+
+const args = process.argv.slice(2), page = args.find((a, i) => !a.startsWith("--") && !["--path", "--shots", "--size", "--dpr", "--max"].includes(args[i - 1]));
+if (!page) { console.error("usage: node tools/play.mjs <index.html> [--path path.json] [--shots dir] [--touch] [--size WxH] [--dpr n]"); process.exit(2); }
+const touch = args.includes("--touch");
+const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
+
+let path;
+if (opt("--path")) path = JSON.parse(readFileSync(opt("--path"), "utf8"));
+else {
+  const r = await (await makeSolver(loadGame(page))).search({ maxStates: Number(opt("--max") ?? 100000) });
+  if (!r.solved) { console.log("FAIL  the solver found no way to the end"); process.exit(1); }
+  path = r.path;
+}
+const shots = opt("--shots");
+if (shots) mkdirSync(shots, { recursive: true });
+
+const HELPERS = `window.__play = {
+  ended: false,
+  idle() { return !Cutaway.script.busy && !Cutaway.ui.line && Cutaway.scene.actorsHere().every((a) => a.state !== "walk" && !a.onceDone); },
+  async step(ms) { Cutaway.clock.advance(ms); await new Promise((r) => setTimeout(r, 0)); },
+  // run the clock until choices or a card show, the game ends or everything is quiet
+  async run(max = 3000) {
+    for (let i = 0, quiet = 0; i < max; i++) {
+      if (Cutaway.dialogs.choices) return "choices";
+      if (this.ended) return "ended";
+      if (Cutaway.menu.card) return "card";
+      await this.step(100);
+      quiet = this.idle() ? quiet + 1 : 0;
+      if (quiet >= 3) return "idle";
+    }
+    return "timeout";
+  },
+};
+Cutaway.events.on("game.end", () => { __play.ended = true; });`;
+
+const [W, H] = (opt("--size") ?? (touch ? "844x390" : "960x540")).split("x").map(Number);
+const chrome = await launch({ width: W, height: H, dpr: Number(opt("--dpr") ?? (touch ? 3 : 1)), touch });
+let failed = 0;
+const check = (name, ok, detail = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}${!ok && detail ? "  — " + detail : ""}`); if (!ok) failed++; };
+const point = async (expr) => { const p = await chrome.ev(expr); if (!p) throw new Error("nothing to click: " + expr); return p; };
+// run, clicking cards away (act titles, the end card) as a player would
+const settle = async () => {
+  let state = await chrome.ev("__play.run()");
+  for (let n = 0; state === "card" && n < 20; n++) { await click({ x: 160, y: 90 }); state = await chrome.ev("__play.run()"); }
+  return state;
+};
+const click = async (p, kind = "click") => {
+  const x = Math.round(p.x), y = Math.round(p.y);
+  if (!touch) await chrome.mouse(kind, x, y);
+  else if (kind === "rclick") await chrome.hold(x, y);
+  else await chrome.tap(x, y);
+  await chrome.ev("__play.step(0)");
+};
+
+try {
+  await chrome.open(pathToFileURL(resolve(page)).href + "?manual");
+  await chrome.ev("localStorage.clear()");
+  await chrome.ev(HELPERS);
+  if (await chrome.ev("Cutaway.acts.titleOpen")) {
+    await chrome.ev("__play.step(600)");
+    const rows = await chrome.ev("Cutaway.menu.rows");
+    check("title screen: " + (rows ?? []).join(" / "), Array.isArray(rows) && rows.length > 0);
+    await click(await chrome.ev("Cutaway.menu.rowPoint(0)"));             // new game
+  }
+  check("starts", (await settle()) !== "timeout");
+  if (await chrome.ev("Cutaway.hints.any()")) {
+    const p = await chrome.ev(`Cutaway.ui.buttonPoint("hint")`);
+    if (p) await click(p);
+    await chrome.ev("__play.step(100)");
+    const line = await chrome.ev("Cutaway.ui.line?.text ?? null");
+    check("hint button: " + JSON.stringify(line), !!p && !!line);
+    check("  (after the hint)", (await settle()) !== "timeout");
+  }
+  for (const [n, m] of path.entries()) {
+    const name = `${String(n + 1).padStart(2)}. ${describe(m)}`;
+    try {
+      if (m.kind === "switch") await click(await point(`Cutaway.party.portraitPoint(${JSON.stringify(m.id)})`));
+      else if (m.kind === "act" || m.kind === "look") await click(await point(`Cutaway.debug.pointOn(${JSON.stringify(m.id)})`), m.kind === "look" ? "rclick" : "click");
+      else {
+        await click(await point("Cutaway.inventory.bagCentre()"));
+        await chrome.ev("__play.step(400)");
+        const first = m.kind === "combine" ? m.a : m.item;
+        await click(await point(`Cutaway.inventory.cellOf(${JSON.stringify(first)})`), m.kind === "ilook" ? "rclick" : "click");
+        if (m.kind === "combine") await click(await point(`Cutaway.inventory.cellOf(${JSON.stringify(m.b)})`));
+        if (m.kind === "with") {
+          if (!touch) await chrome.mouse("move", 160, 120);      // leave the bar, which then slides up
+          await chrome.ev("__play.step(400)");
+          await click(await point(`Cutaway.debug.pointOn(${JSON.stringify(m.id)})`));
+        }
+      }
+      let state = await settle(), used = 0;
+      while (state === "choices") {
+        if (used >= (m.choices ?? []).length) throw new Error("more dialogue choices than the solver planned");
+        await click(await chrome.ev(`Cutaway.dialogs.choicePoint(${m.choices[used++]})`));
+        state = await settle();
+      }
+      check(name, state !== "timeout" && used === (m.choices ?? []).length, state);
+    } catch (e) {
+      check(name, false, String(e.message || e));
+      break;
+    }
+    if (shots) { await chrome.ev("__play.step(0)"); writeFileSync(join(shots, `move_${String(n + 1).padStart(2, "0")}.png`), await chrome.screenshot()); }
+  }
+  check("reaches the end", await chrome.ev("__play.ended"));
+  if (await chrome.ev("!!Cutaway.menu.card")) {                // the end card waits for a click (or a button)
+    if (shots) { await chrome.ev("__play.step(0)"); writeFileSync(join(shots, "end_card.png"), await chrome.screenshot()); }
+    const buttons = await chrome.ev("Cutaway.menu.cardButtons") ?? [];
+    check("end card: " + JSON.stringify(await chrome.ev("Cutaway.menu.card")) + (buttons.length ? " [" + buttons.join(" | ") + "]" : ""), true);
+    await click(buttons.length ? await chrome.ev(`Cutaway.menu.cardButtonPoint(${buttons.length - 1})`) : { x: 160, y: 90 });
+    for (let i = 0; i < 30 && !(await chrome.ev("Cutaway.acts.titleOpen || !Cutaway.acts.hasTitle")); i++) await chrome.ev("__play.step(100)");
+    if (await chrome.ev("Cutaway.acts.hasTitle")) check("back to the title screen", await chrome.ev("Cutaway.acts.titleOpen && !!Cutaway.menu.rows"));
+  }
+  check("no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
+} finally {
+  await chrome.close();
+}
+console.log(failed ? `${failed} failed` : "all passed");
+process.exitCode = failed ? 1 : 0;
