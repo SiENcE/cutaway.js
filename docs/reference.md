@@ -142,7 +142,7 @@ A script is a list of steps, run one after another. A plain string is a line for
 | `{ narrate: "Meanwhile..." }` | a line at the top |
 | `{ walk: [x, y] }`, `{ walk: "bolt", to: [x, y], face, run: true, wait: false }` | walk (`wait: false`: the script goes on) |
 | `{ face: "left" }`, `{ face: "bolt", to: "up" }` | turn |
-| `{ anim: "bolt:reach" }` | play a costume animation once |
+| `{ anim: "bolt:reach" }`, `{ anim: "bolt:reach", wait: false }` | play a costume animation once (`wait: false`: the script goes on) |
 | `{ wait: 500 }` | ms |
 | `{ give: "key" }`, `{ give: "key", to: "bolt" }`, `{ take: "key" }`, `{ remove: "key" }` | items (`take` also hides the hotspot) |
 | `{ set: "flag" }`, `{ set: "n", value: 3 }`, `{ unset }`, `{ inc: "n", by: 1 }` | flags |
@@ -179,7 +179,11 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
 ```
 
 - A new game begins the first act from a clean state: its `start` steps, its card, its room.
-  `{ act: "next" }` goes on. The act is in the save; acts begun once can be chosen on the title screen.
+  `{ act: "next" }` goes on (after the last act, the game ends). The act is in the save; acts begun once
+  can be chosen on the title screen.
+- `fresh: true`: the act begins from a clean state also when the one before goes on into it. Its `start`
+  gives what it carries over, so it is the same act from the title screen and after the act before
+  (and the solver sees one state where it begins).
 - `title` (start option) puts a title screen first, over a room shown as a backdrop: new game,
   continue (the newest save), acts, load, settings, fullscreen, quit.
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"
@@ -195,7 +199,8 @@ Cutaway.hints([
 ```
 
 The first hint whose `if` holds is the one for now; each ask (the bulb by the satchel, H, the pause
-menu) shows the next, plainer line. `solve.mjs --full` checks that every state from which the end can
+menu) shows the next, plainer line. A game in acts can give an act its own hints,
+`Cutaway.hints([...], { act: "act2" })`: they count only while that act is played. `solve.mjs --full` checks that every state from which the end can
 still be reached has a hint, and that its `about` (hotspots, actors, items) is still needed.
 
 ## Light and effects

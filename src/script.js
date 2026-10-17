@@ -99,10 +99,11 @@ Cutaway.script = (function () {
     walk,
     /** { face: "left" } or { face: "actor", to: "left" } @param {Record<string, any>} s */
     face: (s) => { "to" in s ? actorOf(s.face).face(s.to) : actorOf().face(s.face); },
-    /** { anim: "actor:costumeKey" } or { anim: "costumeKey" } plays it once @param {Record<string, any>} s */
+    /** { anim: "actor:costumeKey" } or { anim: "costumeKey" } plays it once (wait: false: the script goes on meanwhile) @param {Record<string, any>} s */
     anim: (s) => {
       const [who, k] = String(s.anim).includes(":") ? String(s.anim).split(":") : [undefined, String(s.anim)];
-      return actorOf(who).playOnce(k);
+      const done = actorOf(who).playOnce(k);
+      return s.wait === false ? undefined : done;
     },
     /** @param {Record<string, any>} s */
     wait: (s) => Cutaway.clock.wait(Number(s.wait) || 0),

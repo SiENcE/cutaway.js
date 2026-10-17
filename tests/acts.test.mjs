@@ -41,6 +41,11 @@ export default async function (t) {
     const c = await demo();
     await ride(c.C);
     t.ok("acts: with no act after it, the game ends", c.run.ended);
+    // a fresh act forgets the act before it: only what its start gives comes along
+    const d = await demo((C) => C.act("act2", { room: "yard", actor: "bolt", fresh: true, start: [{ set: "night" }] }));
+    d.C.state.set("got_key");
+    await ride(d.C);
+    t.ok("acts: a fresh act begins clean after the one before", d.C.acts.current === "act2" && d.C.state.flag("night") && !d.C.state.flag("got_key"));
   }
   {
     const { C } = await demo();
@@ -50,6 +55,12 @@ export default async function (t) {
     C.state.set("got_key");
     await C.hints.ask();
     t.ok("hints: asking again gets clearer, a new hint starts over", lines.join(" ") === "0.0 0.1 0.2 0.2 1.0", lines.join(" "));
+    // an act's own hints count only while it is played, before the game's others
+    const all = C.hints.all();
+    C.hints([{ text: "Night hint." }], { act: "act2" });
+    t.ok("hints: an act's hints wait for their act", C.hints.all().length === all.length + 1 && C.hints.current() !== C.hints.all()[all.length]);
+    C.hints([{ text: "Night hint, again." }], { act: "act2" });
+    t.ok("hints: giving an act its hints again replaces only them", C.hints.all().length === all.length + 1 && C.hints.all()[all.length].text === "Night hint, again.");
   }
   {
     const errorsOf = async (patch, opts) => {

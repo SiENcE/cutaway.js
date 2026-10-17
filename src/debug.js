@@ -121,8 +121,26 @@ Cutaway.debug = (function () {
     return null;
   }
 
+  /**
+   * For a hotspot out of view in a room wider than the screen: a point on the walkable floor at the
+   * screen's edge on its side, where a click walks the played actor (and the camera) towards it; null
+   * when it is in view or there's no floor there. For tools and headless playthroughs.
+   * @param {string} id
+   * @returns {{x: number, y: number} | null}
+   */
+  function towards(id) {
+    const h = Cutaway.scene.hotspots().find((q) => q.id === id), map = Cutaway.scene.walkMap;
+    if (!h || !map) return null;
+    const xs = h.poly.map((p) => p.x), W = Cutaway.display.width, H = Cutaway.display.height;
+    const left = Cutaway.scene.toScreen(Math.max(...xs), 0).x < 2, right = Cutaway.scene.toScreen(Math.min(...xs), 0).x >= W - 2;
+    if (!left && !right) return null;
+    const sx = left ? 3 : W - 4;
+    for (let sy = H - 3; sy >= 30; sy--) if (map.inside(Cutaway.scene.toWorld(sx, sy))) return { x: sx, y: sy };
+    return null;
+  }
+
   return {
-    world, screen, settle, pointOn,
+    world, screen, settle, pointOn, towards,
     get on() { return on; },
     /** @param {boolean} [v] */
     toggle(v) { on = v ?? !on; },

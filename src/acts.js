@@ -3,9 +3,10 @@
 // A game is a row of acts, in the order they are defined. An act begins with its `start` steps (place
 // the actors, lock party members, set flags), its title card, then its room. A new game begins its first
 // act from an empty state: no flags, the actors where their data puts them, the party as it started.
-// The step { act: "next" } (or { act: "act2" }) ends the act being played and begins that one. The act
-// being played is in the save; acts begun once stay unlocked (in localStorage, like the settings) and
-// can be started from the title screen.
+// The step { act: "next" } (or { act: "act2" }) ends the act being played and begins that one; after the
+// last act it ends the game (the "end.text" card). An act with `fresh: true` begins from a clean state
+// even then, and its `start` gives what it carries over. The act being played is in the save; acts
+// begun once stay unlocked (in localStorage, like the settings) and can be started from the title screen.
 // The end: { end: "Thanks for playing!" } shows a card and emits "game.end". A demo
 // (Cutaway.start({ demo: { acts: ["act1"], link: "https://...", text: "..." } })) ends where it
 // would go on to an act that isn't in it (or isn't made yet): the "end of the demo" card, with a button
@@ -23,6 +24,9 @@
  * @property {string} [title]    the card's heading ("Act 1")
  * @property {string} [name]     the card's text, the act's name ("The Hall")
  * @property {Script} [start]    steps before the card and the room: place actors, lock members, set flags
+ * @property {boolean} [fresh]   always begin from a clean state, also when the act before goes on into it:
+ *                               what it carries over, its `start` gives (the same act from the title screen
+ *                               and from the end of the one before, and one state for the solver)
  */
 /**
  * @typedef {object} TitleOptions
@@ -111,7 +115,7 @@ Cutaway.acts = (function () {
     if (!a) throw new Error(`Cutaway: no act "${id}"`);
     titleOpen = false;
     if (Cutaway.scene.room) await Cutaway.fx.transition("out");     // (at start-up there is nothing to fade)
-    if (o.fresh) reset();
+    if (o.fresh || a.fresh) reset();
     current = id;
     unlock(id);
     Cutaway.events.emit("act", { id });
@@ -248,7 +252,9 @@ Cutaway.acts = (function () {
         const ids = Cutaway.act.ids();
         const next = s.act === "next" ? ids[ids.indexOf(current ?? "") + 1] : s.act;
         if (next && available(next)) return begin(next);
-        return Cutaway.script.exec({ end: demo?.text ?? "@cutaway.demo.text", demo: true }, ctx);
+        // a demo ends where it lacks the next act; a game without one ends after its last act
+        if (!demo) return Cutaway.script.exec({ end: "@cutaway.end.text" }, ctx);
+        return Cutaway.script.exec({ end: demo.text ?? "@cutaway.demo.text", demo: true }, ctx);
       });
       Cutaway.script.action("end", (s) => end(s.end, !!s.demo));
     },

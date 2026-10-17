@@ -50,6 +50,15 @@ const chrome = await launch({ width: W, height: H, dpr: Number(opt("--dpr") ?? (
 let failed = 0;
 const check = (name, ok, detail = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}${!ok && detail ? "  — " + detail : ""}`); if (!ok) failed++; };
 const point = async (expr) => { const p = await chrome.ev(expr); if (!p) throw new Error("nothing to click: " + expr); return p; };
+// a hotspot out of view in a wide room: walk towards it along the floor, as a player would, until it shows
+const reach = async (id) => {
+  for (let n = 0; n < 12 && !(await chrome.ev(`Cutaway.debug.pointOn(${JSON.stringify(id)})`)); n++) {
+    const p = await chrome.ev(`Cutaway.debug.towards(${JSON.stringify(id)})`);
+    if (!p) break;
+    await click(p);
+    await settle();
+  }
+};
 // run, clicking cards away (act titles, the end card) as a player would
 const settle = async () => {
   let state = await chrome.ev("__play.run()");
@@ -87,8 +96,9 @@ try {
     const name = `${String(n + 1).padStart(2)}. ${describe(m)}`;
     try {
       if (m.kind === "switch") await click(await point(`Cutaway.party.portraitPoint(${JSON.stringify(m.id)})`));
-      else if (m.kind === "act" || m.kind === "look") await click(await point(`Cutaway.debug.pointOn(${JSON.stringify(m.id)})`), m.kind === "look" ? "rclick" : "click");
+      else if (m.kind === "act" || m.kind === "look") { await reach(m.id); await click(await point(`Cutaway.debug.pointOn(${JSON.stringify(m.id)})`), m.kind === "look" ? "rclick" : "click"); }
       else {
+        if (m.kind === "with") await reach(m.id);
         await click(await point("Cutaway.inventory.bagCentre()"));
         await chrome.ev("__play.step(400)");
         const first = m.kind === "combine" ? m.a : m.item;

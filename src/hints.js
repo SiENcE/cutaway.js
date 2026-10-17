@@ -3,13 +3,14 @@
 //     { if: "!got_key", about: "shelf", text: ["Something up high?", "Bolt is tall.", "Play Bolt, use the shelf."] },
 //     { if: "!door_open", about: ["door", "key"], text: "The key fits the door." },
 //   ])
-// The first hint whose `if` holds is the one for now. Asking again (the bulb button beside the satchel,
+// The first hint whose `if` holds is the one for now. A game in acts can give an act its own hints,
+// which count only while that act is played: Cutaway.hints([...], { act: "act2" }). Asking again (the bulb button beside the satchel,
 // H, or "Hint" in the pause menu) shows its next, clearer line; a new hint starts at its first line.
 // `solve.mjs --full` checks every state from which the end can still be reached: a hint must hold there,
 // and its `about` (hotspot, actor or item ids, or "room/hotspot") must still be on the way to the end.
 "use strict";
 
-/** @typedef {{if?: Cond, about?: string | string[], text: string | string[]}} HintDef */
+/** @typedef {{if?: Cond, about?: string | string[], text: string | string[], act?: string}} HintDef */
 
 Cutaway.hints = (function () {
   /** @type {HintDef[]} */
@@ -17,13 +18,19 @@ Cutaway.hints = (function () {
   let lastIx = -1, level = 0;
 
   /**
-   * Set the game's hints, in order: the first that holds is shown.
+   * Set the game's hints, in order: the first that holds is shown. With `act`, they are that act's
+   * hints (replacing only its own): they count only while it is played.
    * @param {HintDef[]} defs
+   * @param {{act?: string}} [o]
    */
-  function hints(defs) { list = defs.slice(); lastIx = -1; level = 0; }
+  function hints(defs, o = {}) {
+    const own = defs.map((h) => (o.act ? { ...h, act: o.act } : h));
+    list = o.act ? [...list.filter((h) => h.act !== o.act), ...own] : own;
+    lastIx = -1; level = 0;
+  }
 
   /** The index of the hint for now, or -1. */
-  function currentIndex() { return list.findIndex((h) => Cutaway.state.test(h.if)); }
+  function currentIndex() { return list.findIndex((h) => (!h.act || h.act === Cutaway.acts.current) && Cutaway.state.test(h.if)); }
 
   /** Show the hint for now (the next line of it, when asked again). */
   hints.ask = function () {
