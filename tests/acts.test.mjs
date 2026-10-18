@@ -46,6 +46,13 @@ export default async function (t) {
     d.C.state.set("got_key");
     await ride(d.C);
     t.ok("acts: a fresh act begins clean after the one before", d.C.acts.current === "act2" && d.C.state.flag("night") && !d.C.state.flag("got_key"));
+    // ... except the flags it keeps, and those only when the act before goes on into it
+    const e = await demo((C) => C.act("act2", { room: "yard", actor: "bolt", fresh: true, keep: ["got_key", "lamp_lit"] }));
+    e.C.state.set("got_key"); e.C.state.set("bulb_clean");
+    await ride(e.C);
+    t.ok("acts: a fresh act keeps the flags it lists", e.C.state.flag("got_key") === true && !e.C.state.flag("bulb_clean") && !("lamp_lit" in e.C.state.snapshot().flags));
+    await e.C.acts.begin("act2", { fresh: true });
+    t.ok("acts: started anew, a fresh act keeps nothing", !e.C.state.flag("got_key"));
   }
   {
     const { C } = await demo();

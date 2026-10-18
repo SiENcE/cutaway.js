@@ -184,6 +184,8 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
 - `fresh: true`: the act begins from a clean state also when the one before goes on into it. Its `start`
   gives what it carries over, so it is the same act from the title screen and after the act before
   (and the solver sees one state where it begins).
+  `keep: ["photo"]` lists flags that do come along when the act before goes on into it (an optional
+  deed that pays off later); a start from the title screen or the acts menu leaves them unset.
 - `title` (start option) puts a title screen first, over a room shown as a backdrop: new game,
   continue (the newest save), acts, load, settings, fullscreen, quit.
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"

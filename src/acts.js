@@ -5,7 +5,8 @@
 // act from an empty state: no flags, the actors where their data puts them, the party as it started.
 // The step { act: "next" } (or { act: "act2" }) ends the act being played and begins that one; after the
 // last act it ends the game (the "end.text" card). An act with `fresh: true` begins from a clean state
-// even then, and its `start` gives what it carries over. The act being played is in the save; acts
+// even then, and its `start` gives what it carries over; `keep: ["flag"]` lists flags that come along
+// when the act before goes on into it (not when it is started from the title screen). The act being played is in the save; acts
 // begun once stay unlocked (in localStorage, like the settings) and can be started from the title screen.
 // The end: { end: "Thanks for playing!" } shows a card and emits "game.end". A demo
 // (Cutaway.start({ demo: { acts: ["act1"], link: "https://...", text: "..." } })) ends where it
@@ -27,6 +28,8 @@
  * @property {boolean} [fresh]   always begin from a clean state, also when the act before goes on into it:
  *                               what it carries over, its `start` gives (the same act from the title screen
  *                               and from the end of the one before, and one state for the solver)
+ * @property {string[]} [keep]   with `fresh`: flags that come along when the act before goes on into this one
+ *                               (an optional deed that pays off later); started from the title, they're unset
  */
 /**
  * @typedef {object} TitleOptions
@@ -115,7 +118,10 @@ Cutaway.acts = (function () {
     if (!a) throw new Error(`Cutaway: no act "${id}"`);
     titleOpen = false;
     if (Cutaway.scene.room) await Cutaway.fx.transition("out");     // (at start-up there is nothing to fade)
+    // flags a fresh act keeps from the act before (not on a new game or a start from the title)
+    const kept = !o.fresh && a.fresh ? (a.keep ?? []).filter((f) => Cutaway.state.flag(f) !== undefined).map((f) => [f, Cutaway.state.flag(f)]) : [];
     if (o.fresh || a.fresh) reset();
+    for (const [f, v] of kept) Cutaway.state.set(f, v);
     current = id;
     unlock(id);
     Cutaway.events.emit("act", { id });
