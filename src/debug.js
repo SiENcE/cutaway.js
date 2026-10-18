@@ -91,6 +91,7 @@ Cutaway.debug = (function () {
       Cutaway.scene.actorsHere().every((a) => a.state !== "walk" && !a.onceDone);
     for (let quiet = 0; quiet < 3 && Cutaway.clock.time - start < maxMs;) {
       Cutaway.clock.advance(100);
+      if (Cutaway.ui.line?.waiting) Cutaway.ui.skip();     // the player's setting: lines wait for a click
       await new Promise((r) => setTimeout(r, 0));
       quiet = idle() ? quiet + 1 : 0;
     }

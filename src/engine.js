@@ -93,7 +93,7 @@ Cutaway.start = async function (o = {}) {
 
   // { shake: ms } jolts the room (not the interface) by a pixel or two
   let shakeUntil = 0;
-  Cutaway.events.on("shake", (ms) => { shakeUntil = Cutaway.clock.time + (Number(ms) || 300); });
+  Cutaway.events.on("shake", (ms) => { if (Cutaway.settings.values.motion) shakeUntil = Cutaway.clock.time + (Number(ms) || 300); });
 
   Cutaway.clock.onUpdate((dt) => Cutaway.scene.update(dt));
   Cutaway.clock.onRender(() => {

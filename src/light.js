@@ -37,6 +37,8 @@
 
 Cutaway.light = (function () {
   const CELL = 2;
+  /** the player's setting: lamps burn steady (no flicker) */
+  let calm = false;
   /** @type {Map<string, [number, number, number]>} */
   const rgbCache = new Map();
   /** @type {{w: number, h: number, dark: HTMLCanvasElement, bright: HTMLCanvasElement, copy: HTMLCanvasElement, tint: HTMLCanvasElement, over: HTMLCanvasElement, key: string, any: boolean} | null} */
@@ -73,7 +75,7 @@ Cutaway.light = (function () {
    * @param {LampDef} l @param {number} i lamp index (seeds the noise) @param {number} t ms
    */
   function flicker(l, i, t) {
-    if (!l.flicker) return 1;
+    if (!l.flicker || calm) return 1;
     const n = Math.floor(t * (l.rate ?? 10) / 1000);
     // mostly small wobbles with the odd deeper dip, like a real bulb or flame
     const a = noise(n, i + 1), b = noise(n >> 2, i + 101);
@@ -261,6 +263,8 @@ Cutaway.light = (function () {
 
   return {
     sample, render, drawTinted, flicker, dynamic, rgb,
+    /** Steady lamps for players who'd rather have no flicker (Cutaway.settings). @param {boolean} v */
+    setCalm(v) { calm = v; },
     /** The current room's light definition. */
     get room() { return def(); },
   };

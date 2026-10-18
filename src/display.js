@@ -2,6 +2,9 @@
 // The visible canvas covers the whole window at device-pixel resolution; the buffer is drawn into it
 // at the largest whole-number scale that fits, centred on whole device pixels, with nearest
 // filtering. No CSS scaling is involved, so every logical pixel becomes an exact square.
+// Players may choose to fill the window instead (`setFit("fill")`: the largest scale that fits, not
+// a whole number) and an old screen's look (`setCrt`: "scanlines", or "crt" with a shadow mask, a
+// vignette and round corners), drawn over the picture from one overlay made on every resize.
 "use strict";
 
 Cutaway.display = (function () {
@@ -15,6 +18,12 @@ Cutaway.display = (function () {
   let ctx;
   let width = 320, height = 180, scale = 1, offX = 0, offY = 0, dpr = 1;
   let border = "#000", maxScale = Infinity, fixedScale = 0;
+  /** @type {"sharp" | "fill"} */
+  let fit = "sharp";
+  /** @type {"off" | "scanlines" | "crt"} */
+  let crt = "off";
+  /** @type {HTMLCanvasElement | null} the old screen's look, made for the current size */
+  let overlay = null;
   /** CSS pixels kept free on each side (the editor's panels); the picture fits into the rest. */
   let reserved = { left: 0, top: 0, right: 0, bottom: 0 };
 
@@ -66,9 +75,11 @@ Cutaway.display = (function () {
     const l = Math.round(reserved.left * dpr), t = Math.round(reserved.top * dpr);
     const aw = Math.max(1, dw - l - Math.round(reserved.right * dpr)), ah = Math.max(1, dh - t - Math.round(reserved.bottom * dpr));
     screen.width = dw; screen.height = dh;
-    scale = fixedScale || Math.max(1, Math.min(maxScale, Math.floor(Math.min(aw / width, ah / height))));
+    const most = Math.min(maxScale, aw / width, ah / height);
+    scale = fixedScale || (fit === "fill" && !reserved.left && !reserved.right ? Math.max(1, most) : Math.max(1, Math.floor(most)));
     offX = l + Math.floor((aw - width * scale) / 2);
     offY = t + Math.floor((ah - height * scale) / 2);
+    overlay = makeOverlay();
     screenCtx.imageSmoothingEnabled = false;
     Cutaway.events.emit("resize", { scale, width, height });
     present();
@@ -79,7 +90,43 @@ Cutaway.display = (function () {
     screenCtx.fillStyle = border;
     screenCtx.fillRect(0, 0, screen.width, screen.height);
     screenCtx.imageSmoothingEnabled = false;
-    screenCtx.drawImage(buffer, 0, 0, width, height, offX, offY, width * scale, height * scale);
+    const pw = Math.round(width * scale), ph = Math.round(height * scale);
+    screenCtx.drawImage(buffer, 0, 0, width, height, offX, offY, pw, ph);
+    if (overlay) screenCtx.drawImage(overlay, offX, offY);
+  }
+
+  /** The old screen's look for the picture's size now: dark lines between the pixel rows, for "crt" also a shadow mask, a vignette and round corners. */
+  function makeOverlay() {
+    if (crt === "off") return null;
+    const pw = Math.round(width * scale), ph = Math.round(height * scale);
+    const c = document.createElement("canvas");
+    c.width = pw; c.height = ph;
+    const g = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
+    // a dark line at the foot of each logical row: about a third of it, at least one device pixel
+    const dark = Math.max(1, Math.round(scale / 3));
+    g.fillStyle = scale >= 2 ? "rgba(0, 0, 0, 0.32)" : "rgba(0, 0, 0, 0.16)";
+    for (let y = 0; y < height; y++) {
+      const bottom = Math.round((y + 1) * scale);
+      g.fillRect(0, bottom - dark, pw, dark);
+    }
+    if (crt === "crt") {
+      if (scale >= 3) {                                // red, green, blue stripes, as in a shadow mask
+        const tints = ["rgba(255, 60, 60, 0.07)", "rgba(60, 255, 60, 0.05)", "rgba(80, 80, 255, 0.08)"];
+        for (let x = 0; x < pw; x++) { g.fillStyle = tints[x % 3]; g.fillRect(x, 0, 1, ph); }
+      }
+      const r = Math.hypot(pw, ph) / 2, v = g.createRadialGradient(pw / 2, ph / 2, r * 0.55, pw / 2, ph / 2, r);
+      v.addColorStop(0, "rgba(0, 0, 0, 0)");
+      v.addColorStop(1, "rgba(0, 0, 0, 0.42)");
+      g.fillStyle = v;
+      g.fillRect(0, 0, pw, ph);
+      const k = Math.round(Math.min(pw, ph) * 0.03);   // round corners, in the border's colour
+      g.fillStyle = border;
+      g.beginPath();
+      g.rect(0, 0, pw, ph);
+      g.roundRect(0, 0, pw, ph, k);
+      g.fill("evenodd");
+    }
+    return c;
   }
 
   /**
@@ -121,6 +168,10 @@ Cutaway.display = (function () {
         : { left: r.left ?? 0, top: r.top ?? 0, right: r.right ?? 0, bottom: r.bottom ?? 0 };
       resize();
     },
+    /** Whole-number scaling only ("sharp", the default) or fill the window ("fill"). @param {"sharp" | "fill"} v */
+    setFit(v) { if (v !== fit) { fit = v; resize(); } },
+    /** The look of an old screen: "off", "scanlines" or "crt". @param {"off" | "scanlines" | "crt"} v */
+    setCrt(v) { if (v !== crt) { crt = v; overlay = makeOverlay(); present(); } },
     /** What reserve() keeps free now (CSS pixels). */
     get reserved() { return { ...reserved }; },
     /** The low-resolution drawing context. Draw everything here, in whole logical pixels. */
@@ -129,7 +180,7 @@ Cutaway.display = (function () {
     get screen() { return screen; },
     get width() { return width; },
     get height() { return height; },
-    /** Current whole-number scale (device pixels per logical pixel). */
+    /** Current scale (device pixels per logical pixel): a whole number, unless the player fills the window. */
     get scale() { return scale; },
   };
 })();

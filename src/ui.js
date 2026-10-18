@@ -3,7 +3,9 @@
 //   first one it has); on the floor, walk. A double click (or tap) runs. Right click (or a long
 //   press): look at it.
 //   Hovering a hotspot shows its name next to the cursor. Speech appears above the speaker in the
-//   speaker's colour; a click skips the current line.
+//   speaker's colour; a click skips the current line. The player's settings may make lines wait for a
+//   click (a blinking arrow shows when its time is up), put a box behind them, swap what the mouse's
+//   buttons do in the room, make every walk a run, show the touch buttons for the mouse too.
 //   Holding an inventory item: click a hotspot or actor to use the item on it, right click to put
 //   it back.
 //   Touch: a tap acts, holding looks; a finger shows the label of what it is on; taps that miss a
@@ -29,6 +31,9 @@
  * @property {number} [minLineMs]
  * @property {number} [touchReach]    touch: a tap this many pixels off a hotspot still hits it
  * @property {{menu?: string, hotspots?: string, hint?: string}} [buttons]  sprites for the buttons (default: built in)
+ * @property {{outline?: string, light?: string, face?: string, dark?: string, fill?: string, plate?: string, rivet?: string,
+ *   rivetLight?: string, rivetDark?: string, hover?: string}} [frame]  the menu's frame: its bevel (light, face, dark),
+ *   the fill inside, the heading's plate, the fittings at the corners (rivet), the band under the chosen row
  */
 /**
  * A part of the interface drawn over the room.
@@ -43,7 +48,7 @@
 /** @typedef {{id: string, def: HotspotDef, poly: {x: number, y: number}[], actor?: string}} Hotspot */
 
 Cutaway.ui = (function () {
-  /** @type {Required<Omit<Skin, "cursor" | "cursorHot" | "cursorAnchor" | "font" | "buttons">> & Skin} */
+  /** @type {Required<Omit<Skin, "cursor" | "cursorHot" | "cursorAnchor" | "font" | "buttons" | "frame">> & Skin} */
   const skin = { labelColor: "#ffffff", outline: "#1a1426", accent: "#ffe14a", panel: "rgba(20, 16, 32, 0.78)",
     lineWidth: 200, msPerChar: 55, minLineMs: 1400, touchReach: 7 };
 
@@ -52,8 +57,10 @@ Cutaway.ui = (function () {
   /** @type {HTMLCanvasElement | null} */
   let arrow = null;
 
-  /** @type {{actor: InstanceType<typeof Cutaway.actor.Actor> | null, lines: string[], color: string, until: number, done: () => void, since: number} | null} */
+  /** @type {{actor: InstanceType<typeof Cutaway.actor.Actor> | null, lines: string[], color: string, until: number, done: () => void, since: number, waiting?: boolean} | null} */
   let line = null;
+  /** The player's choices (Cutaway.settings): lines wait for a click, a box behind them, ... */
+  const opts = { advance: /** @type {"auto" | "click"} */ ("auto"), textBox: false, swap: false, alwaysRun: false, buttons: false, hintButton: true };
   /** @type {Hotspot | null} */
   let hover = null;
   /** @type {string | null} label from a layer under the pointer */
@@ -205,11 +212,12 @@ Cutaway.ui = (function () {
 
   /** @param {{x: number, y: number, button: number, touch?: boolean, double?: boolean}} p */
   function onClick(p) {
-    running = !!p.double;
+    running = !!p.double || opts.alwaysRun;
     for (const l of sortedLayers()) if (l.modal && l.click?.(p)) return;
     if (line && Cutaway.clock.time - line.since > 120) { finishLine(); return; }   // skip the line
     if (Cutaway.script.busy) return;
     for (const l of sortedLayers()) if (!l.modal && l.click?.(p)) return;
+    if (opts.swap && !p.touch) p = { ...p, button: p.button === 2 ? 0 : 2 };
     const w = Cutaway.scene.toWorld(p.x, p.y), h = hotspotNear(w.x, w.y, p.touch);
     if (held) {
       const item = held;
@@ -224,7 +232,13 @@ Cutaway.ui = (function () {
 
   /** @param {number} dt */
   function update(dt) {
-    if (line && Cutaway.clock.time >= line.until) finishLine();
+    if (line && !line.waiting && Cutaway.clock.time >= line.until) {
+      if (opts.advance !== "click") finishLine();
+      else {                                           // its time is up: stop talking, wait for the player
+        line.waiting = true;
+        if (line.actor && line.actor.state === "talk") line.actor.setState("idle");
+      }
+    }
     for (const l of layers) l.update?.(dt);
   }
 
@@ -302,7 +316,8 @@ Cutaway.ui = (function () {
     const out = [];
     if (!Cutaway.scene.active || Cutaway.script.busy || Cutaway.inventory.openness > 0 || Cutaway.menu.isOpen) return out;
     /** @type {("hint" | "hotspots" | "menu")[]} */
-    const kinds = [...(Cutaway.hints.any() ? /** @type {const} */ (["hint"]) : []), ...(Cutaway.input.touched ? /** @type {const} */ (["hotspots", "menu"]) : [])];
+    const kinds = [...(Cutaway.hints.any() && opts.hintButton ? /** @type {const} */ (["hint"]) : []),
+      ...(Cutaway.input.touched || opts.buttons ? /** @type {const} */ (["hotspots", "menu"]) : [])];
     let x = bag.x - 12;
     for (const k of kinds) {
       const sprite = skin.buttons?.[k], f = sprite ? Cutaway.assets.get(sprite)?.frames[0] : null;
@@ -351,10 +366,21 @@ Cutaway.ui = (function () {
         const s = Cutaway.scene.toScreen(line.actor.x, line.actor.y);
         x = s.x; y = s.y - line.actor.height() - 4 - n * lh;
       }
-      const wMax = Math.max(...line.lines.map((l) => f.measure(l)));
-      x = Cutaway.util.clamp(Math.round(x), Math.ceil(wMax / 2) + 2, W - Math.ceil(wMax / 2) - 2);
-      y = Math.max(2, Math.round(y));
+      const wMax = Math.max(...line.lines.map((l) => f.measure(l))), pad = opts.textBox ? 3 : 0;
+      x = Cutaway.util.clamp(Math.round(x), Math.ceil(wMax / 2) + 2 + pad, W - Math.ceil(wMax / 2) - 2 - pad);
+      y = Math.max(2 + pad, Math.round(y));
+      if (opts.textBox) {
+        ctx.fillStyle = skin.panel;
+        ctx.fillRect(x - Math.ceil(wMax / 2) - pad, y - pad, wMax + 2 * pad + 1, n * lh + 2 * pad - 1);
+      }
       line.lines.forEach((l, i) => f.draw(ctx, l, x, y + i * lh, { color: line?.color, outline: skin.outline, align: "center" }));
+      if (line.waiting && Math.floor((Cutaway.clock.time - line.until) / 400) % 2 === 0) {   // a blinking arrow: click to go on
+        const last = line.lines[n - 1], ax = Math.min(W - 6, x + Math.ceil(f.measure(last) / 2) + 3), ay = y + (n - 1) * lh + 2;
+        ctx.fillStyle = skin.outline;
+        ctx.fillRect(ax - 1, ay - 1, 7, 3); ctx.fillRect(ax, ay + 2, 5, 2); ctx.fillRect(ax + 1, ay + 4, 3, 1); ctx.fillRect(ax + 2, ay + 5, 1, 1);
+        ctx.fillStyle = line.color;
+        ctx.fillRect(ax, ay, 5, 1); ctx.fillRect(ax + 1, ay + 1, 3, 1); ctx.fillRect(ax + 2, ay + 2, 1, 1);
+      }
     }
     if (hud) for (const l of layers.slice().sort((a, b) => a.z - b.z)) l.render?.(ctx);
     if (touchLabel && pointerType !== "mouse" && Cutaway.clock.time < touchLabel.until && !line) {
@@ -408,8 +434,8 @@ Cutaway.ui = (function () {
     Cutaway.events.on("pointer.release", () => { if (touchLabel) touchLabel.until = Cutaway.clock.time + 700; });
     Cutaway.events.on("key", (k) => { if (k.code === "Tab") { markHeld = true; k.event.preventDefault(); } });
     Cutaway.events.on("key.up", (k) => { if (k.code === "Tab") markHeld = false; });
-    Cutaway.events.on("key", (k) => {                  // Space or "." skips the current line
-      if ((k.code === "Space" || k.code === "Period") && line && !Cutaway.menu.isOpen && Cutaway.clock.time - line.since > 120) { finishLine(); k.event.preventDefault(); }
+    Cutaway.events.on("key", (k) => {                  // Space, Enter or "." skips the current line
+      if ((k.code === "Space" || k.code === "Enter" || k.code === "NumpadEnter" || k.code === "Period") && line && !Cutaway.menu.isOpen && Cutaway.clock.time - line.since > 120) { finishLine(); k.event.preventDefault(); }
     });
     addLayer(buttons);
     Cutaway.display.screen.style.cursor = "none";
@@ -429,13 +455,20 @@ Cutaway.ui = (function () {
     showHotspots,
     /** Screen centre of a button ("hint", "hotspots", "menu") if it shows (for tools). @param {string} k */
     buttonPoint(k) { const b = buttonBoxes().find((q) => q.k === k); return b ? { x: b.x + Math.floor(b.w / 2), y: b.y + Math.floor(b.h / 2) } : null; },
+    /**
+     * The player's choices from Cutaway.settings: `advance` "click" (lines wait for a click), `textBox`
+     * (a box behind lines), `swap` (in the room the left button looks, the right one acts), `alwaysRun`,
+     * `buttons` (the eye and menu buttons without touching first), `hintButton`.
+     * @param {Partial<typeof opts>} o
+     */
+    configure(o) { Object.assign(opts, o); },
     /** Text speed: line time is multiplied by this (0.7 = fast, 1.5 = slow). @param {number} k */
     setTextSpeed(k) { textSpeed = k; },
     get textSpeed() { return textSpeed; },
     /** The hotspot under the pointer, if any. */
     get hover() { return hover; },
     /** The line on screen, if any. */
-    get line() { return line ? { actor: line.actor?.id ?? null, text: line.lines.join(" ") } : null; },
+    get line() { return line ? { actor: line.actor?.id ?? null, text: line.lines.join(" "), waiting: !!line.waiting } : null; },
     /** The inventory item on the cursor. */
     get held() { return held; },
     /** @param {string | null} id */

@@ -28,7 +28,7 @@ Cutaway.start({
 - Without acts, `room` is the room to show first. With acts (below), a new game begins the first act,
   after the title screen if there is one.
 - Other options: `border` (colour around the picture), `scale` (force one), `transition`
-  (`{ out, in }` fade lengths in ms), `settings` (default volumes and text speed), `manualClock`.
+  (`{ out, in }` fade lengths in ms), `settings` (the player's defaults, any of the keys below), `manualClock`.
 - Query switches: `?manual` (the clock moves only on `Cutaway.clock.advance`), `?act=<id>` (begin an
   act at once, no title or card), `?edit` (open the editor), `?debug`, `?lang=de`, `?scale=3`.
 
@@ -264,8 +264,18 @@ The page loads each layer file after the game's own data.
 
 - An autosave on every room change, three slots in the pause menu (Esc), versioned:
   `Cutaway.save.configure({ migrate: (data, from) => data })` updates old saves.
-- Settings (volumes, speech, text speed) belong to the player, not the save.
-- The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons })`,
+- Settings belong to the player, not the save (localStorage per game). The pause menu's Settings has
+  four pages: Sound (`master`, `music`, `sfx`, `voice` 0..1, `voices`, `muteUnfocused`), Text and
+  dialogue (`textSpeed` 2 / 1.5 / 1 / 0.7, `advance` "auto" or "click": lines wait for a click, a key
+  or Space, with a blinking arrow; `textBox`), Picture (fullscreen, `fit` "sharp" or "fill", `crt`
+  "off" / "scanlines" / "crt", `motion`: shake and flickering lamps), Controls (`swapButtons`: in the
+  room the left button looks, `alwaysRun`, `holdMs` 300 / 450 / 700, `buttons`: the eye and menu
+  buttons for the mouse too, `hintButton`), and "Reset to defaults". `Cutaway.start({ settings })` sets
+  a game's defaults; `Cutaway.settings.set({...})` and `.values` in code.
+- The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons, frame })`;
+  `frame` colours the menu's frame: `{ light, face, dark }` (the bevel), `fill` (inside), `plate` (the
+  heading's), `rivet`, `rivetLight`, `rivetDark` (the corner fittings), `hover` (the chosen row's band).
+  `Cutaway.menu.frame(ctx, x, y, w, h, { small, fill })` draws one for a game's own pages,
   `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)`.
 - Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`, ...
 

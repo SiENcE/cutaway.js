@@ -27,6 +27,7 @@ Open `demo/index.html` in a browser: Pip and Bolt want to switch on the lamp in 
 | H, the bulb | a hint, plainer each time you ask |
 | Tab | show every hotspot |
 | Esc | the menu: save, load, settings, title screen |
+| Space, Enter, . | the next line (lines may wait for it: Settings > Text) |
 | F10 | the editor (F1 in it: help) |
 | F9, F11 | the debug overlay, fullscreen |
 
@@ -47,8 +48,10 @@ font; `tools/music-lab.html` plays the demo's music.
   glows), effects (light haze, dust, rain, drips, glints, steam), fades; synthesised dynamic music in
   the spirit of iMUSE (sections, jump points, transitions, intensity layers, stingers), synthesised
   sound effects and ambience, recorded sounds, blip voices.
-- **Players:** mouse, touch (tap, hold to look, show hotspots), keyboard; settings for volumes, speech
-  and text speed.
+- **Players:** mouse, touch (tap, hold to look, show hotspots), keyboard; settings for sound (volumes,
+  speech, mute in the background), text (speed, lines that wait for a click, a box behind them), the
+  picture (pixel-perfect or filling the window, scanlines or an old CRT, no shake or flicker) and the
+  controls (swapped mouse buttons, always run, the touch hold time, the screen buttons, the hint button).
 - **Tools:** a validator, a solver (proves the game can be finished, finds soft-locks, checks every
   hint), a headless playthrough with real clicks or taps, screenshots, an atlas packer, offline music
   renders, and the studio (a local server for the editor).
