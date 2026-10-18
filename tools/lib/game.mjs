@@ -2,7 +2,8 @@
 // stubs, so the tools check the real data with the real engine code.
 //   const g = loadGame("demo/index.html");  g.C = the Cutaway namespace, g.options = Cutaway.start's options
 //   await boot(g, { instant: true })        start it without a screen: lines, walks and waits finish at once
-// A game with acts begins its first act (or `act`) as a new game; there is no title screen here.
+// A game with acts begins its first act (or `act`) as a new game; there is no title screen, no gate and
+// no intro here (sequences only run where a script plays one: at once, like everything else).
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -93,6 +94,7 @@ export async function boot(g, o = {}) {
     C.ui.say = async () => {};
     C.ui.narrate = async () => {};
     C.clock.wait = async () => {};
+    C.tween.instant = true;
     C.script.action("card", () => {});
     C.script.action("end", () => { C.events.emit("game.end", {}); });
     const A = C.actor.Actor.prototype;

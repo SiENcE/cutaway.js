@@ -4,6 +4,7 @@
 //   --size 1280x720     window size in CSS pixels (default 960x540)
 //   --dpr 1             device pixel ratio
 //   --query "a=1&b"     URL query string (e.g. "manual" for a clock that only moves on advance())
+//   --intro             let the game's intro play (left out by default: ?nointro is added)
 //   --wait 300          ms to wait after load (and after each --eval)
 //   --eval "js"         run in the page (awaited), e.g. "Cutaway.clock.advance(1000)"
 //   --out file.png      screenshot of the window
@@ -22,7 +23,7 @@ const pageFile = resolve(args.shift());
 const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
 const [W, H] = opt("--size", "960x540").split("x").map(Number);
 const wait = Number(opt("--wait", "300"));
-const query = opt("--query", "");
+const query = [opt("--query", ""), args.includes("--intro") ? "" : "nointro"].filter(Boolean).join("&");
 
 function save(file, buf) {
   mkdirSync(dirname(resolve(file)), { recursive: true });

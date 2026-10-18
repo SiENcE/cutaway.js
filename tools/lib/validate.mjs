@@ -1,13 +1,16 @@
 // The validator: every reference in a game's data must resolve. Works on a game loaded with
 // loadGame() + boot(): rooms, hotspots, props, actors, items, dialogs, scripts, conditions, assets,
-// walk polygons (valid, reachable points) and strings in every language.
+// walk polygons (valid, reachable points) and strings in every language; sequences (their steps, the
+// rooms they show, the props they move) and the intro and gate start options.
 /** @typedef {{level: "error" | "warning", where: string, msg: string}} Issue */
 
 const FACINGS = new Set(["left", "right", "up", "down"]);
+const EASES = new Set(["linear", "in", "out", "inOut"]);
+const PLACES = new Set(["bl", "br", "tl", "tr", "c"]);
 
 /**
  * @param {any} C the Cutaway namespace of a booted game
- * @param {{languages?: string[], demo?: any, title?: any}} [o]  (o: the game's start options)
+ * @param {{languages?: string[], demo?: any, title?: any, intro?: string, gate?: any}} [o]  (o: the game's start options)
  * @returns {{issues: Issue[], texts: Set<string>, flags: {set: Set<string>, tested: Set<string>}}}
  */
 export function validate(C, o = {}) {
@@ -21,6 +24,16 @@ export function validate(C, o = {}) {
   const roomIds = new Set(C.room.ids()), itemIds = new Set(C.item.ids()), dialogIds = new Set(C.dialog.ids());
   const actorIds = new Set(C.actors.all().map((a) => a.id));
   const actIds = new Set(C.act.ids());
+  const sequenceIds = new Set(C.sequence?.ids() ?? []);
+  /** rooms shown as shots (by sequences) or stills (the title, the gate): they need no walk area */
+  const stills = new Set([o.title?.room, o.gate?.room].filter(Boolean));
+  let filming = false;                                   // checking a sequence: a goto shows a room, nobody goes there
+  /** @param {any} s */
+  const shots = (s) => {
+    if (Array.isArray(s)) s.forEach(shots);
+    else if (s && typeof s === "object") { if (typeof s.goto === "string") stills.add(s.goto); for (const k of ["then", "else", "once"]) shots(s[k]); }
+  };
+  for (const id of sequenceIds) shots(C.sequence.get(id).steps);
   const party = new Set(C.party.members());
   /** @type {Map<string, Set<string>>} object ids per room (props and hotspots) */
   const objects = new Map();
@@ -40,6 +53,13 @@ export function validate(C, o = {}) {
   const room = (id, where) => { if (!roomIds.has(id)) err(where, `unknown room "${id}"`); };
   const actor = (id, where) => { if (!actorIds.has(id)) err(where, `unknown actor "${id}"`); };
   const xy = (v, where) => { if (!Array.isArray(v) || v.length !== 2 || !v.every(Number.isFinite)) err(where, "expected [x, y], got " + JSON.stringify(v)); return Array.isArray(v); };
+  /** a prop of the script's room (moved or played: the scene's own props, by bare id) */
+  const prop = (id, roomId, where) => {
+    if (!roomId) { warn(where, `prop "${id}" outside a room (a script with no room of its own)`); return; }
+    if (!(C.room.has(roomId) && (C.room.get(roomId).props ?? []).some((p) => p.id === id))) err(where, `unknown prop "${id}" in room "${roomId}"`);
+  };
+  const ms = (v, where) => { if (v !== undefined && !(Number(v) >= 0)) err(where, "ms must be a number >= 0"); };
+  const ease = (v, where) => { if (v !== undefined && !EASES.has(v)) err(where, `unknown ease "${v}" (linear, in, out, inOut)`); };
   /** "room/id" or a bare id in the script's room */
   const object = (ref, roomId, where) => {
     const [r, id] = String(ref).includes("/") ? String(ref).split("/") : [roomId, String(ref)];
@@ -99,7 +119,30 @@ export function validate(C, o = {}) {
       case "set": case "unset": case "inc": flagsSet.add(String(v)); break;
       case "state": object(v, roomId, where); break;
       case "show": case "hide": object(v, roomId, where); break;
-      case "goto": room(v, where); if (s.at && xy(s.at, where) && roomIds.has(v)) mustReach.get(v).push([s.at[0], s.at[1], where, true]); break;
+      case "goto":
+        room(v, where);
+        if (filming) stills.add(v);
+        else if (s.at && xy(s.at, where) && roomIds.has(v)) mustReach.get(v).push([s.at[0], s.at[1], where, true]);
+        if (s.transition !== undefined && typeof s.transition !== "boolean" && s.transition !== "dissolve") err(where, `unknown transition "${s.transition}" (false or "dissolve")`);
+        if (s.dissolve !== undefined && !(Number(s.dissolve) > 0)) err(where, "dissolve is a length in ms");
+        break;
+      case "camera": if (v !== "follow") xy(v, where); ms(s.ms, where); ease(s.ease, where); break;
+      case "move":
+        prop(String(v), roomId, where);
+        if (s.to !== undefined) xy(s.to, where); else if (s.by !== undefined) xy(s.by, where); else err(where, "move needs to: [x, y] or by: [dx, dy]");
+        ms(s.ms, where); ease(s.ease, where);
+        break;
+      case "play": prop(String(v), roomId, where); if (s.anim !== undefined) asset(s.anim, where); break;
+      case "letterbox": if (typeof v !== "boolean" && !(Number(v) >= 0)) err(where, "letterbox is true, false or the bars' height in px"); ms(s.ms, where); ease(s.ease, where); break;
+      case "caption":
+        if (v !== false && v !== null) text(v, where);
+        if (s.at !== undefined && !PLACES.has(s.at)) err(where, `unknown caption place "${s.at}" (bl, br, tl, tr, c)`);
+        for (const b of [s.blip, typeof s.type === "string" ? s.type : undefined]) if (b !== undefined && C.sfx && !C.sfx.has(b)) err(where, `unknown sound "${b}"`);
+        ms(s.ms, where);
+        break;
+      case "dissolve": if (!(Number(v) > 0)) err(where, "dissolve is a length in ms"); break;
+      case "sequence": if (!sequenceIds.has(v)) err(where, `unknown sequence "${v}"`); break;
+      case "shot": if (typeof v !== "string") err(where, "shot is a name"); break;
       case "place": actor(v, where); if (s.room) room(s.room, where); if (s.at) xy(s.at, where); break;
       case "switch": case "lock": case "unlock": case "stay": case "follow": actor(v, where); if (!party.has(v)) err(where, `"${v}" is not in the party`); break;
       case "music": music(v, where); break;
@@ -148,7 +191,7 @@ export function validate(C, o = {}) {
     if (r.background) asset(r.background, w + ".background");
     (r.walk ?? []).forEach((poly, i) => polygon(poly, `${w}.walk.${i}`));
     (r.holes ?? []).forEach((poly, i) => polygon(poly, `${w}.holes.${i}`));
-    if (!(r.walk ?? []).length) warn(w, "no walkable area");
+    if (!(r.walk ?? []).length && !stills.has(id)) warn(w, "no walkable area");
     // a walk area beyond the room's size: the camera won't scroll there (a wide room without its `size`?)
     const rw = r.size?.[0] ?? C.display?.width ?? 0, rh = r.size?.[1] ?? C.display?.height ?? 0;
     const far = (r.walk ?? []).flat().filter((v, i) => (i % 2 ? v > rh + 1 : v > rw + 1));
@@ -276,6 +319,25 @@ export function validate(C, o = {}) {
     if (a.title !== undefined) text(a.title, w + ".title");
     if (a.name !== undefined) text(a.name, w + ".name");
     script(a.start, a.room, w + ".start");
+  }
+  // sequences: their steps in the room each goto shows (the props they move must be there)
+  for (const id of sequenceIds) {
+    const d = C.sequence.get(id), w = `sequence ${id}`;
+    filming = true;
+    if (d.steps === undefined) err(w, "a sequence needs steps");
+    let at = "";
+    (Array.isArray(d.steps) ? d.steps : [d.steps]).forEach((s, i) => {
+      script(s, at, `${w}.steps.${i}`);
+      if (s && typeof s === "object" && typeof s.goto === "string" && roomIds.has(s.goto)) at = s.goto;
+    });
+    script(d.after, at, w + ".after");
+    filming = false;
+  }
+  if (o.intro !== undefined && !sequenceIds.has(o.intro)) err("intro", `unknown sequence "${o.intro}"`);
+  if (o.gate) {
+    if (o.gate.room !== undefined) room(o.gate.room, "gate.room");
+    if (o.gate.view !== undefined) xy(o.gate.view, "gate.view");
+    if (o.gate.prompt !== undefined) text(o.gate.prompt, "gate.prompt");
   }
   for (const id of o.demo?.acts ?? []) if (!actIds.has(id)) err("demo", `unknown act "${id}"`);
   if (o.demo?.text !== undefined) text(o.demo.text, "demo.text");

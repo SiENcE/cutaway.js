@@ -5,6 +5,8 @@
 // Reads <dir>/sprites/*.png, <dir>/scenes/*.png and <dir>/anims/*.png + .json (Aseprite style), and
 // <name>.anchor.json next to a sprite (cut-outs placed in their room, see cutout.mjs).
 // --png also writes the pages as files (page.png, page_2.png, ...) to look at.
+// An animation too big for one page (a long rendered take: hundreds of frames) is packed frame by
+// frame, over as many pages as it needs (each frame names its page); frames that are the same are kept once.
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { decode, encode } from "./lib/png.mjs";
@@ -17,8 +19,17 @@ if (!out || !args.length) { console.error("usage: node tools/build-atlas.mjs <px
 const wanted = (name) => !only || only.some((p) => p.endsWith("*") ? name.startsWith(p.slice(0, -1)) : name === p);
 const PAD = 1;
 
-/** @type {{name: string, img: {width: number, height: number, data: Uint8Array}, frames: number[][] | null, anchor: number[] | null, x?: number, y?: number, page?: number}[]} */
+/** @type {{name: string, img: {width: number, height: number, data: Uint8Array}, frames: number[][] | null, anchor: number[] | null, x?: number, y?: number, page?: number, part?: boolean}[]} */
 const entries = [];
+/** @type {Map<string, {name: string, frames: {entry: any, duration: number}[], anchor: number[] | null}>} animations packed frame by frame */
+const split = new Map();
+
+/** A frame cut out of an animation strip. */
+function crop(img, x, y, w, h) {
+  const data = new Uint8Array(w * h * 4);
+  for (let r = 0; r < h; r++) data.set(img.data.subarray(((y + r) * img.width + x) * 4, ((y + r) * img.width + x + w) * 4), r * w * 4);
+  return { width: w, height: h, data };
+}
 for (const dir of args) {
   for (const kind of ["sprites", "scenes", "anims"]) {
     const d = path.join(dir, kind);
@@ -34,6 +45,22 @@ for (const dir of args) {
       if (kind === "anims" && existsSync(json)) {
         const j = JSON.parse(readFileSync(json, "utf8"));
         frames = (Array.isArray(j.frames) ? j.frames : Object.values(j.frames)).map((q) => [q.frame.x, q.frame.y, q.frame.w, q.frame.h, q.duration ?? 100]);
+      }
+      if (frames && (img.width + 2 * PAD > MAX || img.height + 2 * PAD > MAX)) {
+        const seen = new Map(), list = [];
+        for (const [fx, fy, fw, fh, d] of frames) {
+          const part = crop(img, fx, fy, fw, fh), key = Buffer.from(part.data.buffer).toString("base64");
+          let entry = seen.get(key);
+          if (!entry) {
+            if (fw + 2 * PAD > MAX || fh + 2 * PAD > MAX) throw new Error(`a frame of ${name} is ${fw}x${fh} px, more than --max ${MAX}`);
+            entry = { name: `${name}#${seen.size}`, img: part, frames: null, anchor: null, part: true };
+            seen.set(key, entry);
+            entries.push(entry);
+          }
+          list.push({ entry, duration: d });
+        }
+        split.set(name, { name, frames: list, anchor });
+        continue;
       }
       if (img.width + 2 * PAD > MAX) throw new Error(`${name} is ${img.width} px wide, more than --max ${MAX}`);
       entries.push({ name, img, frames, anchor });
@@ -57,6 +84,7 @@ if (entries.length) pages.push(page);
 
 const base = path.basename(out, ".js").replace(/[^a-zA-Z0-9_]/g, "_");
 const images = {}, anims = {};
+const pageName = (i) => `${base}_atlas${i ? "_" + (i + 1) : ""}`;
 pages.forEach((p, i) => {
   const data = new Uint8Array(p.w * p.h * 4);
   for (const e of entries.filter((q) => q.page === i)) {
@@ -64,14 +92,20 @@ pages.forEach((p, i) => {
       data.set(e.img.data.subarray(r * e.img.width * 4, (r + 1) * e.img.width * 4), ((e.y + r) * p.w + e.x) * 4);
     }
   }
-  const png = encode({ width: p.w, height: p.h, data }), pageName = `${base}_atlas${i ? "_" + (i + 1) : ""}`;
-  images[pageName] = "data:image/png;base64," + png.toString("base64");
+  const png = encode({ width: p.w, height: p.h, data });
+  images[pageName(i)] = "data:image/png;base64," + png.toString("base64");
   if (pngOut) writeFileSync(i ? pngOut.replace(/\.png$/, `_${i + 1}.png`) : pngOut, png);
-  for (const e of entries.filter((q) => q.page === i)) {
+  for (const e of entries.filter((q) => q.page === i && !q.part)) {
     const frames = e.frames ?? [[0, 0, e.img.width, e.img.height, 100]];
-    anims[e.name] = { image: pageName, frames: frames.map(([fx, fy, fw, fh, d]) => [e.x + fx, e.y + fy, fw, fh, d]), anchor: e.anchor };
+    anims[e.name] = { image: pageName(i), frames: frames.map(([fx, fy, fw, fh, d]) => [e.x + fx, e.y + fy, fw, fh, d]), anchor: e.anchor };
   }
 });
+// a split animation: each frame where it was packed, naming its page when it isn't the first frame's
+for (const s of split.values()) {
+  const first = s.frames[0].entry.page;
+  anims[s.name] = { image: pageName(first), anchor: s.anchor,
+    frames: s.frames.map(({ entry: e, duration }) => [e.x, e.y, e.img.width, e.img.height, duration, ...(e.page !== first ? [pageName(e.page)] : [])]) };
+}
 
 const lines = ["// Generated by tools/build-atlas.mjs. Do not edit.", "Cutaway.assets.pack({", "  images: {"];
 for (const [k, v] of Object.entries(images)) lines.push(`    ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
@@ -81,4 +115,5 @@ for (const [k, v] of Object.entries(anims)) {
 }
 lines.push("  },", "});", "");
 writeFileSync(out, lines.join("\n"));
-console.log(`${out}: ${entries.length} images on ${pages.length} page(s) ${pages.map((p) => `${p.w}x${p.h}`).join(", ")}`);
+console.log(`${out}: ${entries.filter((e) => !e.part).length + split.size} images` +
+  `${split.size ? ` (${split.size} long animations frame by frame)` : ""} on ${pages.length} page(s) ${pages.map((p) => `${p.w}x${p.h}`).join(", ")}`);

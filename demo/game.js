@@ -3,6 +3,8 @@
 //   The door to the yard is locked; the key is in a jar on the shelf, which only tall Bolt can reach.
 //   In the yard, the mailbox holds a dusty bulb; Pip's plastic leaf polishes it; the clean bulb
 //   goes into the lamp post, and the demo ends. It is one act, with a title screen and hints.
+// Before the title: a click to let sound start (the gate, in browsers) and, the first time, a short
+// intro (a sequence: the hall, a tilt down a tall shot room with a parallax lamp post, the yard).
 "use strict";
 (function () {
   Cutaway.item("key", { name: "key", icon: "inv_key", look: "A small brass key." });
@@ -86,6 +88,36 @@
     enter: [{ if: "!visited:yard", then: ["Fresh air!"] }],
   });
 
+  // a room that is only a shot of the intro: taller than the screen, so the camera can tilt down it;
+  // the lamp post in front (depth 1.4) rises faster than the hills behind it
+  Cutaway.room("intro_sky", {
+    name: "Sky", color: "#79c6ee", size: [320, 300],
+    props: [
+      { id: "hills", image: "yard_bg", at: [0, 120], anchor: [0, 0], baseline: 0 },
+      { id: "walker", image: "bolt_walk_r", at: [-20, 278] },
+      { id: "post", image: "lamppost", at: [36, 348], depth: 1.4 },
+    ],
+  });
+
+  Cutaway.sequence("intro", {
+    steps: [
+      { shot: "hall" },
+      { goto: "hall", transition: false },
+      { letterbox: true, ms: 600 },
+      { caption: "Somewhere, a small house.", type: true, blip: "_tick", ms: 1400 },
+      { shot: "sky" },
+      { goto: "intro_sky", transition: "dissolve", dissolve: 700 },
+      { move: "walker", by: [190, 0], ms: 3600, ease: "linear", wait: false },
+      { camera: [0, 120], ms: 2600 },
+      { caption: "Outside, a lamp post without a bulb.", at: "tr", type: true, blip: "_tick", ms: 1400 },
+      { shot: "yard" },
+      { goto: "yard", transition: "dissolve", dissolve: 700 },
+      { letterbox: false, ms: 600 },
+      { wait: 500 },
+      { fade: "out", ms: 400 },
+    ],
+  });
+
   Cutaway.dialog("bolt", {
     main: [
       { text: "How are you, Bolt?", then: [{ say: "bolt", text: "Rusty, but cheerful." }] },
@@ -148,6 +180,8 @@
     "Clean and ready to shine.": "Sauber und bereit zu leuchten.", "With my long legs? Easy.": "Mit meinen langen Beinen? Klar.",
     "There must be a key up there.": "Da oben muss ein Schlüssel sein.", "Switch to me and I'll have a look.": "Wechsel zu mir, dann schau ich nach.",
     "Never mind.": "Schon gut.",
+    "Sky": "Himmel", "Somewhere, a small house.": "Irgendwo ein kleines Haus.",
+    "Outside, a lamp post without a bulb.": "Draußen eine Laterne ohne Birne.",
     "Act 1": "Erster Akt", "The lamp in the yard": "Die Laterne im Hof", "The demo": "Die Demo",
     "The door is locked. Is the key somewhere up high?": "Die Tür ist zu. Liegt der Schlüssel irgendwo weit oben?",
     "Bolt is tall enough to reach the shelf.": "Bolt ist groß genug fürs Regal.", "Switch to Bolt and search the shelf.": "Wechsel zu Bolt und durchsuch das Regal.",
@@ -170,6 +204,6 @@
   ]);
 
   Cutaway.start({ width: 320, height: 180, actor: "pip", party: ["pip", "bolt"],
-    id: "cutaway-demo", version: 2, languages: ["en", "de"],
+    id: "cutaway-demo", version: 2, languages: ["en", "de"], intro: "intro", gate: { room: "yard" },
     title: { room: "yard", name: "Cutaway.js", tagline: "The demo", footer: "Cutaway.js " + Cutaway.version + " - MIT" } });
 })();

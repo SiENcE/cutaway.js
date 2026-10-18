@@ -26,13 +26,13 @@ Open `demo/index.html` in a browser: Pip and Bolt want to switch on the lamp in 
 | portraits (top left), 1-9 | play another character |
 | H, the bulb | a hint, plainer each time you ask |
 | Tab | show every hotspot |
-| Esc | the menu: save, load, settings, title screen |
-| Space, Enter, . | the next line (lines may wait for it: Settings > Text) |
+| Esc | the menu: save, load, settings, title screen (in the intro or a cutscene: skip it) |
+| Space, Enter, . | the next line (lines may wait for it: Settings > Text); in the intro: the next shot |
 | F10 | the editor (F1 in it: help) |
 | F9, F11 | the debug overlay, fullscreen |
 
 On a phone: tap to act (double tap to run), hold to look; the bulb, eye and menu buttons sit next to
-the satchel. `?act=act1` skips the title screen. `demo/testcard.html` checks the display and the
+the satchel. `?act=act1` skips the title screen, `?nointro` the intro. `demo/testcard.html` checks the display and the
 font; `tools/music-lab.html` plays the demo's music.
 
 ## What's in it
@@ -43,7 +43,10 @@ font; `tools/music-lab.html` plays the demo's music.
   several playable characters (Maniac Mansion's "new kid", with a shared bag if you like), saves with
   migration, languages.
 - **Story:** acts with title cards, a title screen (new game, continue, acts), demos that end with a
-  link to the full game, hints that get plainer each time.
+  link to the full game, hints that get plainer each time; sequences (an intro before the title, the
+  first time; cutscenes) with shots to skip, a scripted camera, prop moves, parallax depth, long
+  rendered animations, a letterbox, typed captions and pixel dissolves; a click-to-start gate where
+  browsers hold the sound back.
 - **Look and sound:** runtime light (actors take on the room's light, flickering and added lamps,
   glows), effects (light haze, dust, rain, drips, glints, steam), fades; synthesised dynamic music in
   the spirit of iMUSE (sections, jump points, transitions, intensity layers, stingers), synthesised

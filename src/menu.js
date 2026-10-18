@@ -370,7 +370,7 @@ Cutaway.menu = (function () {
     }
     if (k.code === "Escape") {
       if (entries) goBack();
-      else if (!Cutaway.acts?.titleOpen) main();
+      else if (!Cutaway.acts?.titleOpen && !Cutaway.ui.cutscene) main();    // in a cutscene, Esc skips it
       return;
     }
     if (!entries) return;
@@ -389,6 +389,8 @@ Cutaway.menu = (function () {
     page: show,
     get isOpen() { return !!entries; },
     get card() { return card ? [card.title, ...card.lines].filter(Boolean).join(" ") : null; },
+    /** Close the card as if its last button (or a click) was chosen (a skipped cutscene). */
+    closeCard() { if (card) card.done(card.buttons.length - 1); },
     /** The card's buttons (for tools and tests). */
     get cardButtons() { return card ? card.buttons.slice() : null; },
     /** Screen point of a card's button (for tools and tests). @param {number} i */
@@ -406,7 +408,7 @@ Cutaway.menu = (function () {
     init() {
       Cutaway.ui.addLayer(layer);
       Cutaway.events.on("key", onKey);
-      Cutaway.script.action("card", async (s) => { await showCard(s.card, { title: s.title }); });
+      Cutaway.script.action("card", async (s) => { if (!Cutaway.script.fast) await showCard(s.card, { title: s.title }); });
     },
   };
 })();

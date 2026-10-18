@@ -17,6 +17,8 @@ Cutaway.assets = (function () {
    * @property {number} w
    * @property {number} h
    * @property {number} duration  ms
+   * @property {string} [image]   the atlas page of this frame, when it isn't the animation's (long
+   *                              animations spread over several pages)
    */
   /**
    * @typedef {object} Anim
@@ -30,7 +32,8 @@ Cutaway.assets = (function () {
   /**
    * @typedef {object} AnimDef
    * @property {string} [image]   image name (default: the animation's own name)
-   * @property {(number[] | Frame)[]} [frames]  [x, y, w, h, duration] or Frame objects
+   * @property {(any[] | Frame)[]} [frames]  [x, y, w, h, duration, page?] or Frame objects (page: an image
+   *                              name for frames that sit on another atlas page)
    * @property {any} [json]       Aseprite/pxl JSON ({ frames: { ... } } or { frames: [ ... ] })
    * @property {boolean} [loop]
    * @property {[number, number]} [anchor]
@@ -94,7 +97,7 @@ Cutaway.assets = (function () {
       const list = Array.isArray(def.json.frames) ? def.json.frames : Object.values(def.json.frames);
       frames = list.map((/** @type {any} */ f) => ({ ...f.frame, duration: f.duration ?? 100 }));
     } else if (def.frames) {
-      frames = def.frames.map((f) => Array.isArray(f) ? { x: f[0], y: f[1], w: f[2], h: f[3], duration: f[4] ?? 100 } : f);
+      frames = def.frames.map((f) => Array.isArray(f) ? { x: f[0], y: f[1], w: f[2], h: f[3], duration: f[4] ?? 100, ...(f[5] ? { image: String(f[5]) } : {}) } : f);
     }
     anims.set(name, {
       name, image: def.image ?? name, frames, loop: def.loop ?? true, anchor: def.anchor,
@@ -132,13 +135,15 @@ Cutaway.assets = (function () {
   }
 
   /**
-   * The frame shown `t` ms after the animation started.
+   * The frame shown `t` ms after the animation started. Played once (`loop` false, from the data or
+   * given here), it holds its last frame.
    * @param {Anim} a
    * @param {number} t
+   * @param {boolean} [loop]  override the animation's own
    */
-  function frameAt(a, t) {
+  function frameAt(a, t, loop = a.loop) {
     if (a.frames.length === 1 || a.total <= 0) return a.frames[0];
-    let local = a.loop ? ((t % a.total) + a.total) % a.total : Math.min(t, a.total - 1);
+    let local = loop ? ((t % a.total) + a.total) % a.total : Math.max(0, Math.min(t, a.total - 1));
     for (const f of a.frames) { if (local < f.duration) return f; local -= f.duration; }
     return a.frames[a.frames.length - 1];
   }
@@ -163,17 +168,18 @@ Cutaway.assets = (function () {
    * @param {string | Anim} what
    * @param {number} x
    * @param {number} y
-   * @param {{t?: number, frame?: number, flip?: boolean, alpha?: number, anchor?: [number, number], scale?: number}} [o]
-   *   t = time into the animation (ms); frame = fixed frame index; flip = mirror horizontally;
+   * @param {{t?: number, frame?: number, flip?: boolean, alpha?: number, anchor?: [number, number], scale?: number, loop?: boolean}} [o]
+   *   t = time into the animation (ms); frame = fixed frame index; loop = override the animation's
+   *   (false: once, then its last frame); flip = mirror horizontally;
    *   anchor = override the anchor ([0, 0] draws with the top-left corner at x, y);
    *   scale = draw smaller or larger (nearest neighbour, whole pixels)
    */
   function draw(ctx, what, x, y, o = {}) {
     const a = typeof what === "string" ? get(what) : what;
     if (!a || !a.frames.length) return;
-    const img = images.get(a.image);
+    const f = o.frame !== undefined ? a.frames[o.frame % a.frames.length] : frameAt(a, o.t ?? 0, o.loop);
+    const img = images.get(f.image ?? a.image);
     if (!img) return;
-    const f = o.frame !== undefined ? a.frames[o.frame % a.frames.length] : frameAt(a, o.t ?? 0);
     const s = scaled(f, o.scale, o.anchor ?? a.anchor);
     // flipped, the anchor column mirrors to w - 1 - ax, so the same body column stays on x
     const left = Math.round(x) - (o.flip ? s.w - 1 - s.ax : s.ax), top = Math.round(y) - s.ay;

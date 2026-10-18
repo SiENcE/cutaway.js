@@ -89,6 +89,12 @@ export async function launch(o = {}) {
       await send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     },
     async hold(x, y) { return this.tap(x, y, 650); },
+    /** A key pressed and let go: "Escape", "Space", "Enter", "KeyH", ... (KeyboardEvent.code). */
+    async key(code) {
+      const named = { Escape: ["Escape", 27], Space: [" ", 32], Enter: ["Enter", 13], Tab: ["Tab", 9] }[code];
+      const key = named ? named[0] : code.replace(/^Key|^Digit/, "").toLowerCase(), vk = named ? named[1] : key.toUpperCase().charCodeAt(0);
+      for (const type of ["keyDown", "keyUp"]) await send("Input.dispatchKeyEvent", { type, code, key, windowsVirtualKeyCode: vk, ...(type === "keyDown" && key.length === 1 ? { text: key } : {}) });
+    },
     async screenshot() { return Buffer.from((await send("Page.captureScreenshot", { format: "png" })).data, "base64"); },
     async close() {
       try { ws.close(); } catch { /* ignore */ }

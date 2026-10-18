@@ -13,6 +13,8 @@
 //   marks every hotspot for a moment; the menu button opens the pause menu. The hint button (a bulb,
 //   for mouse and touch, when the game has hints) shows what to try next.
 // Other parts of the interface (satchel, portraits, dialogue choices, the menu) plug in as layers.
+// In a cutscene (a sequence plays: setCutscene) only lines and the modal layers (cards, the menu) show:
+// no cursor, labels, marks, satchel, portraits or buttons.
 // Everything visual is a skin setting (Cutaway.ui.skin({...})): cursor sprites, font, colours.
 "use strict";
 
@@ -69,7 +71,7 @@ Cutaway.ui = (function () {
   const layers = [];
   /** @type {string | null} the inventory item on the cursor */
   let held = null;
-  let clickSeq = 0, pointerType = "mouse", visible = true, hud = true, textSpeed = 1, markUntil = 0, markHeld = false;
+  let clickSeq = 0, pointerType = "mouse", visible = true, hud = true, cutscene = false, textSpeed = 1, markUntil = 0, markHeld = false;
   /** the click that started the current approach was a double click: run there */
   let running = false;
   /** @type {{text: string, x: number, y: number, until: number} | null} what a finger is on */
@@ -358,7 +360,7 @@ Cutaway.ui = (function () {
   function render(ctx) {
     const f = font(), W = Cutaway.display.width;
     refreshHover();
-    if (hud) renderMarks(ctx);
+    if (hud && !cutscene) renderMarks(ctx);
     if (line) {
       const lh = f.lineHeight, n = line.lines.length;
       let x = W / 2, y = 6;
@@ -382,7 +384,8 @@ Cutaway.ui = (function () {
         ctx.fillRect(ax, ay, 5, 1); ctx.fillRect(ax + 1, ay + 1, 3, 1); ctx.fillRect(ax + 2, ay + 2, 1, 1);
       }
     }
-    if (hud) for (const l of layers.slice().sort((a, b) => a.z - b.z)) l.render?.(ctx);
+    if (hud) for (const l of layers.slice().sort((a, b) => a.z - b.z)) if (!cutscene || l.modal) l.render?.(ctx);
+    if (cutscene) return;
     if (touchLabel && pointerType !== "mouse" && Cutaway.clock.time < touchLabel.until && !line) {
       const lw = f.measure(touchLabel.text);           // above the finger, where it can be seen
       const lx = Cutaway.util.clamp(touchLabel.x - Math.floor(lw / 2), 2, W - lw - 2), ly = Cutaway.util.clamp(touchLabel.y - 22, 2, Cutaway.display.height - 10);
@@ -475,8 +478,11 @@ Cutaway.ui = (function () {
     hold(id) { held = id; },
     /** Skip the current line. */
     skip() { finishLine(); },
-    /** Hide the cursor and labels (cutscenes). @param {boolean} v */
+    /** Hide the cursor and labels. @param {boolean} v */
     setVisible(v) { visible = v; },
+    /** A cutscene: no cursor, labels, marks or interface layers but the modal ones (cards, the menu). @param {boolean} v */
+    setCutscene(v) { cutscene = v; if (v) { held = null; touchLabel = null; } },
+    get cutscene() { return cutscene; },
     /** Draw the interface's layers (portraits, satchel, buttons, menus) and marks; subtitles always show (the editor turns them off). @param {boolean} v */
     setHud(v) { hud = v; },
     get hud() { return hud; },

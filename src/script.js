@@ -3,6 +3,8 @@
 // A plain string is a line for the active actor. Each object names one action by its key; the other
 // keys are its arguments. Games and plug-ins add actions with Cutaway.script.action(name, fn).
 // While a script runs the player can't start another one (clicks skip the current line instead).
+// A script can be stopped between steps (`cancel` in its context: a skipped sequence). In fast mode (a
+// sequence skipping ahead) lines, sounds and waits are passed over at once.
 "use strict";
 
 /**
@@ -12,12 +14,16 @@
  * @property {string} path        stable id of this step in the game data (used by `once`)
  * @property {string} [hotspot]   the hotspot that started the script
  * @property {string} [item]      the item used on it
+ * @property {{stopped: boolean}} [cancel]  once `stopped`, no further step runs (nested ones neither)
  */
 
 Cutaway.script = (function () {
   /** @type {Map<string, (step: Record<string, any>, ctx: ScriptContext) => (void | Promise<void>)>} */
   const actions = new Map();
-  let busy = 0;
+  let busy = 0, fast = false;
+
+  /** Wait `ms` of game time; nothing in fast mode. @param {number} ms */
+  function sleep(ms) { return fast || !(ms > 0) ? Promise.resolve() : Cutaway.clock.wait(ms); }
 
   /**
    * Run a script to the end. Resolves when it has finished.
@@ -44,7 +50,10 @@ Cutaway.script = (function () {
   async function exec(script, ctx) {
     if (script === undefined || script === null) return;
     const list = Array.isArray(script) ? script : [script];
-    for (let i = 0; i < list.length; i++) await step(list[i], { ...ctx, path: `${ctx.path}.${i}` });
+    for (let i = 0; i < list.length; i++) {
+      if (ctx.cancel?.stopped) return;
+      await step(list[i], { ...ctx, path: `${ctx.path}.${i}` });
+    }
   }
 
   /**
@@ -75,7 +84,9 @@ Cutaway.script = (function () {
   /** { say: "text" } or { say: "actor", text: "..." } @param {Record<string, any>} s @param {ScriptContext} ctx */
   function say(s, ctx) {
     const who = "text" in s ? s.say : undefined, text = "text" in s ? s.text : s.say;
-    return Cutaway.ui.say(actorOf(who), Cutaway.i18n.t(text), { id: s.id ?? ctx.path });
+    const a = actorOf(who);
+    if (fast) return;
+    return Cutaway.ui.say(a, Cutaway.i18n.t(text), { id: s.id ?? ctx.path });
   }
 
   /** @param {any} v @returns {[number, number]} */
@@ -96,7 +107,7 @@ Cutaway.script = (function () {
   const builtins = {
     say,
     /** @param {Record<string, any>} s */
-    narrate: (s) => Cutaway.ui.narrate(Cutaway.i18n.t(s.narrate)),
+    narrate: (s) => (fast ? undefined : Cutaway.ui.narrate(Cutaway.i18n.t(s.narrate))),
     walk,
     /** { face: "left" } or { face: "actor", to: "left" } @param {Record<string, any>} s */
     face: (s) => { "to" in s ? actorOf(s.face).face(s.to) : actorOf().face(s.face); },
@@ -107,7 +118,7 @@ Cutaway.script = (function () {
       return s.wait === false ? undefined : done;
     },
     /** @param {Record<string, any>} s */
-    wait: (s) => Cutaway.clock.wait(Number(s.wait) || 0),
+    wait: (s) => sleep(Number(s.wait) || 0),
     /** { give: "item" } to the active actor, or { give: "item", to: "actor" } @param {Record<string, any>} s */
     give: (s) => Cutaway.state.give(s.give, s.to ?? actorOf().id),
     /** { take: "item" } gives it and hides the hotspot (and prop) that ran the script, or `hide` @param {Record<string, any>} s @param {ScriptContext} ctx */
@@ -130,8 +141,9 @@ Cutaway.script = (function () {
     show: (s) => Cutaway.state.setHidden(s.show, false),
     /** @param {Record<string, any>} s */
     hide: (s) => Cutaway.state.setHidden(s.hide, true),
-    /** { goto: "room", at: [x, y], face, transition: false } moves the active actor there @param {Record<string, any>} s */
-    goto: (s) => Cutaway.scene.go(s.goto, s.at ? xy(s.at) : undefined, s.face, { transition: s.transition, follow: s.follow }),
+    /** { goto: "room", at: [x, y], face, transition: false | "dissolve", dissolve: ms } moves the active actor there
+     * (in a sequence: shows the room as a shot) @param {Record<string, any>} s */
+    goto: (s) => Cutaway.scene.go(s.goto, s.at ? xy(s.at) : undefined, s.face, { transition: s.transition, follow: s.follow, dissolve: s.dissolve }),
     /** { place: "actor", room, at, face } (room: null takes the actor out of every room) @param {Record<string, any>} s */
     place: (s) => {
       const a = actorOf(s.place), [x, y] = s.at ? xy(s.at) : [a.x, a.y];
@@ -141,20 +153,45 @@ Cutaway.script = (function () {
     /** @param {Record<string, any>} s */
     music: (s) => Cutaway.events.emit("music", s.music),
     /** @param {Record<string, any>} s */
-    stinger: (s) => Cutaway.events.emit("stinger", s.stinger),
+    stinger: (s) => { if (!fast) Cutaway.events.emit("stinger", s.stinger); },
     /** { sfx: "thump", at: [x, y], gain } @param {Record<string, any>} s */
-    sfx: (s) => Cutaway.events.emit("sfx", { sfx: s.sfx, at: s.at, gain: s.gain }),
+    sfx: (s) => { if (!fast) Cutaway.events.emit("sfx", { sfx: s.sfx, at: s.at, gain: s.gain }); },
     /** @param {Record<string, any>} s */
     fade: (s) => Cutaway.events.emit("fade", s.fade),
     /** @param {Record<string, any>} s */
-    shake: (s) => Cutaway.events.emit("shake", s.shake),
+    shake: (s) => { if (!fast) Cutaway.events.emit("shake", s.shake); },
+    // The camera and the props, for cutscenes and sequences (the scene's, not saved; leaving the room resets them).
+    /** { camera: [x, y], ms, ease, wait: false } moves the camera's top left there; { camera: "follow" } gives it back @param {Record<string, any>} s */
+    camera: (s) => {
+      if (s.camera === "follow") { Cutaway.scene.cameraFollow(); return; }
+      const [x, y] = xy(s.camera), done = Cutaway.scene.cameraTo(x, y, { ms: s.ms, ease: s.ease });
+      return s.wait === false ? undefined : done;
+    },
+    /** { move: "prop", to: [x, y] | by: [dx, dy], ms, ease, wait: false } @param {Record<string, any>} s */
+    move: (s) => {
+      const at = Cutaway.scene.propAt(String(s.move)), [x, y] = s.to ? xy(s.to) : (([dx, dy]) => [at.x + dx, at.y + dy])(xy(s.by ?? [0, 0]));
+      const done = Cutaway.scene.moveProp(String(s.move), [x, y], { ms: s.ms, ease: s.ease });
+      return s.wait === false ? undefined : done;
+    },
+    /** { play: "prop", anim: "name", loop: true, wait: false } plays its animation from the start (once: then holds the
+     * last frame; the script waits until it has played through) @param {Record<string, any>} s */
+    play: (s) => {
+      const ms = Cutaway.scene.playProp(String(s.play), { image: s.anim, loop: !!s.loop });
+      return s.wait === false ? undefined : sleep(ms);
+    },
+    /** { shot: "name" } marks where a shot of a sequence begins (Space and clicks skip to the next one) */
+    shot: () => {},
   };
   for (const [k, fn] of Object.entries(builtins)) actions.set(k, fn);
 
   return {
-    run, exec,
+    run, exec, sleep,
     /** Is a script running (the player waits)? */
     get busy() { return busy > 0; },
+    /** Fast mode: lines, sounds and waits pass at once (a sequence skipping ahead). */
+    get fast() { return fast; },
+    /** @param {boolean} v */
+    set fast(v) { fast = v; },
     /**
      * Add an action: `Cutaway.script.action("organ", async (step, ctx) => { ... })`.
      * @param {string} name

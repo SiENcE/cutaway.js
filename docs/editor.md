@@ -16,6 +16,7 @@ Help > Editor guide, with the engine's reference beside it (everything a game's 
   picker, or downloads the file.
 - **Play** (the ▶ button, or F10) closes the editor and plays from where you are; F10 again opens it.
   F9 shows the debug overlay.
+- `?edit` leaves the game's intro out (so does `?nointro`); the title screen's "Watch intro" plays it.
 
 ## The layout
 
@@ -75,12 +76,15 @@ Every text of the game with where it is used: lines, looks, names, dialogue choi
 
 ## Things
 The properties of the room (music, ambience, light, depth scale, background) and of what is in it:
-hotspots (`z`, hidden), props (image, position, anchor, flip, baseline), lamps (power, colour,
+hotspots (`z`, hidden), props (image, position, anchor, flip, baseline, scroll, depth), lamps (power, colour,
 flicker, glow), effects (colour, count, speed ...), actors (colour, speed, running speed, costume,
 voice, portraits) and items (icon).
 - Pick a thing in the list, in the left panel, or **click it on the picture**. **Save** writes the
   edits layer (`edits.js`). A thing's texts are in Texts, its shape in Room, what it does in the game's
   code.
+- A prop's **depth** is its parallax against the camera (1 the room, 0 fixed on the screen, 0.5 far
+  away, above 1 a foreground). The picture, its outline and its baseline show it where it is for the
+  camera now, and a click there picks it.
 
 ## Art
 Every sprite and animation: preview (animated, zoom), **Export PNG** (the frames side by side, and a

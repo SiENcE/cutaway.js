@@ -14,8 +14,9 @@
 // that opens the link (the full game) and one back to the title screen.
 // The title screen (Cutaway.start({ title: { room, view, logo, name, tagline, footer } })): a room
 // behind it (only shown: no enter script, no autosave), the logo (a sprite, or the game's name drawn
-// large as a placeholder), and new game, continue (the newest save), acts, load, settings, fullscreen,
-// and quit when the shell can (Cutaway.start({ quit })).
+// large as a placeholder), and new game, continue (the newest save), acts, load, "watch intro" (when
+// the game has one: Cutaway.start({ intro })), settings, fullscreen, and quit when the shell can
+// (Cutaway.start({ quit })).
 "use strict";
 
 /**
@@ -70,6 +71,8 @@ Cutaway.acts = (function () {
   let demo = null;
   /** @type {(() => void) | null} */
   let quit = null;
+  /** @type {string | null} the intro sequence ("watch intro" on the title screen) */
+  let intro = null;
   let gameId = "game", titleOpen = false;
   /** @type {{members: string[], locked: string[], staying?: string[]} | null} the party as the game started */
   let party0 = null;
@@ -99,6 +102,7 @@ Cutaway.acts = (function () {
   /** Back to the start: an empty state, actors where their data puts them, the party as it began. */
   function reset() {
     Cutaway.ui.hold(null);
+    Cutaway.cinema?.reset();
     Cutaway.inventory.setOpen(false);
     Cutaway.state.reset();
     if (party0) Cutaway.party.restore(party0);
@@ -159,6 +163,7 @@ Cutaway.acts = (function () {
       ...(newest ? [{ label: t("title.continue"), run: () => resume(newest.slot) }] : []),
       ...(acts.length > 1 ? [{ label: t("title.acts"), run: actsPage }] : []),
       ...(newest ? [{ label: t("menu.load"), run: () => Cutaway.menu.loadPage(titlePage, TITLE_LOOK) }] : []),
+      ...(intro && Cutaway.sequence?.get(intro) ? [{ label: t("title.intro"), run: watchIntro }] : []),
       { label: t("menu.settings"), run: () => Cutaway.menu.settings(titlePage, TITLE_LOOK) },
       { label: t("menu.fullscreen"), run: () => Cutaway.display.toggleFullscreen() },
       ...(quit ? [{ label: t("title.quit"), run: quit }] : []),
@@ -173,6 +178,18 @@ Cutaway.acts = (function () {
       }),
       { label: t("menu.back"), run: titlePage },
     ], titlePage, TITLE_LOOK);
+  }
+
+  /** The intro again, from the title screen, and back. */
+  async function watchIntro() {
+    if (!intro) return;
+    Cutaway.menu.close();
+    titleOpen = false;
+    await Cutaway.fx.transition("out");
+    Cutaway.scene.unload();                                // as on the first start: black until its first shot
+    Cutaway.fx.fade(0, 0);
+    await Cutaway.sequence.play(intro, { restore: false });
+    showTitle();
   }
 
   /** @param {string | number} slot */
@@ -234,7 +251,7 @@ Cutaway.acts = (function () {
   };
 
   return {
-    begin, toTitle, showTitle, available, unlocked, reset,
+    begin, toTitle, showTitle, available, unlocked, reset, watchIntro,
     /** The act being played. */
     get current() { return current; },
     get titleOpen() { return titleOpen; },
@@ -244,10 +261,10 @@ Cutaway.acts = (function () {
     first,
     /**
      * Set up from the start options. Call after the party is set (a new game starts with it).
-     * @param {{id?: string, title?: TitleOptions, demo?: DemoOptions, quit?: () => void}} o
+     * @param {{id?: string, title?: TitleOptions, demo?: DemoOptions, quit?: () => void, intro?: string}} o
      */
     configure(o) {
-      gameId = o.id ?? gameId; title = o.title ?? null; demo = o.demo ?? null; quit = o.quit ?? null;
+      gameId = o.id ?? gameId; title = o.title ?? null; demo = o.demo ?? null; quit = o.quit ?? null; intro = o.intro ?? null;
       party0 = Cutaway.party.snapshot();
     },
     /** The act a save was made in. @param {string | null | undefined} id */

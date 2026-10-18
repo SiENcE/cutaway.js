@@ -136,8 +136,34 @@ Cutaway.audio = (function () {
     });
   }
 
+  /**
+   * May sound start now, without the player's click or key (a desktop shell, a browser that allows
+   * it, or audio already unlocked)? If so, the live context is made at once. Asks the browser without
+   * starting anything when it can tell (getAutoplayPolicy); else a trial context shows it.
+   * @returns {Promise<boolean>}
+   */
+  async function autoplay() {
+    if (ctx) return ctx.state === "running";
+    if (typeof AudioContext === "undefined") return false;
+    const nav = /** @type {any} */ (typeof navigator !== "undefined" ? navigator : {});
+    let ok = false;
+    if (typeof nav.getAutoplayPolicy === "function") ok = nav.getAutoplayPolicy("audiocontext") === "allowed";
+    else {
+      try {
+        const c = new AudioContext();
+        ok = c.state === "running" || await new Promise((done) => {
+          c.onstatechange = () => { if (c.state === "running") done(true); };
+          setTimeout(() => done(c.state === "running"), 150);
+        });
+        c.close();
+      } catch { ok = false; }
+    }
+    if (ok) init();
+    return ok;
+  }
+
   return {
-    init, hook, impulse, speaker,
+    init, hook, impulse, speaker, autoplay,
     /** How much the music sounds like a small speaker now (the last value asked for). */
     get speakerAmount() { return speakerAmount; },
     /** The current context and buses, to put back after an offline render. */

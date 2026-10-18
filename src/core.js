@@ -1,4 +1,4 @@
-// Cutaway.js core: the namespace, events and the fixed-step clock.
+// Cutaway.js core: the namespace, events, the fixed-step clock, easing and tweens.
 // Every engine file is a classic script that adds one module to the global `Cutaway`
 // (`Cutaway.x = (function () { ... })();`), so the engine runs from file:// without a build.
 // MIT licence, see LICENSE.
@@ -152,5 +152,73 @@ Cutaway.util = (function () {
       for (let i = 0; i + 1 < flat.length; i += 2) out.push({ x: flat[i], y: flat[i + 1] });
       return out;
     },
+    /**
+     * An easing curve by name: "linear", "in" (slow start), "out" (slow end), "inOut" (both, the default).
+     * Maps 0..1 to 0..1 (sine curves: soft like a camera operator's hand).
+     * @param {string} [name]
+     * @returns {(t: number) => number}
+     */
+    ease(name = "inOut") {
+      if (name === "linear") return (t) => t;
+      if (name === "in") return (t) => 1 - Math.cos((t * Math.PI) / 2);
+      if (name === "out") return (t) => Math.sin((t * Math.PI) / 2);
+      return (t) => (1 - Math.cos(t * Math.PI)) / 2;
+    },
+  };
+})();
+
+/**
+ * Tweens: a value that goes from 0 to 1 over some ms of game time (the camera, a prop, the letterbox),
+ * stepped with the logic clock. `to` resolves when it arrives (or is stopped or finished early).
+ * A key names it: a new tween with the same key replaces the old one. `instant` (the Node tools, a
+ * skipped cutscene) makes every tween arrive at once.
+ */
+Cutaway.tween = (function () {
+  /** @typedef {{key: string, start: number, ms: number, ease: (t: number) => number, step: (k: number) => void, done: () => void}} Tween */
+  /** @type {Tween[]} */
+  let list = [];
+  let instant = false;
+
+  /** @param {Tween} t */
+  function end(t) { list = list.filter((q) => q !== t); t.done(); }
+
+  /**
+   * Run a tween: `step(k)` gets the eased progress 0..1 on every logic step, last with 1.
+   * @param {{key?: string, ms?: number, ease?: string, step: (k: number) => void}} o
+   * @returns {Promise<void>}
+   */
+  function to(o) {
+    if (o.key) stop(o.key);
+    return new Promise((done) => {
+      const ms = Number(o.ms) || 0;
+      if (instant || ms <= 0) { o.step(1); done(); return; }
+      list.push({ key: o.key ?? "", start: Cutaway.clock.time, ms, ease: Cutaway.util.ease(o.ease), step: o.step, done });
+    });
+  }
+
+  /** Stop tweens where they are (all, or the one with this key); their promises resolve. @param {string} [key] */
+  function stop(key) { for (const t of list.slice()) if (key === undefined || t.key === key) end(t); }
+
+  /** Let tweens arrive now (all, or the one with this key). @param {string} [key] */
+  function finish(key) { for (const t of list.slice()) if (key === undefined || t.key === key) { t.step(1); end(t); } }
+
+  Cutaway.clock.onUpdate(() => {
+    const now = Cutaway.clock.time;
+    for (const t of list.slice()) {
+      const p = Math.min(1, Math.max(0, (now - t.start) / t.ms));
+      t.step(p >= 1 ? 1 : t.ease(p));
+      if (p >= 1) end(t);
+    }
+  });
+
+  return {
+    to, stop, finish,
+    /** How many tweens are running. */
+    get count() { return list.length; },
+    /** Is a tween with this key running? @param {string} key */
+    has(key) { return list.some((t) => t.key === key); },
+    get instant() { return instant; },
+    /** Every tween arrives at once (tools, skipped cutscenes). @param {boolean} v */
+    set instant(v) { instant = v; if (v) finish(); },
   };
 })();

@@ -22,7 +22,7 @@ Cutaway.save = (function () {
   let gameId = "game", version = 1;
   /** @type {(data: SaveData, from: number) => SaveData} */
   let migrate = (d) => d;
-  let loading = false;
+  let loading = false, filming = false;
 
   /** @param {string | number} slot */
   function key(slot) { return `cutaway.${gameId}.save.${slot}`; }
@@ -103,7 +103,10 @@ Cutaway.save = (function () {
       gameId = o.id ?? gameId; version = o.version ?? version; migrate = o.migrate ?? migrate;
     },
     init() {
-      Cutaway.events.on("room.entered", () => { if (!loading) write("auto"); });
+      Cutaway.events.on("room.entered", () => { if (!loading && !filming) write("auto"); });
+      // a sequence's shots aren't places to continue from
+      Cutaway.events.on("sequence.start", () => { filming = true; });
+      Cutaway.events.on("sequence.end", () => { filming = false; });
     },
   };
 })();

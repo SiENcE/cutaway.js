@@ -21,6 +21,8 @@ Cutaway.start({
   title: { room: "yard", name: "My Game", tagline: "Act 1", footer: "v1.0" },
   demo: { acts: ["act1"], link: "https://...", text: "Thanks for playing!" },
   quit: () => window.close(),         // the title screen offers Quit (desktop shells)
+  intro: "intro",                     // a sequence before the title screen, the first time (below)
+  gate: { room: "vcr", prompt: "@press_play" },  // where sound needs a click first: a still and a prompt
   dev: true,                          // F9, F10, ?edit, ?debug, ?act= (turn off in releases)
 });
 ```
@@ -29,8 +31,10 @@ Cutaway.start({
   after the title screen if there is one.
 - Other options: `border` (colour around the picture), `scale` (force one), `transition`
   (`{ out, in }` fade lengths in ms), `settings` (the player's defaults, any of the keys below), `manualClock`.
+- `intro` and `gate`: see "Sequences and the intro".
 - Query switches: `?manual` (the clock moves only on `Cutaway.clock.advance`), `?act=<id>` (begin an
-  act at once, no title or card), `?edit` (open the editor), `?debug`, `?lang=de`, `?scale=3`.
+  act at once, no title or card, no intro), `?nointro` (leave the intro out), `?edit` (open the editor;
+  no intro either), `?debug`, `?lang=de`, `?scale=3`.
 
 ## Rooms
 
@@ -47,7 +51,8 @@ Cutaway.room("hall", {
 });
 ```
 
-- `foreground`: images drawn over everything (`[{ image, at }]`). `color`: a fill under the background.
+- `foreground`: images drawn over everything (`[{ image, at, depth }]`). `color`: a fill under the background.
+- A `size` taller than the screen lets the camera move up and down too (a tilt in a sequence).
 - `scale`: actors scale with depth, from `far: [y, scale]` to `near: [y, scale]`.
 - The shapes (walk areas, holes, hotspot outlines, walk-to points, baselines, lamps, effect areas) are
   best drawn in the editor's Room tab: it writes `rooms/<id>.geo.js` (`Cutaway.room.geometry`), loaded
@@ -85,6 +90,11 @@ in front).
 | `states: { open: "box_open" }` | an image per object state (`{ state: "box", value: "open" }`) |
 | `flip`, `hidden` | |
 | `scroll: -40` | px per second along x (negative: to the left); the image repeats across the room, so scenery passes by (a ride, clouds). Layers at different speeds give parallax |
+| `depth: 0.5` | parallax against the camera (default 1, the room): on the screen it is at `at - camera * depth`, in whole pixels. 0 stays put on the screen, 0.5 is far away (half the camera's speed), 1.4 a foreground that passes faster. A hotspot that uses the prop's box follows it; hotspots with their own shape stay in room coordinates. The editor draws and picks it where it shows |
+
+A script can move a prop (`{ move }`) and play its animation from the start (`{ play }`). Both belong
+to the scene, not the save: entering the room again (or loading a save) shows the prop where its data
+puts it. A lasting change is a `state` (another image) or `show`/`hide` of a second prop.
 
 ## Actors
 
@@ -149,17 +159,53 @@ A script is a list of steps, run one after another. A plain string is a line for
 | `{ give: "key" }`, `{ give: "key", to: "bolt" }`, `{ take: "key" }`, `{ remove: "key" }` | items (`take` also hides the hotspot) |
 | `{ set: "flag" }`, `{ set: "n", value: 3 }`, `{ unset }`, `{ inc: "n", by: 1 }` | flags |
 | `{ state: "box", value: "open" }`, `{ show: "id" }`, `{ hide: "id" }` | objects (`room/id` for another room) |
-| `{ goto: "yard", at: [x, y], face, transition: false, follow: false }` | change rooms |
+| `{ goto: "yard", at: [x, y], face, transition: false, follow: false }` | change rooms (`transition: false`: a cut; `"dissolve"`: pixel by pixel, below) |
 | `{ place: "bolt", room: "yard", at, face }` | put an actor somewhere (`room: null`: nowhere) |
 | `{ switch: "bolt" }`, `{ lock }`, `{ unlock }`, `{ stay }`, `{ follow }` | the party |
 | `{ dialog: "bolt", node }` | a dialogue |
 | `{ card: "Night", title: "Act 2" }`, `{ end: "The end." }` | full-screen cards; `end` ends the game |
 | `{ act: "next" }`, `{ act: "act2" }` | go on to an act (a demo ends there) |
 | `{ music: { theme, section, intensity } }`, `{ stinger: "found" }` | music |
-| `{ sfx: "door", at: [x, y], gain }`, `{ fade: "out", ms }`, `{ shake: 300 }` | sound and screen |
+| `{ sfx: "door", at: [x, y], gain }`, `{ fade: "out", ms, color }`, `{ shake: 300 }` | sound and screen (a white `fade` of 100 ms is a flash) |
+| `{ camera: [x, y], ms, ease, wait: false }`, `{ camera: "follow" }` | move the camera (its top left), below |
+| `{ move: "crate", to: [x, y], ms, ease, wait: false }`, `{ move: "crate", by: [dx, dy] }` | move a prop of this room |
+| `{ play: "tv", anim: "tv_news", loop: true, wait: false }` | play a prop's animation from its first frame |
+| `{ letterbox: true, ms }`, `{ caption: "Paris, 1925.", at: "bl", type: true, ms }`, `{ dissolve: 800 }` | cinema, below |
+| `{ sequence: "flashback" }`, `{ shot: "name" }` | play a sequence; mark a shot in one ("Sequences and the intro") |
 | `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic |
 
 Add your own: `Cutaway.script.action("organ", async (step, ctx) => { ... })`.
+
+### Camera, props and cinema
+
+`ms` is a length in game time (default 0: at once); `ease` is `"linear"`, `"in"` (slow start), `"out"`
+(slow end) or `"inOut"` (both, the default); with `wait: false` the script goes on while it moves.
+Positions may be fractional while moving; drawing is always in whole pixels.
+
+- `{ camera: [x, y], ms, ease }`: the camera's top left goes to that room point, kept inside the room
+  (a room higher than the screen tilts). It stays there, not following the actor, until
+  `{ camera: "follow" }` or the room changes (entering a room gives the camera back).
+- `{ move: "id", to: [x, y] }` or `by: [dx, dy]`: a prop of the current room, from where it is now.
+- `{ play: "id", anim, loop, wait }`: the prop shows `anim` (or its own image) from the first frame, at
+  the frame lengths of the atlas. Once by default: the script waits until it has played through, then
+  the prop holds the last frame. `loop: true` repeats it (and doesn't wait). A long take (hundreds of
+  rendered frames) works too: `build-atlas.mjs` spreads it over several atlas pages.
+- `{ letterbox: true, ms }`: black bars top and bottom; `true` makes the picture 2.39:1 (bars of 23 px
+  on 320x180), a number is the bars' height in px, `false` slides them away.
+- `{ caption: text, at, type, blip, speed, ms, color }`: a line of text in the picture: `at` is `"bl"`
+  (bottom left, the default), `"br"`, `"tl"`, `"tr"` or `"c"` (the middle). It sits 6 px inside the
+  picture's edge (the bars' edge with a letterbox), in the game's font, white (or `color`) with the
+  interface's outline, so it also reads on black. `type: true` types it in (`speed` letters a second,
+  default 20; `blip`, or `type: "sound"`, plays a sound per letter); `ms` holds it that long after
+  that, then it goes (without `ms` it stays). The script waits for the typing and the hold
+  (`wait: false`: it goes on). `{ caption: false }` clears it. Long texts wrap.
+- `{ dissolve: ms }` keeps the picture as it is now and lets whatever the next steps show (a camera
+  cut, a prop shown, a state) come through it pixel by pixel, in the order of a 4x4 Bayer pattern
+  (16 steps, never a blended colour). The script goes on at once. `{ goto: "room", transition:
+  "dissolve", dissolve: ms }` changes rooms that way (default 800 ms). Like the fades, it is off in the
+  Node tools.
+- The bars and the caption are drawn over the room and the fade, under lines and the interface. None
+  of it is saved.
 
 ## Conditions
 
@@ -192,6 +238,55 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   continue (the newest save), acts, load, settings, fullscreen, quit.
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"
   card (a button that opens `link`, one back to the title).
+
+## Sequences and the intro
+
+A sequence is a little film made of script steps: an intro before the title screen, a cutscene.
+
+```js
+Cutaway.sequence("intro", {
+  steps: [
+    { shot: "logo" }, { goto: "logo", transition: false }, { play: "logo", anim: "logo_build" },
+    { shot: "sea" }, { goto: "sea", transition: "dissolve" }, { letterbox: true, ms: 800 },
+    { music: { theme: "storm", section: "flight" } },
+    { camera: [0, 120], ms: 6000, ease: "inOut", wait: false },
+    { caption: "Somewhere, 1985.", at: "bl", type: true, blip: "type", ms: 2500 },
+    { shot: "title" }, { goto: "street" }, { letterbox: false, ms: 600 }, { fade: "out", ms: 400 },
+  ],
+  after: [{ music: { theme: "title" } }],   // when it is skipped: what the rest would have set
+});
+```
+
+- Playing one (`Cutaway.sequence.play(id)`, `{ sequence: id }` in a script, the `intro` start option)
+  runs its steps as a script in cutscene mode: no cursor, no satchel, portraits or buttons, nothing to
+  click (lines and cards still show). Every action works in it, with the camera, prop and cinema ones.
+- A `goto` in a sequence shows a room as a shot: nobody is moved there, its enter script doesn't run,
+  it isn't visited, there is no autosave, it has no hotspots. Rooms made only as shots need no walk
+  area. Put actors into a shot with `place`. A room's `music` and `ambience` still apply when it is
+  shown, so shot rooms usually leave them out and the sequence sets the music.
+- `{ shot: "name" }` marks where a shot begins (the event `"sequence.shot"`). Space, Enter or a click
+  skip to the next mark: the steps in between run at once (lines, sounds, cards and waits are passed
+  over, moves arrive, their state changes stay), through a cut to black.
+- Esc (or a right click, a long press on a phone) skips the whole sequence: the steps stop where they
+  are, the screen goes black, `after` runs (at once), and whatever comes next fades in.
+- When it ends, the letterbox, the caption and the camera are cleared and the scene is back in the
+  room it was in before (`Cutaway.sequence.play(id, { restore: false })` leaves it as the sequence left
+  it). Played inside another sequence, its steps simply run as part of that one.
+- Dialogues in a sequence would wait for the player; leave them out.
+- `intro: "id"` (start option) plays it before the title screen (or the first act) the first time the
+  game starts on this machine; skipped or not, it is then remembered (`Cutaway.settings.seen(id)`, kept
+  beside the settings, not reset with them). The title screen gets "Watch intro" (`@cutaway.title.intro`)
+  to see it again. `?act=`, `?nointro` and `?edit` leave it out.
+- `gate: { room, view, prompt }` (start option): browsers let sound start only after a click or a key.
+  Before the intro and the title, if sound can't start yet, the gate shows `room` as a still (at `view`,
+  its top left) with `prompt` blinking at the bottom (default `@cutaway.gate.prompt`, "Click to start");
+  the click or key starts the sound and goes on. Where sound may start at once (a desktop shell, a
+  browser that allows it), there is no gate and the sound starts right away.
+- The Node tools don't play the intro: validate and solve don't start the game that way, and `play.mjs`
+  and `shot.mjs` add `?nointro` (`--intro` plays it: `play.mjs --intro` plays it through to the title,
+  then again from "Watch intro", with a click and Esc). `await Cutaway.debug.settle()` plays a sequence
+  to its end. The validator checks sequences (each step in the room its last `goto` shows: the props
+  `move` and `play` name must be there), `intro` and `gate`.
 
 ## Hints
 
@@ -277,7 +372,8 @@ The page loads each layer file after the game's own data.
   heading's), `rivet`, `rivetLight`, `rivetDark` (the corner fittings), `hover` (the chosen row's band).
   `Cutaway.menu.frame(ctx, x, y, w, h, { small, fill })` draws one for a game's own pages,
   `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)`.
-- Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`, ...
+- Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`,
+  `"sequence.start"`, `"sequence.shot"`, `"sequence.end"`, ...
 
 ## Tools
 
@@ -285,8 +381,8 @@ The page loads each layer file after the game's own data.
 |---|---|
 | `node tools/validate.mjs index.html` | every reference resolves, shapes are sound, texts are translated |
 | `node tools/solve.mjs index.html --full` | proves the game can be finished, lists soft-locks, checks hints |
-| `node tools/play.mjs index.html [--touch]` | plays it through in headless Chrome with real clicks (or taps) |
+| `node tools/play.mjs index.html [--touch] [--intro]` | plays it through in headless Chrome with real clicks (or taps); `--intro` plays the intro first |
 | `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks (`studio.json`: write, layers, tasks, palette) |
-| `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`) |
-| `node tools/build-atlas.mjs dir... out.js` | packs PNGs (pxl output) into an atlas script |
+| `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`; `--intro` lets the intro play) |
+| `node tools/build-atlas.mjs dir... out.js` | packs PNGs (pxl output) into an atlas script (an animation too big for a page goes frame by frame over several) |
 | `node tools/render-music.mjs index.html --out f.wav` | renders the music offline |

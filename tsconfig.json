@@ -29,6 +29,8 @@
     "src/fx.js",
     "src/script.js",
     "src/ui.js",
+    "src/cinema.js",
+    "src/sequence.js",
     "src/inventory.js",
     "src/party.js",
     "src/dialog.js",

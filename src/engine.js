@@ -2,6 +2,8 @@
 //   Cutaway.start({ width: 320, height: 180, room: "hall", actor: "pip" })
 // A game with acts (Cutaway.act) starts with its title screen (`title`), or else begins its first act;
 // ?act=<id> begins that act at once, without its card (also `act`). Without acts it shows `room`.
+// Before that, the opening: the audio gate (`gate`, where sound needs a click first) and the intro
+// (`intro`: a sequence, the first time only); ?act=, ?nointro and ?edit leave the intro out.
 // Each frame: the room (props, actors, light, effects), the screen fade, "frame.ui" listeners (screen
 // space), the interface (subtitles, labels, cursor), the debug text, then the buffer goes to the screen.
 "use strict";
@@ -31,6 +33,8 @@
  * @property {string} [act]          begin this act at once (no title screen)
  * @property {() => void} [quit]     the title screen offers "Quit" (desktop shells)
  * @property {boolean} [dev]         developer keys and switches: F9, F10, ?edit, ?debug, ?act (default on)
+ * @property {string} [intro]        a sequence played before the title screen the first time (then from its menu)
+ * @property {GateOptions} [gate]    in browsers, a still with a prompt until a click or key lets sound start
  */
 
 /**
@@ -65,6 +69,8 @@ Cutaway.start = async function (o = {}) {
 
   Cutaway.events.on("scene.drawn", (ctx) => Cutaway.debug.world(ctx));
   const dev = o.dev !== false;
+  // before the interface: its skip keys and clicks come first (a page without sequence.js has no intro)
+  Cutaway.sequence?.init();
   Cutaway.events.on("key", (k) => {
     if (dev && k.code === "F9") { Cutaway.debug.toggle(); k.event.preventDefault(); }
     if (dev && k.code === "F10") { Cutaway.openEditor(); k.event.preventDefault(); }
@@ -121,13 +127,18 @@ Cutaway.start = async function (o = {}) {
   Cutaway.party.set(o.party ?? (o.actor ? [o.actor] : []));
   Cutaway.party.setFollow(!!o.follow);
   if (o.inventory === "shared") Cutaway.state.share(Cutaway.party.members());
-  Cutaway.acts.configure({ id: o.id, title: o.title, demo: o.demo, quit: o.quit });
-  // these run in the background (the first room's enter script, the title screen)
+  Cutaway.acts.configure({ id: o.id, title: o.title, demo: o.demo, quit: o.quit, intro: o.intro });
+  // these run in the background (the opening, the first room's enter script, the title screen)
   const act = (dev && params.get("act")) || o.act;
+  const begin = () => {
+    if (Cutaway.acts.first() && o.title) Cutaway.acts.showTitle();
+    else if (Cutaway.acts.first()) Cutaway.acts.begin(/** @type {string} */ (Cutaway.acts.first()), { fresh: true });
+    else if (o.room) Cutaway.scene.load(o.room);
+  };
+  const intro = o.intro && !params.has("nointro") && !(dev && params.has("edit")) && !Cutaway.settings.seen(o.intro) ? o.intro : undefined;
   if (act) Cutaway.acts.begin(act, { fresh: true, card: false });
-  else if (Cutaway.acts.first() && o.title) Cutaway.acts.showTitle();
-  else if (Cutaway.acts.first()) Cutaway.acts.begin(/** @type {string} */ (Cutaway.acts.first()), { fresh: true });
-  else if (o.room) Cutaway.scene.load(o.room);
+  else if ((o.gate || intro) && Cutaway.sequence) Cutaway.sequence.opening({ gate: o.gate, intro }).then(begin);
+  else begin();
   if (dev && (o.debug || params.has("debug"))) Cutaway.debug.toggle(true);
   if (dev && params.has("edit")) Cutaway.openEditor();
   if (o.manualClock || params.has("manual")) Cutaway.clock.setManual(true);

@@ -11,7 +11,9 @@
 // Any effect may have `if: cond` (shown while it holds) and `lamp: "id"` (follows that lamp's flicker
 // and switches off with it). Effects draw over the lit room, under the interface.
 // Screen fades: { fade: "out", ms: 400, color: "#000" } and { fade: "in" }; room changes fade by
-// themselves (Cutaway.fx.transition, or `transition: false` on a goto).
+// themselves (Cutaway.fx.transition, or `transition: false` on a goto). A dissolve ({ dissolve: ms },
+// or `transition: "dissolve"` on a goto) keeps the picture as it is now and lets whatever comes next
+// show through it pixel by pixel, in the order of a 4x4 Bayer pattern (16 steps, no blended colours).
 "use strict";
 
 /**
@@ -41,6 +43,12 @@ Cutaway.fx = (function () {
   let fadeState = { from: 0, to: 0, start: 0, ms: 0, color: "#000" };
   let active = false;
   const transitionMs = { out: 220, in: 260 };
+  // the order in which a dissolve lets the new picture through, per pixel of each 4x4 block
+  const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+  /** @type {{old: HTMLCanvasElement, temp: HTMLCanvasElement, start: number, ms: number} | null} */
+  let dissolving = null;
+  /** @type {CanvasPattern[]} the masks of the 16 steps (what is still old), made once */
+  const masks = [];
 
   /** A repeatable random number in 0..1 for (a, b). @param {number} a @param {number} b */
   function rand(a, b) {
@@ -193,8 +201,65 @@ Cutaway.fx = (function () {
     return Cutaway.clock.wait(ms);
   }
 
+  /**
+   * Is a pixel still the old picture at a dissolve's step (0..16)? Step 0 keeps all of it, 16 none.
+   * @param {number} x @param {number} y @param {number} step
+   */
+  function dissolveKeeps(x, y, step) { return BAYER[y & 3][x & 3] >= step; }
+
+  /**
+   * Begin a dissolve: the room as it is now stays on the screen and gives way, pixel by pixel, to
+   * whatever is drawn from now on (a new room, a camera cut). Resolves after `ms`.
+   * @param {number} [ms]
+   */
+  function dissolve(ms = 800) {
+    if (!active || ms <= 0 || !Cutaway.scene.room) return Promise.resolve();
+    const W = Cutaway.display.width, H = Cutaway.display.height;
+    /** @param {number} w @param {number} h */
+    const canvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+    const old = dissolving?.old.width === W && dissolving.old.height === H ? dissolving.old : canvas(W, H);
+    const temp = dissolving?.temp.width === W && dissolving.temp.height === H ? dissolving.temp : canvas(W, H);
+    const g = /** @type {CanvasRenderingContext2D} */ (old.getContext("2d"));
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, W, H);
+    Cutaway.scene.render(g);
+    dissolving = { old, temp, start: Cutaway.clock.time, ms };
+    return Cutaway.clock.wait(ms);
+  }
+
+  /** The mask of a step as a repeating pattern: opaque where the old picture stays. @param {CanvasRenderingContext2D} ctx @param {number} step */
+  function mask(ctx, step) {
+    if (!masks[step]) {
+      const c = document.createElement("canvas");
+      c.width = 4; c.height = 4;
+      const g = /** @type {CanvasRenderingContext2D} */ (c.getContext("2d"));
+      g.fillStyle = "#fff";
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) if (dissolveKeeps(x, y, step)) g.fillRect(x, y, 1, 1);
+      masks[step] = /** @type {CanvasPattern} */ (ctx.createPattern(c, "repeat"));
+    }
+    return masks[step];
+  }
+
   /** @param {CanvasRenderingContext2D} ctx */
+  function renderDissolve(ctx) {
+    const d = dissolving;
+    if (!d) return;
+    const step = Math.floor(((Cutaway.clock.time - d.start) / d.ms) * 16);
+    if (step >= 16) { dissolving = null; return; }
+    const W = Cutaway.display.width, H = Cutaway.display.height, g = /** @type {CanvasRenderingContext2D} */ (d.temp.getContext("2d"));
+    g.globalCompositeOperation = "copy";
+    g.drawImage(d.old, 0, 0);
+    g.globalCompositeOperation = "destination-in";
+    g.fillStyle = mask(g, Math.max(0, step));
+    g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = "source-over";
+    ctx.drawImage(d.temp, 0, 0);
+  }
+
+  /** The screen pass over the room: a dissolve's old picture, then the fade. @param {CanvasRenderingContext2D} ctx */
   function renderFade(ctx) {
+    renderDissolve(ctx);
     const a = level();
     if (a <= 0) return;
     ctx.fillStyle = rgba(fadeState.color, a);
@@ -202,7 +267,11 @@ Cutaway.fx = (function () {
   }
 
   return {
-    render, renderFade, fade, level, kinds, rand,
+    render, renderFade, fade, level, kinds, rand, dissolve, dissolveKeeps,
+    /** Is a dissolve showing? */
+    get dissolving() { return !!dissolving; },
+    /** End a dissolve at once (a skipped cutscene). */
+    stopDissolve() { dissolving = null; },
     /** Is the screen on (fades and transitions run)? Off in the Node tools. */
     get active() { return active; },
     /**
@@ -219,7 +288,7 @@ Cutaway.fx = (function () {
       active = true;
       Cutaway.script.action("fade", (s) => {
         const v = s.fade, to = v === "in" ? 0 : v === "out" ? 1 : Number(v);
-        return fade(Number.isFinite(to) ? to : 1, s.ms ?? 400, s.color);
+        return fade(Number.isFinite(to) ? to : 1, Cutaway.script.fast ? 0 : s.ms ?? 400, s.color);
       });
     },
   };

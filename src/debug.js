@@ -80,14 +80,15 @@ Cutaway.debug = (function () {
   }
 
   /**
-   * With a manual clock: step time until nothing is running (no script, no walking, no line),
+   * With a manual clock: step time until nothing is running (no script or sequence, no walking, no
+   * line, no tween),
    * yielding between steps so promise chains can continue. For tools and headless checks.
    * @param {number} [maxMs]
    * @returns {Promise<number>} the game time spent
    */
   async function settle(maxMs = 120000) {
     const start = Cutaway.clock.time;
-    const idle = () => !Cutaway.script.busy && !Cutaway.ui.line &&
+    const idle = () => !Cutaway.script.busy && !Cutaway.ui.line && !Cutaway.tween.count &&
       Cutaway.scene.actorsHere().every((a) => a.state !== "walk" && !a.onceDone);
     for (let quiet = 0; quiet < 3 && Cutaway.clock.time - start < maxMs;) {
       Cutaway.clock.advance(100);

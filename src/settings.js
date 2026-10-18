@@ -1,5 +1,7 @@
 // Cutaway.js player settings: sound, text, picture and controls. Kept in localStorage per game
 // (not in the saves: they belong to the player, not to a game in progress). The pause menu edits them.
+// Beside them, what the player has seen once (the intro: `seen`, `markSeen`), which "Reset to defaults"
+// leaves alone.
 "use strict";
 
 /**
@@ -32,7 +34,12 @@ Cutaway.settings = (function () {
   const values = { ...DEFAULTS };
   /** @type {Partial<Settings>} the game's own defaults */
   let gameDefaults = {};
-  let storeKey = "", focusHooked = false;
+  let storeKey = "", seenKey = "", focusHooked = false;
+
+  /** @returns {string[]} */
+  function seenList() {
+    try { const v = JSON.parse(localStorage.getItem(seenKey) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+  }
 
   function apply() {
     Cutaway.audio.setVolume({ master: values.master, music: values.music, sfx: values.sfx, voice: values.voice });
@@ -66,6 +73,13 @@ Cutaway.settings = (function () {
     set(v) { Object.assign(values, v); apply(); persist(); },
     /** Back to the game's defaults. */
     reset() { Object.assign(values, DEFAULTS, gameDefaults); apply(); persist(); },
+    /** Has the player seen this (a sequence id: the intro) on this machine? @param {string} id */
+    seen(id) { return seenList().includes(id); },
+    /** Remember that the player has seen it. @param {string} id */
+    markSeen(id) {
+      if (!seenKey || seenList().includes(id)) return;
+      try { localStorage.setItem(seenKey, JSON.stringify([...seenList(), id])); } catch { /* private mode: again next time */ }
+    },
     /**
      * Load the stored settings for a game and apply them.
      * @param {string} gameId
@@ -73,6 +87,7 @@ Cutaway.settings = (function () {
      */
     init(gameId, defaults = {}) {
       storeKey = `cutaway.${gameId}.settings`;
+      seenKey = `cutaway.${gameId}.seen`;
       gameDefaults = defaults;
       Object.assign(values, defaults);
       try {

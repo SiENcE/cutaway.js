@@ -3,7 +3,13 @@
 // floor; lower on screen = in front), then foreground overlays, the light pass (Cutaway.light) and the
 // room's effects (Cutaway.fx). Actors are tinted by the room's light where they stand, and scale with
 // their depth when the room has a `scale`. Rooms wider or taller than the screen scroll with a camera
-// that follows the active actor.
+// that follows the active actor, unless a script moves it ({ camera: [x, y], ms }; leaving the room
+// gives it back). Props and overlays with a `depth` move against the camera at their own rate
+// (parallax: 0 stays on the screen, 1 is the room, above 1 a foreground that passes faster). Scripts
+// can move props ({ move }) and play their animations from the start ({ play }); both belong to the
+// scene, not the save: entering a room shows its props where its data puts them.
+// While a sequence plays (Cutaway.sequence: "sequence.start" ... "sequence.end"), a goto shows a room
+// as a shot: nobody is moved there, no enter script, not visited, no autosave, nothing to click.
 "use strict";
 
 /**
@@ -19,11 +25,15 @@
  * @property {boolean} [hidden]      starts hidden (a script can { show: id })
  * @property {number} [scroll]       px per second along x (negative: to the left); the image repeats
  *                                   across the room's width, so scenery passes by in a moving shot
+ * @property {number} [depth]        parallax against the camera (default 1, the room): on the screen
+ *                                   it is at `at - camera * depth`, so 0 stays put on the screen, 0.5
+ *                                   is far away, 1.5 a foreground passing in front
  */
 /**
  * @typedef {object} OverlayDef
  * @property {string} image
  * @property {[number, number]} [at] top-left corner (default 0, 0)
+ * @property {number} [depth]        parallax against the camera, as a prop's
  */
 /**
  * @typedef {object} ExitDef
@@ -184,22 +194,34 @@ Cutaway.scene = (function () {
   let time = 0;
   /** @type {[number, number] | null} where the camera stays in a backdrop */
   let view = null;
+  /** @type {{x: number, y: number} | null} the camera's place while a script moves it (unrounded) */
+  let scripted = null;
+  /** a sequence is playing: gotos show rooms as shots */
+  let filming = false;
+  /** @typedef {{pos?: {x: number, y: number}, play?: {image?: string, start: number, loop: boolean}}} LiveProp */
+  /** @type {Map<PropDef, LiveProp>} what scripts did to the props since the room was entered */
+  let live = new Map();
 
   /**
    * Show a room and run its `enter` script (unless `enter: false`, as when loading a save).
    * Actors whose `room` is this id appear in it. A backdrop (`backdrop: [x, y]`, the camera's top left;
-   * the title screen) is only shown: no enter script, not visited, no autosave.
+   * the title screen) is only shown: no enter script, not visited, no autosave. So is a shot (`shot:
+   * true`, a goto while a sequence plays), but its camera is the sequence's to move.
    * @param {string} id
-   * @param {{enter?: boolean, backdrop?: [number, number]}} [o]
+   * @param {{enter?: boolean, backdrop?: [number, number], shot?: boolean}} [o]
    */
   async function load(id, o = {}) {
     const def = Cutaway.room.get(id);
     current = def;
     walkMap = mapOf(def);
     view = o.backdrop ?? null;
+    for (const p of live.keys()) if (p.id) Cutaway.tween.stop("prop:" + p.id);
+    Cutaway.tween.stop("camera");
+    scripted = null;
+    live = new Map();
     follow(true);
     Cutaway.events.emit("room.enter", { id, music: def.music });
-    if (view) return;
+    if (view || o.shot) return;
     if (def.enter && o.enter !== false) await Cutaway.script.run(def.enter, { path: `${id}.enter` });
     Cutaway.state.visit(id);
     Cutaway.events.emit("room.entered", { id });
@@ -214,15 +236,20 @@ Cutaway.scene = (function () {
 
   /**
    * Move the active actor to another room (a `goto` or an exit), fading out and in. Party members
-   * who follow come along and stand beside the arrival point.
+   * who follow come along and stand beside the arrival point. `transition: "dissolve"` (or a
+   * `dissolve` length in ms) changes the picture pixel by pixel instead; the steps after go on
+   * meanwhile. While a sequence plays, the room is only shown, as a shot.
    * @param {string} id
    * @param {[number, number]} [at]
    * @param {Facing} [face]
-   * @param {{transition?: boolean, follow?: boolean}} [o]  transition: false = cut; follow: false = alone
+   * @param {{transition?: boolean | string, follow?: boolean, dissolve?: number}} [o]  transition: false = cut; follow: false = alone
    */
   async function go(id, at, face, o = {}) {
-    const a = active(), from = current?.id, fade = o.transition !== false && id !== from;
+    const a = filming ? null : active(), from = current?.id, fast = Cutaway.script.fast;
+    const dissolve = o.transition === "dissolve" || o.dissolve !== undefined;
+    const fade = o.transition !== false && !dissolve && id !== from && !fast;
     Cutaway.events.emit("room.leave", { id: from, to: id });
+    if (dissolve && !fast) Cutaway.fx.dissolve(o.dissolve ?? 800);
     if (fade) await Cutaway.fx.transition("out");
     if (a) {
       a.place(id, at ? at[0] : a.x, at ? at[1] : a.y, face);
@@ -235,7 +262,7 @@ Cutaway.scene = (function () {
         });
       }
     }
-    const loaded = load(id);
+    const loaded = load(id, { shot: filming });
     if (fade) Cutaway.fx.transition("in");
     await loaded;
   }
@@ -254,11 +281,22 @@ Cutaway.scene = (function () {
     return { w: s ? s[0] : Cutaway.display.width, h: s ? s[1] : Cutaway.display.height };
   }
 
-  /** Move the camera to keep the active actor in view. @param {boolean} [snap] */
+  /** A camera position kept inside the room, in whole pixels. @param {number} x @param {number} y */
+  function clampCamera(x, y) {
+    const { w, h } = size();
+    return { x: Cutaway.util.clamp(Math.round(x), 0, Math.max(0, w - Cutaway.display.width)),
+      y: Cutaway.util.clamp(Math.round(y), 0, Math.max(0, h - Cutaway.display.height)) };
+  }
+
+  /**
+   * Move the camera to keep the active actor in view; a script's camera wins, then a backdrop's view;
+   * without the actor in this room it stays at the top left. @param {boolean} [snap]
+   */
   function follow(snap) {
     const a = active(), { w, h } = size();
     const sw = Cutaway.display.width, sh = Cutaway.display.height;
-    if (!a || view) { camera.x = view?.[0] ?? 0; camera.y = view?.[1] ?? 0; return; }
+    if (scripted) { const c = clampCamera(scripted.x, scripted.y); camera.x = c.x; camera.y = c.y; return; }
+    if (!a || view || a.room !== current?.id) { camera.x = view?.[0] ?? 0; camera.y = view?.[1] ?? 0; return; }
     const tx = Cutaway.util.clamp(Math.round(a.x - sw / 2), 0, Math.max(0, w - sw));
     const ty = Cutaway.util.clamp(Math.round(a.y - 20 - sh / 2), 0, Math.max(0, h - sh));
     if (snap) { camera.x = tx; camera.y = ty; return; }
@@ -271,7 +309,7 @@ Cutaway.scene = (function () {
   /** Actors in the current room. */
   function actorsHere() { return current ? Cutaway.actors.all().filter((a) => a.room === current?.id) : []; }
 
-  /** Visible props with their current image. */
+  /** Visible props with their current image (an animation played by a script, its state's, its own). */
   function props() {
     /** @type {{def: PropDef, image: string}[]} */
     const out = [];
@@ -279,28 +317,82 @@ Cutaway.scene = (function () {
       if (p.id && Cutaway.state.isHidden(p.id, !!p.hidden)) continue;
       if (!p.id && p.hidden) continue;
       const st = p.id && p.states ? Cutaway.state.objState(p.id) : "";
-      out.push({ def: p, image: (st && p.states?.[st]) || p.image });
+      out.push({ def: p, image: live.get(p)?.play?.image ?? ((st && p.states?.[st]) || p.image) });
     }
     return out;
   }
 
   /**
-   * The screen box of a prop's current frame.
+   * How far a prop or overlay with a `depth` is shifted in the room, so that on the screen it is at
+   * `at - camera * depth` (whole pixels).
+   * @param {{depth?: number}} d
+   */
+  function parallax(d) {
+    const k = 1 - (d.depth ?? 1);
+    return k ? { x: Math.round(camera.x * k), y: Math.round(camera.y * k) } : { x: 0, y: 0 };
+  }
+
+  /** Where a prop stands now (moved by a script), without its depth. @param {PropDef} p */
+  function placeOf(p) {
+    const pos = live.get(p)?.pos;
+    return pos ? { x: pos.x, y: pos.y } : { x: p.at[0], y: p.at[1] };
+  }
+
+  /**
+   * The room box of a prop's current frame, where it shows now (moved, shifted by its depth); a
+   * hotspot that uses a prop's box follows it.
    * @param {PropDef} p
    * @returns {[number, number, number, number] | null}
    */
   function propBox(p) {
-    const a = Cutaway.assets.get(p.image);
+    const a = Cutaway.assets.get(live.get(p)?.play?.image ?? p.image);
     if (!a || !a.frames.length) return null;
-    const f = a.frames[0], [ax, ay] = p.anchor ?? a.anchor ?? [Math.floor(f.w / 2), f.h];
-    return [p.at[0] - (p.flip ? f.w - 1 - ax : ax), p.at[1] - ay, f.w, f.h];
+    const f = a.frames[0], [ax, ay] = p.anchor ?? a.anchor ?? [Math.floor(f.w / 2), f.h], at = placeOf(p), d = parallax(p);
+    return [Math.round(at.x) + d.x - (p.flip ? f.w - 1 - ax : ax), Math.round(at.y) + d.y - ay, f.w, f.h];
+  }
+
+  /** A prop of the current room by id. @param {string} id */
+  function propDef(id) {
+    const p = (current?.props ?? []).find((q) => q.id === id);
+    if (!p) throw new Error(`Cutaway: no prop "${id}" in room "${current?.id ?? "-"}"`);
+    return p;
+  }
+
+  /**
+   * Move a prop to a room point over `ms` (whole pixels when drawn). The scene's, not the save's:
+   * entering the room again shows it where its data puts it.
+   * @param {string} id
+   * @param {[number, number]} to
+   * @param {{ms?: number, ease?: string}} [o]
+   */
+  function moveProp(id, to, o = {}) {
+    const p = propDef(id), from = placeOf(p), l = live.get(p) ?? {};
+    const pos = (l.pos = { ...from });
+    live.set(p, l);
+    return Cutaway.tween.to({ key: "prop:" + id, ms: o.ms, ease: o.ease, step: (k) => {
+      pos.x = from.x + (to[0] - from.x) * k; pos.y = from.y + (to[1] - from.y) * k;
+    } });
+  }
+
+  /**
+   * Play a prop's animation (or another one, `image`) from its first frame, at the atlas's frame
+   * durations: once by default, then it holds the last frame. Returns how long it plays (ms; 0 for
+   * a loop).
+   * @param {string} id
+   * @param {{image?: string, loop?: boolean}} [o]
+   */
+  function playProp(id, o = {}) {
+    const p = propDef(id), l = live.get(p) ?? {}, a = Cutaway.assets.get(o.image ?? p.image);
+    l.play = { image: o.image, start: time, loop: !!o.loop };
+    live.set(p, l);
+    return o.loop || !a ? 0 : a.total;
   }
 
   /** Hotspots that exist right now, in data order, then the other actors in the room. */
   function hotspots() {
     /** @type {Hotspot[]} */
     const out = [];
-    if (view) return out;                                // a backdrop is only looked at
+    if (view || filming) return out;                     // a backdrop or a shot is only looked at
     for (const [id, h] of Object.entries(current?.hotspots ?? {})) {
       if (Cutaway.state.isHidden(id, !!h.hidden) || !Cutaway.state.test(h.if)) continue;
       let poly = h.poly ? Cutaway.util.points(h.poly) : null;
@@ -354,17 +446,18 @@ Cutaway.scene = (function () {
   }
 
   /**
-   * Where the copies of a scrolling prop stand now: one image width apart, covering the room. A pure
-   * function of the scene time, in whole pixels, so screenshots of the same moment match.
-   * @param {PropDef} d @param {string} image @param {number} roomW
+   * Where the copies of a scrolling prop stand now: one image width apart, covering the room (from
+   * `from` to `roomW`). A pure function of the scene time, in whole pixels, so screenshots of the
+   * same moment match.
+   * @param {PropDef} d @param {string} image @param {number} roomW @param {number} [from] @param {number} [x0]  where it stands
    */
-  function scrollXs(d, image, roomW) {
+  function scrollXs(d, image, roomW, from = 0, x0 = d.at[0]) {
     const a = Cutaway.assets.get(image), fw = a?.frames[0]?.w ?? 0;
     if (!fw) return [];
     const ax = d.anchor ? d.anchor[0] : (a?.anchor?.[0] ?? Math.floor(fw / 2));
-    const off = ((Math.floor(d.at[0] + time * (d.scroll ?? 0) / 1000) % fw) + fw) % fw;
+    const off = ((Math.floor(x0 + time * (d.scroll ?? 0) / 1000) % fw) + fw) % fw;
     const xs = [];
-    for (let x = off - fw; x - ax < roomW; x += fw) if (x - ax + fw > 0) xs.push(x);
+    for (let x = off - fw + Math.min(0, Math.floor(from / fw) * fw); x - ax < roomW; x += fw) if (x - ax + fw > from) xs.push(x);
     return xs;
   }
 
@@ -379,16 +472,21 @@ Cutaway.scene = (function () {
     /** @type {Drawable[]} */
     const list = [];
     for (const p of props()) {
-      const d = p.def, o = { t: time, flip: d.flip, anchor: d.anchor };
-      list.push({ baseline: d.baseline ?? d.at[1], draw: d.scroll
-        ? (c) => { for (const x of scrollXs(d, p.image, w)) Cutaway.assets.draw(c, p.image, x, d.at[1], o); }
-        : (c) => Cutaway.assets.draw(c, p.image, d.at[0], d.at[1], o) });
+      const d = p.def, pl = live.get(d)?.play, at = placeOf(d), sh = parallax(d), x = Math.round(at.x) + sh.x, y = Math.round(at.y) + sh.y;
+      // a played animation runs from its own start (once: then its last frame); others with the scene
+      const o = { t: pl ? time - pl.start : time, loop: pl?.loop, flip: d.flip, anchor: d.anchor };
+      list.push({ baseline: d.baseline ?? at.y, draw: d.scroll
+        ? (c) => { for (const sx of scrollXs(d, p.image, w - sh.x, -sh.x, at.x)) Cutaway.assets.draw(c, p.image, sx + sh.x, y, o); }
+        : (c) => Cutaway.assets.draw(c, p.image, x, y, o) });
     }
     const lit = !!current.light;
     for (const a of actorsHere()) list.push({ baseline: a.y, draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
     list.sort((p, q) => p.baseline - q.baseline);       // Array.sort is stable: ties keep data order
     for (const d of list) d.draw(ctx);
-    for (const f of current.foreground ?? []) Cutaway.assets.draw(ctx, f.image, f.at?.[0] ?? 0, f.at?.[1] ?? 0, { t: time, anchor: [0, 0] });
+    for (const f of current.foreground ?? []) {
+      const sh = parallax(f);
+      Cutaway.assets.draw(ctx, f.image, (f.at?.[0] ?? 0) + sh.x, (f.at?.[1] ?? 0) + sh.y, { t: time, anchor: [0, 0] });
+    }
     ctx.restore();
     // the light pass works on the screen: flicker over the baked light, added lamps, glows
     if (lit) Cutaway.light.render(ctx);
@@ -399,11 +497,54 @@ Cutaway.scene = (function () {
     ctx.restore();
   }
 
+  /**
+   * Move the camera (its top left) to a room point over `ms`, kept inside the room and drawn in whole
+   * pixels. It stays there (the actor isn't followed) until `cameraFollow()` or the room is left.
+   * @param {number} x @param {number} y
+   * @param {{ms?: number, ease?: string}} [o]
+   */
+  function cameraTo(x, y, o = {}) {
+    const from = scripted ? clampCamera(scripted.x, scripted.y) : { x: camera.x, y: camera.y };
+    const to = clampCamera(x, y), cam = (scripted = { ...from });
+    return Cutaway.tween.to({ key: "camera", ms: o.ms, ease: o.ease, step: (k) => {
+      cam.x = from.x + (to.x - from.x) * k; cam.y = from.y + (to.y - from.y) * k;
+      if (scripted === cam) follow(true);
+    } });
+  }
+
+  /** Show no room: a black stage (before an intro's first shot). The next load brings one. */
+  function unload() {
+    for (const p of live.keys()) if (p.id) Cutaway.tween.stop("prop:" + p.id);
+    Cutaway.tween.stop("camera");
+    current = null; walkMap = null; view = null; scripted = null;
+    live = new Map();
+    camera.x = 0; camera.y = 0;
+  }
+
+  /** Give the camera back to the active actor (or the backdrop's view). */
+  function cameraFollow() {
+    Cutaway.tween.stop("camera");
+    scripted = null;
+    follow(true);
+  }
+
+  Cutaway.events.on("sequence.start", () => { filming = true; });
+  Cutaway.events.on("sequence.end", () => { filming = false; });
+
   return {
     load, go, update, render, follow, actorsHere, hotspots, hotspotAt, props, propBox, scaleAt, refresh, scrollXs,
+    cameraTo, cameraFollow, moveProp, playProp, parallax, unload,
+    /** Where a prop of the current room stands now (moved or not; without its depth). @param {string} id */
+    propAt(id) { return placeOf(propDef(id)); },
     get room() { return current; },
     /** Is the room only a backdrop (the title screen)? */
     get backdrop() { return !!view; },
+    /** Where the camera stays in a backdrop (null: it isn't one). @returns {[number, number] | null} */
+    get view() { return view ? [view[0], view[1]] : null; },
+    /** Is a script moving the camera (it doesn't follow the actor)? */
+    get cameraScripted() { return !!scripted; },
+    /** Is a sequence playing (rooms are shots)? */
+    get filming() { return filming; },
     get walkMap() { return walkMap; },
     get camera() { return camera; },
     get time() { return time; },
