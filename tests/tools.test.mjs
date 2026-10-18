@@ -21,6 +21,19 @@ export default async function (t) {
   t.ok("validate: a voice-only actor is fine", (await errorsOf((C) => {
     C.actor("radio", { name: "Radio" }); C.room.get("hall").hotspots.window.use = [{ say: "radio", text: "Hello?" }];
   })).length === 0);
+  // a walk area of its own (a boat) is fine when a goto leads there, an error when nothing does
+  const island = (/** @type {boolean} */ withGoto) => (/** @type {any} */ C) => {
+    const hall = C.room.get("hall");
+    hall.walk = [...hall.walk, [10, 20, 40, 20, 40, 40, 10, 40]];
+    hall.hotspots.window.walkTo = [20, 30];
+    if (withGoto) hall.hotspots.window.use = [{ goto: "hall", at: [25, 30] }];
+  };
+  t.ok("validate: a walk area reached by a goto is fine", (await errorsOf(island(true))).length === 0, (await errorsOf(island(true))).join(" | "));
+  t.ok("validate fails: a walk area nothing leads to", (await errorsOf(island(false))).some((e) => /can't be reached/.test(e)));
+  // a walk area wider than the room: the room's size is missing
+  const wide = await demo((/** @type {any} */ C) => { const hall = C.room.get("hall"); hall.walk = [...hall.walk, [300, 150, 380, 150, 380, 170, 300, 170]]; });
+  await boot(wide, { instant: true });
+  t.ok("validate warns: a walk area beyond the room's size", validate(wide.C, {}).issues.some((i) => i.level === "warning" && /beyond the room's size/.test(i.msg)));
   const broken = [
     ["unknown item", (C) => { C.room.get("hall").hotspots.plant.take[0].take = "leef"; }, /unknown item "leef"/],
     ["unknown exit room", (C) => { C.room.get("hall").hotspots.doorway.exit.to = "yrad"; }, /unknown room "yrad"/],

@@ -103,14 +103,16 @@ Cutaway.actor = (function () {
 
     /**
      * Walk (or run) to a point through the current room's walk map. Resolves on arrival (or when stopped).
+     * `free`: straight there, ignoring the walk areas (a cutscene's move: wading out, swinging on a rope).
      * @param {number} x
      * @param {number} y
      * @param {boolean} [run]
+     * @param {boolean} [free]
      * @returns {Promise<void>}
      */
-    walkTo(x, y, run = false) {
+    walkTo(x, y, run = false, free = false) {
       this.running = run;
-      const map = this.room === Cutaway.scene.room?.id ? Cutaway.scene.walkMap : null;
+      const map = !free && this.room === Cutaway.scene.room?.id ? Cutaway.scene.walkMap : null;
       this.path = map ? map.path({ x: this.x, y: this.y }, { x, y }) : [{ x, y }];
       for (const done of this.arrived.splice(0)) done();      // a new walk ends the previous one
       if (!this.path.length) { this.setState("idle"); return Promise.resolve(); }

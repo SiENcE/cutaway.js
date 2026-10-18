@@ -49,6 +49,12 @@ export default async function (t) {
   const bg = await Promise.race([C.script.run([{ walk: "pip", to: [90, 60], wait: false }, { set: "went_on" }]).then(() => "done"),
     new Promise((r) => setTimeout(() => r("stuck"), 50))]);
   actor.walkTo = walkTo;
+  /** @type {any[]} */
+  let args = [];
+  actor.walkTo = (...a) => { args = a; return Promise.resolve(); };
+  await C.script.run([{ walk: "pip", to: [70, 60], free: true, run: true }]);
+  t.ok("a free walk asks the actor to ignore the walk map", args[0] === 70 && args[2] === true && args[3] === true);
+  actor.walkTo = walkTo;
   t.ok("walk with wait: false goes on at once", bg === "done" && S.test("went_on"));
 
   C.script.action("beep", (s) => { said.push("beep " + s.beep); });

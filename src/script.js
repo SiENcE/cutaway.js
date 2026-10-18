@@ -84,11 +84,12 @@ Cutaway.script = (function () {
     return [v[0], v[1]];
   }
 
-  /** { walk: [x, y] } or { walk: "actor", to: [x, y], face, run: true, wait: false } (false: the script goes on meanwhile) @param {Record<string, any>} s */
+  /** { walk: [x, y] } or { walk: "actor", to: [x, y], face, run: true, wait: false, free: true } (wait false: the script goes on
+   * meanwhile; free: a straight line, through anything) @param {Record<string, any>} s */
   function walk(s) {
     const [who, to] = Array.isArray(s.walk) ? [undefined, s.walk] : [s.walk, s.to];
     const a = actorOf(who), [x, y] = xy(to);
-    const done = a.walkTo(x, y, !!s.run).then(() => { if (s.face) a.face(s.face); });
+    const done = a.walkTo(x, y, !!s.run, !!s.free).then(() => { if (s.face) a.face(s.face); });
     return s.wait === false ? undefined : done;
   }
 

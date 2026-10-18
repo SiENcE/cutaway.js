@@ -142,7 +142,7 @@ A script is a list of steps, run one after another. A plain string is a line for
 |---|---|
 | `"Hello!"`, `{ say: "bolt", text: "Hi." }` | a line (over the speaker, in their colour) |
 | `{ narrate: "Meanwhile..." }` | a line at the top |
-| `{ walk: [x, y] }`, `{ walk: "bolt", to: [x, y], face, run: true, wait: false }` | walk (`wait: false`: the script goes on) |
+| `{ walk: [x, y] }`, `{ walk: "bolt", to: [x, y], face, run: true, wait: false, free: true }` | walk (`wait: false`: the script goes on; `free: true`: in a straight line, ignoring the walk areas, e.g. wading out into water) |
 | `{ face: "left" }`, `{ face: "bolt", to: "up" }` | turn |
 | `{ anim: "bolt:reach" }`, `{ anim: "bolt:reach", wait: false }` | play a costume animation once (`wait: false`: the script goes on) |
 | `{ wait: 500 }` | ms |

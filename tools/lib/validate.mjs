@@ -99,7 +99,7 @@ export function validate(C, o = {}) {
       case "set": case "unset": case "inc": flagsSet.add(String(v)); break;
       case "state": object(v, roomId, where); break;
       case "show": case "hide": object(v, roomId, where); break;
-      case "goto": room(v, where); if (s.at && xy(s.at, where) && roomIds.has(v)) mustReach.get(v).push([s.at[0], s.at[1], where]); break;
+      case "goto": room(v, where); if (s.at && xy(s.at, where) && roomIds.has(v)) mustReach.get(v).push([s.at[0], s.at[1], where, true]); break;
       case "place": actor(v, where); if (s.room) room(s.room, where); if (s.at) xy(s.at, where); break;
       case "switch": case "lock": case "unlock": case "stay": case "follow": actor(v, where); if (!party.has(v)) err(where, `"${v}" is not in the party`); break;
       case "music": music(v, where); break;
@@ -149,6 +149,10 @@ export function validate(C, o = {}) {
     (r.walk ?? []).forEach((poly, i) => polygon(poly, `${w}.walk.${i}`));
     (r.holes ?? []).forEach((poly, i) => polygon(poly, `${w}.holes.${i}`));
     if (!(r.walk ?? []).length) warn(w, "no walkable area");
+    // a walk area beyond the room's size: the camera won't scroll there (a wide room without its `size`?)
+    const rw = r.size?.[0] ?? C.display?.width ?? 0, rh = r.size?.[1] ?? C.display?.height ?? 0;
+    const far = (r.walk ?? []).flat().filter((v, i) => (i % 2 ? v > rh + 1 : v > rw + 1));
+    if (rw && rh && far.length) warn(w, `the walk area reaches beyond the room's size ${rw}x${rh}: give the room its size`);
     for (const [i, p] of (r.props ?? []).entries()) {
       const pw = `${w}.props.${p.id ?? i}`;
       asset(p.image, pw);
@@ -169,7 +173,7 @@ export function validate(C, o = {}) {
       for (const [it, s] of Object.entries(h.with ?? {})) { if (it !== "*") item(it, `${hw}.with`); script(s, id, `${hw}.with.${it}`); }
       if (h.exit) {
         room(h.exit.to, hw + ".exit");
-        if (h.exit.at && xy(h.exit.at, hw + ".exit.at") && roomIds.has(h.exit.to)) mustReach.get(h.exit.to).push([h.exit.at[0], h.exit.at[1], hw + ".exit.at"]);
+        if (h.exit.at && xy(h.exit.at, hw + ".exit.at") && roomIds.has(h.exit.to)) mustReach.get(h.exit.to).push([h.exit.at[0], h.exit.at[1], hw + ".exit.at", true]);
       }
     }
     script(r.enter, id, w + ".enter");
@@ -235,7 +239,7 @@ export function validate(C, o = {}) {
       for (const [k, e] of Object.entries(p)) if (k !== "if") for (const n of typeof e === "string" ? [e] : Object.values(e ?? {})) asset(n, `${w}.poses.${i}.${k}`);
     });
     if (d.portrait) asset(d.portrait, w + ".portrait");
-    if (d.room) { room(d.room, w + ".room"); if (d.at && roomIds.has(d.room)) mustReach.get(d.room).push([d.at[0], d.at[1], w + ".at"]); }
+    if (d.room) { room(d.room, w + ".room"); if (d.at && roomIds.has(d.room)) mustReach.get(d.room).push([d.at[0], d.at[1], w + ".at", true]); }
     script(d.look, d.room ?? "", w + ".look");
     script(d.talk, d.room ?? "", w + ".talk");
     for (const [it, s] of Object.entries(d.with ?? {})) { if (it !== "*") item(it, w + ".with"); script(s, d.room ?? "", `${w}.with.${it}`); }
@@ -299,15 +303,18 @@ export function validate(C, o = {}) {
     for (const id of C.score.stingerIds()) for (const p of C.score.checkStinger(id)) err(`stinger ${id}`, p);
   }
 
-  // reachability: every point the actors must stand on is walkable and connected
+  // reachability: every point the actors must stand on is walkable and connected to a way into the room
+  // (an exit's arrival, a goto, an actor's start: a walk area of its own, like a boat, is fine if one leads there)
   for (const [id, pts] of mustReach) {
     if (!pts.length) continue;
     const map = C.walk.create({ walk: C.room.get(id).walk ?? [], holes: C.room.get(id).holes ?? [] });
-    const [x0, y0] = pts[0];
+    const ins = pts.filter((p) => p[3] && map.inside({ x: p[0], y: p[1] }));
+    const from = ins.length ? ins : [pts[0]];
+    /** @param {number} x0 @param {number} y0 @param {number} x @param {number} y */
+    const reaches = (x0, y0, x, y) => { const p = map.path({ x: x0, y: y0 }, { x, y }), end = p[p.length - 1] ?? { x: x0, y: y0 }; return Math.hypot(end.x - x, end.y - y) <= 1; };
     for (const [x, y, where] of pts) {
       if (!map.inside({ x, y })) { err(where, `[${x}, ${y}] is outside the walkable area of "${id}"`); continue; }
-      const p = map.path({ x: x0, y: y0 }, { x, y }), end = p[p.length - 1] ?? { x: x0, y: y0 };
-      if (Math.hypot(end.x - x, end.y - y) > 1) err(where, `[${x}, ${y}] can't be reached from [${x0}, ${y0}] in "${id}"`);
+      if (!from.some(([x0, y0]) => reaches(x0, y0, x, y))) err(where, `[${x}, ${y}] can't be reached from [${from[0][0]}, ${from[0][1]}] (or any other way in) in "${id}"`);
     }
   }
 
