@@ -2,7 +2,7 @@
 // mouse clicks (hotspots, portraits, the satchel, dialogue lines) on a manual clock. A title screen is
 // passed with "new game", the hint button is tried once, and the end card goes back to the title.
 //   node tools/play.mjs <index.html> [--path path.json] [--max states] [--shots dir] [--touch] [--size 844x390] [--dpr 3]
-// Must end with "all passed". --shots saves a screenshot after every move. --touch plays it like a
+// Must end with "all passed"; a demo that ends before the path does stops there. --shots saves a screenshot after every move. --touch plays it like a
 // phone: a mobile viewport, taps for clicks and long presses for looks.
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -94,6 +94,8 @@ try {
   }
   for (const [n, m] of path.entries()) {
     const name = `${String(n + 1).padStart(2)}. ${describe(m)}`;
+    // a demo ends before the full game's path does: the rest of the path is for acts it doesn't have
+    if (await chrome.ev("__play.ended")) { check(`the game ended after ${n} moves (the path has ${path.length})`, true); break; }
     try {
       if (m.kind === "switch") await click(await point(`Cutaway.party.portraitPoint(${JSON.stringify(m.id)})`));
       else if (m.kind === "act" || m.kind === "look") { await reach(m.id); await click(await point(`Cutaway.debug.pointOn(${JSON.stringify(m.id)})`), m.kind === "look" ? "rclick" : "click"); }
