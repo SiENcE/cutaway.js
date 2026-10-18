@@ -17,6 +17,10 @@ const errorsOf = async (patch) => {
 
 export default async function (t) {
   t.ok("validate: the demo has no errors", (await errorsOf()).length === 0);
+  // an actor without a costume is a voice: fine on its own, wrong in a room
+  t.ok("validate: a voice-only actor is fine", (await errorsOf((C) => {
+    C.actor("radio", { name: "Radio" }); C.room.get("hall").hotspots.window.use = [{ say: "radio", text: "Hello?" }];
+  })).length === 0);
   const broken = [
     ["unknown item", (C) => { C.room.get("hall").hotspots.plant.take[0].take = "leef"; }, /unknown item "leef"/],
     ["unknown exit room", (C) => { C.room.get("hall").hotspots.doorway.exit.to = "yrad"; }, /unknown room "yrad"/],
@@ -30,6 +34,7 @@ export default async function (t) {
     ["missing @key", (C) => { C.room.get("hall").hotspots.window.look = "@hall.window"; }, /"@hall.window" missing/],
     ["unknown music theme", (C) => { C.room.get("yard").music = { theme: "yrad" }; }, /unknown music theme "yrad"/],
     ["unknown stinger", (C) => { C.room.get("hall").hotspots.window.use = [{ stinger: "boing" }]; }, /unknown stinger "boing"/],
+    ["voice in a room", (C) => { C.actor("radio", { name: "Radio", room: "hall", at: [100, 160] }); }, /voice only/],
     ["broken score", (C) => { C.score.get("hall").sections.a.next = "zz"; }, /next section "zz"/],
   ];
   for (const [name, patch, re] of broken) {

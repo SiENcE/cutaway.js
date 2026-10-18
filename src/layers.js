@@ -46,7 +46,7 @@ Cutaway.edits = (function () {
       if (!act) continue;
       merge(act.def, a);
       act.name = act.def.name ?? id; act.color = act.def.color ?? act.color;            // the actor keeps copies of these
-      act.speed = act.def.speed ?? act.speed; act.costume = act.def.costume;
+      act.speed = act.def.speed ?? act.speed; act.costume = act.def.costume ?? act.costume;
     }
   }
 

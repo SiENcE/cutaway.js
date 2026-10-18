@@ -4,6 +4,8 @@
 // with `up` and `down` walks, an actor going mostly up or down the screen shows its back or front.
 // Actors walk along the room's walk map at a per-axis speed (slower up and down the screen, which
 // reads as depth), keep their walk cycle running between waypoints and are drawn on whole pixels.
+// An actor without a costume is only a voice (someone on the phone, a megaphone far away): it speaks
+// from outside the room and is never drawn.
 "use strict";
 
 /**
@@ -15,7 +17,7 @@
  * @typedef {object} ActorDef
  * @property {string} [name]       display name
  * @property {string} [color]      subtitle colour
- * @property {Costume} costume
+ * @property {Costume} [costume]  none: a voice only, never in a room
  * @property {[number, number]} [speed]  pixels per second along x and y (default [24, 12])
  * @property {number} [run]        running speed as a multiple of walking (default 2; double click, { walk, run: true })
  * @property {string} [room]       where the actor starts
@@ -41,7 +43,7 @@ Cutaway.actor = (function () {
       this.def = def;
       this.name = def.name ?? id;
       this.color = def.color ?? "#fff";
-      this.costume = def.costume;
+      this.costume = def.costume ?? /** @type {Costume} */ ({ idle: "" });
       this.speed = def.speed ?? [24, 12];
       /** @type {string | null} */
       this.room = def.room ?? null;
@@ -196,6 +198,7 @@ Cutaway.actor = (function () {
      */
     draw(ctx, light) {
       const { anim, flip } = this.look(), scale = this.scale();
+      if (!anim) return;                                      // a voice only
       if (!light) { Cutaway.assets.draw(ctx, anim, Math.round(this.x), Math.round(this.y), { t: this.t, flip, scale }); return; }
       const [x, y, w, h] = this.box(), a = Cutaway.assets.get(anim);
       if (!a) return;

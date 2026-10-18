@@ -104,6 +104,8 @@ Cutaway.actor("pip", {
   `{ right, left, up, down }`. With `up` and `down` walks, an actor walking mostly up or down the
   screen shows its back or front.
 - Extra costume keys are one-shot animations: `{ anim: "pip:reach" }`.
+- An actor without a `costume` is a voice only (someone on the phone, a megaphone far away): it can
+  `say` lines but is never drawn, so don't place it in a room.
 - Double click (or double tap) makes the played actor run.
 
 ## Items

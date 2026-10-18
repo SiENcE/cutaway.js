@@ -228,7 +228,8 @@ export function validate(C, o = {}) {
     for (const [k, e] of Object.entries(d.costume ?? {})) {
       for (const n of typeof e === "string" ? [e] : Object.values(e ?? {})) asset(n, `${w}.costume.${k}`);
     }
-    if (!d.costume?.idle) err(w, "costume needs an idle animation");
+    if (!d.costume) { if (d.room) err(w, "an actor without a costume is a voice only: it can't start in a room"); }
+    else if (!d.costume.idle) err(w, "costume needs an idle animation");
     (d.poses ?? []).forEach((p, i) => {
       cond(p.if, d.room ?? "", `${w}.poses.${i}.if`);
       for (const [k, e] of Object.entries(p)) if (k !== "if") for (const n of typeof e === "string" ? [e] : Object.values(e ?? {})) asset(n, `${w}.poses.${i}.${k}`);
