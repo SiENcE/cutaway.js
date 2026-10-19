@@ -134,9 +134,6 @@ npm run play             # play it through in headless Chrome (add --touch: as a
 node tools/build-editor-help.mjs   # after changing docs/editor.md or docs/reference.md
 ```
 
-The conventions (one module per file on the global `Cutaway`, classic scripts, how modules talk) are in
-[CLAUDE.md](CLAUDE.md).
-
 ## Status
 
 Early development (0.1). Everything above works and is tested (unit tests, the tools on the demo, the
