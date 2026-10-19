@@ -58,4 +58,17 @@ export async function shared(t) {
   t.ok("shared bag: same bag", C.state.sameBag("pip", "bolt") && !C.state.sameBag("pip", "nobody"));
   C.state.remove("key", "bolt");
   t.ok("shared bag: and it's gone for both", !C.state.has("key", "pip"));
+  // a bag of one's own while split off, and back
+  C.state.give("map", "pip");
+  await C.script.run({ bag: "own", who: "bolt" });
+  t.ok("own bag: empty at first, the others keep theirs", C.state.items("bolt").length === 0 && C.state.has("map", "pip") && !C.state.sameBag("pip", "bolt"));
+  C.state.give("rope", "bolt");
+  t.ok("own bag: what Bolt takes stays his", C.state.has("rope", "bolt") && !C.state.has("rope", "pip"));
+  const snap = C.state.snapshot();
+  await C.script.run({ bag: "shared", who: "bolt" });
+  t.ok("own bag: back in the party's bag, with what he carried", C.state.items("pip").join() === "map,rope" && C.state.sameBag("pip", "bolt"));
+  C.state.restore(snap);
+  t.ok("own bag: saves keep it", !C.state.sameBag("pip", "bolt") && C.state.items("bolt").join() === "rope");
+  C.state.restore({ flags: {}, inv: {}, obj: {}, hidden: {}, visited: {}, once: {} });
+  t.ok("own bag: an old save shares again", C.state.sameBag("pip", "bolt"));
 }

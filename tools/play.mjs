@@ -92,13 +92,22 @@ try {
       const row = await chrome.ev(`(Cutaway.menu.rows ?? []).indexOf(Cutaway.i18n.t("@cutaway.title.intro"))`);
       check("title screen: \"" + (await chrome.ev(`Cutaway.i18n.t("@cutaway.title.intro")`)) + "\"", row >= 0);
       if (row >= 0) {
+        const shots = await chrome.ev(`(Cutaway.sequence.get(${JSON.stringify(id)})?.steps ?? []).filter((s) => s && typeof s === "object" && "shot" in s).length`);
         await click(await chrome.ev(`Cutaway.menu.rowPoint(${row})`));
         await chrome.ev("__play.step(1000)");
         const before = await chrome.ev("__play.shot");
         await click({ x: 160, y: 90 });                         // a click: the next shot
         await chrome.ev("new Promise((r) => setTimeout(r, 300))");
-        const after = await chrome.ev("__play.shot");
-        check(`  a click skips to the next shot (${before} > ${after})`, await chrome.ev("!!Cutaway.sequence.playing()") && after !== before);
+        if (shots > 1) {
+          const after = await chrome.ev("__play.shot");
+          check(`  a click skips to the next shot (${before} > ${after})`, await chrome.ev("!!Cutaway.sequence.playing()") && after !== before);
+        } else {
+          // one shot only: a click skips to its end; then play it once more for Esc
+          await chrome.ev("Cutaway.debug.settle()");
+          check(`  a click skips to the end of its only shot (${before}), back to the title screen`, await chrome.ev("!Cutaway.sequence.playing() && Cutaway.acts.titleOpen && !!Cutaway.menu.rows"));
+          await click(await chrome.ev(`Cutaway.menu.rowPoint((Cutaway.menu.rows ?? []).indexOf(Cutaway.i18n.t("@cutaway.title.intro")))`));
+          await chrome.ev("__play.step(1000)");
+        }
         if (touch) await chrome.hold(160, 90); else await chrome.key("Escape");   // Esc (a long press): skip it all
         await chrome.ev("new Promise((r) => setTimeout(r, 300))");
         await chrome.ev("Cutaway.debug.settle()");

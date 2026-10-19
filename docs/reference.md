@@ -157,9 +157,10 @@ A script is a list of steps, run one after another. A plain string is a line for
 | `{ anim: "bolt:reach" }`, `{ anim: "bolt:reach", wait: false }` | play a costume animation once (`wait: false`: the script goes on) |
 | `{ wait: 500 }` | ms |
 | `{ give: "key" }`, `{ give: "key", to: "bolt" }`, `{ take: "key" }`, `{ remove: "key" }` | items (`take` also hides the hotspot) |
+| `{ bag: "own", who: "bolt" }`, `{ bag: "shared", who: "bolt" }` | with `inventory: "shared"`: a party member split off from the others carries a bag of their own (empty at first; saved); `"shared"` puts them and what they carry back into the party's bag |
 | `{ set: "flag" }`, `{ set: "n", value: 3 }`, `{ unset }`, `{ inc: "n", by: 1 }` | flags |
 | `{ state: "box", value: "open" }`, `{ show: "id" }`, `{ hide: "id" }` | objects (`room/id` for another room) |
-| `{ goto: "yard", at: [x, y], face, transition: false, follow: false }` | change rooms (`transition: false`: a cut; `"dissolve"`: pixel by pixel, below) |
+| `{ goto: "yard", at: [x, y], face, transition: false, follow: false }` | change rooms (`transition: false`: a cut; `"dissolve"`: pixel by pixel, below). After a `{ fade: "out" }`, a `goto` brings the picture back, also within the same room (moving everyone while the screen is dark) |
 | `{ place: "bolt", room: "yard", at, face }` | put an actor somewhere (`room: null`: nowhere) |
 | `{ switch: "bolt" }`, `{ lock }`, `{ unlock }`, `{ stay }`, `{ follow }` | the party |
 | `{ dialog: "bolt", node }` | a dialogue |

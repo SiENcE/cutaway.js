@@ -6,23 +6,26 @@
 //   "at:actor=room"  "hidden:obj"     and objects { and: [...] }, { or: [...] }, { not: cond }
 // Object ids are "room/id"; a bare id means the current room.
 // Inventories are per actor, or one shared bag for a group (Cutaway.state.share(["a", "b"]): the
-// party's backpack); "has:item" then asks the bag of whoever is playing.
+// party's backpack); "has:item" then asks the bag of whoever is playing. A member of the group can carry
+// a bag of their own for a while (`{ bag: "own", who }`, back with `{ bag: "shared", who }`): someone
+// split off from the others. That is part of the state, so saves keep it.
 "use strict";
 
 /**
  * @typedef {string | any[] | {and: any[]} | {or: any[]} | {not: any}} Cond   (arrays hold more Conds)
  * @typedef {{flags: Record<string, any>, inv: Record<string, string[]>, obj: Record<string, string>,
- *   hidden: Record<string, boolean>, visited: Record<string, boolean>, once: Record<string, boolean>}} StateData
+ *   hidden: Record<string, boolean>, visited: Record<string, boolean>, once: Record<string, boolean>,
+ *   own: Record<string, boolean>}} StateData
  */
 
 Cutaway.state = (function () {
   /** @returns {StateData} */
-  function fresh() { return { flags: {}, inv: {}, obj: {}, hidden: {}, visited: {}, once: {} }; }
+  function fresh() { return { flags: {}, inv: {}, obj: {}, hidden: {}, visited: {}, once: {}, own: {} }; }
   let s = fresh();
   /** @type {Set<string>} actors who share one bag */
   let sharing = new Set();
   /** Whose inventory an actor uses. @param {string} who */
-  function bag(who) { return sharing.has(who) ? "@shared" : who; }
+  function bag(who) { return sharing.has(who) && !s.own[who] ? "@shared" : who; }
 
   /** Full object key: "room/id" (a bare id belongs to the current room). @param {string} id */
   function key(id) { return id.includes("/") ? id : `${Cutaway.scene.room?.id ?? ""}/${id}`; }
@@ -108,6 +111,20 @@ Cutaway.state = (function () {
     reset() { s = fresh(); },
     /** These actors share one bag from now on (the party's backpack). @param {string[]} ids */
     share(ids) { sharing = new Set(ids); },
+    /**
+     * Give a member of the shared group a bag of their own ("own", empty at first), or put them back into the
+     * shared one ("shared": what they carried goes in with the rest). @param {string} who @param {"own" | "shared"} kind
+     */
+    setBag(who, kind) {
+      if (kind === "own") { if (!s.own[who]) { s.own[who] = true; s.inv[who] = []; } }
+      else if (s.own[who]) {
+        const mine = s.inv[who] ?? [];
+        delete s.own[who]; delete s.inv[who];
+        const list = (s.inv[bag(who)] ??= []);
+        for (const i of mine) if (!list.includes(i)) list.push(i);
+      } else return;
+      Cutaway.events.emit("inventory.changed", { who, item: "", added: kind === "own" });
+    },
     /** Do these two actors use the same bag? @param {string} a @param {string} b */
     sameBag(a, b) { return bag(a) === bag(b); },
     /** @returns {StateData} a deep copy, safe to store */

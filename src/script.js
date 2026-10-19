@@ -129,6 +129,9 @@ Cutaway.script = (function () {
     },
     /** @param {Record<string, any>} s */
     remove: (s) => Cutaway.state.remove(s.remove, s.from ?? actorOf().id),
+    /** { bag: "own", who: "actor" } a bag of their own while split off from a party that shares one; { bag: "shared" } back
+     * (who: the active actor by default) @param {Record<string, any>} s */
+    bag: (s) => Cutaway.state.setBag(s.who ?? actorOf().id, s.bag === "own" ? "own" : "shared"),
     /** @param {Record<string, any>} s */
     set: (s) => Cutaway.state.set(s.set, "value" in s ? s.value : true),
     /** @param {Record<string, any>} s */

@@ -248,6 +248,8 @@ Cutaway.scene = (function () {
     const a = filming ? null : active(), from = current?.id, fast = Cutaway.script.fast;
     const dissolve = o.transition === "dissolve" || o.dissolve !== undefined;
     const fade = o.transition !== false && !dissolve && id !== from && !fast;
+    // a script that faded the screen out before a goto within the same room gets the picture back with it
+    const reveal = fade || (o.transition !== false && !dissolve && !fast && Cutaway.fx.level() > 0);
     Cutaway.events.emit("room.leave", { id: from, to: id });
     if (dissolve && !fast) Cutaway.fx.dissolve(o.dissolve ?? 800);
     if (fade) await Cutaway.fx.transition("out");
@@ -263,7 +265,7 @@ Cutaway.scene = (function () {
       }
     }
     const loaded = load(id, { shot: filming });
-    if (fade) Cutaway.fx.transition("in");
+    if (reveal) Cutaway.fx.transition("in");
     await loaded;
   }
 
