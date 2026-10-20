@@ -26,6 +26,14 @@ Cutaway.script = (function () {
   /** Wait `ms` of game time; nothing in fast mode. @param {number} ms */
   function sleep(ms) { return fast || !(ms > 0) ? Promise.resolve() : Cutaway.clock.wait(ms); }
 
+  /** Open or shut a door prop ("id" or "room/id") if its room is the one shown. @param {any} ref @param {boolean} on */
+  function door(ref, on) {
+    const [room, id] = String(ref).includes("/") ? String(ref).split("/") : [Cutaway.scene.room?.id, String(ref)];
+    if (!room || room !== Cutaway.scene.room?.id) return false;
+    Cutaway.scene.showProp(id, on);
+    return true;
+  }
+
   /**
    * Run a script to the end. Resolves when it has finished.
    * @param {Script} script
@@ -189,6 +197,8 @@ Cutaway.script = (function () {
     sfx: (s) => { if (!fast) Cutaway.events.emit("sfx", { sfx: s.sfx, at: s.at, gain: s.gain }); },
     /** @param {Record<string, any>} s */
     fade: (s) => Cutaway.events.emit("fade", s.fade),
+    // { tape: 0..1, ms } a worn video tape's look: the screen's (fx.js replaces this where there is one)
+    tape: () => undefined,
     /** @param {Record<string, any>} s */
     shake: (s) => { if (!fast) Cutaway.events.emit("shake", s.shake); },
     // The camera and the props, for cutscenes and sequences (the scene's, not saved; leaving the room resets them).
@@ -210,6 +220,16 @@ Cutaway.script = (function () {
       const ms = Cutaway.scene.playProp(String(s.play), { image: s.anim, loop: !!s.loop });
       return s.wait === false ? undefined : sleep(ms);
     },
+    /** { open: "door_open", sfx: "creak", ms: 260 } shows a hidden prop of the room shown, for the scene (a door standing open while
+     * someone goes through it; not saved), with a sound, then waits `ms`; { close: "door_open", sfx } shuts it again. "room/door_open"
+     * names the room too (in a dialog, or after a goto); in another room it does nothing @param {Record<string, any>} s */
+    open: (s) => {
+      if (!door(s.open, true)) return;
+      if (s.sfx && !fast) Cutaway.events.emit("sfx", { sfx: s.sfx, at: s.at });
+      return sleep(Number(s.ms) || 0);
+    },
+    /** @param {Record<string, any>} s */
+    close: (s) => { if (door(s.close, false) && s.sfx && !fast) Cutaway.events.emit("sfx", { sfx: s.sfx, at: s.at }); },
     /** { shot: "name" } marks where a shot of a sequence begins (Space and clicks skip to the next one) */
     shot: () => {},
   };

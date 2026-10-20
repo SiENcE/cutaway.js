@@ -3,7 +3,8 @@
 // A game with acts (Cutaway.act) starts with its title screen (`title`), or else begins its first act;
 // ?act=<id> begins that act at once, without its card (also `act`). Without acts it shows `room`.
 // Before that, the opening: the audio gate (`gate`, where sound needs a click first) and the intro
-// (`intro`: a sequence, the first time only); ?act=, ?nointro and ?edit leave the intro out.
+// (`intro`: a sequence, the first time only, or on every start with `introAlways`); ?act=, ?nointro and
+// ?edit leave the intro out.
 // Each frame: the room (props, actors, light, effects), the screen fade, "frame.ui" listeners (screen
 // space), the interface (subtitles, labels, cursor), the debug text, then the buffer goes to the screen.
 "use strict";
@@ -34,6 +35,7 @@
  * @property {() => void} [quit]     the title screen offers "Quit" (desktop shells)
  * @property {boolean} [dev]         developer keys and switches: F9, F10, ?edit, ?debug, ?act (default on)
  * @property {string} [intro]        a sequence played before the title screen the first time (then from its menu)
+ * @property {boolean} [introAlways] play the intro on every start, not only the first time
  * @property {GateOptions} [gate]    in browsers, a still with a prompt until a click or key lets sound start
  */
 
@@ -137,7 +139,7 @@ Cutaway.start = async function (o = {}) {
     else if (Cutaway.acts.first()) Cutaway.acts.begin(/** @type {string} */ (Cutaway.acts.first()), { fresh: true });
     else if (o.room) Cutaway.scene.load(o.room);
   };
-  const intro = o.intro && !params.has("nointro") && !(dev && params.has("edit")) && !Cutaway.settings.seen(o.intro) ? o.intro : undefined;
+  const intro = o.intro && !params.has("nointro") && !(dev && params.has("edit")) && (o.introAlways || !Cutaway.settings.seen(o.intro)) ? o.intro : undefined;
   if (act) Cutaway.acts.begin(act, { fresh: true, card: false, prologue: false });
   else if ((o.gate || intro) && Cutaway.sequence) Cutaway.sequence.opening({ gate: o.gate, intro }).then(begin);
   else begin();

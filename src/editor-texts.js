@@ -1,5 +1,5 @@
-// Cutaway.js editor, Texts tab: every text of the game (lines, looks, names, choices, cards, hints)
-// with where it is used. Change one and the game shows it at once; Save writes the language's text
+// Cutaway.js editor, Texts tab: every text of the game (lines, looks, names, choices, cards, hints,
+// sequences' lines and captions, the title screen and the gate) with where it is used. Change one and the game shows it at once; Save writes the language's text
 // layer (Cutaway.i18n.layer in game/strings/<lang>.texts.js, the studio's "texts" layer), which maps
 // the text in the game's data to what it says now. Export and import CSV or JSON, for translators:
 // one row per text, a column per language.
@@ -15,7 +15,8 @@
   function source() { return languages()[0]; }
 
   /**
-   * Every text in the game's data: [where, text]. Script steps, names, choices, cards, hints.
+   * Every text in the game's data: [where, text]. Script steps (captions too), names, choices, cards,
+   * hints, sequences, the title screen and the gate's prompt.
    * @returns {{where: string, room: string, text: string}[]}
    */
   function collect() {
@@ -38,7 +39,7 @@
       if ("if" in s) { script(s.then, where, room); script(s.else, where, room); return; }
       if ("once" in s) { script(s.once, where, room); script(s.else, where, room); return; }
       if ("say" in s) add("text" in s ? s.text : s.say, where, room);
-      for (const k of ["narrate", "card", "title", "end"]) if (k in s) add(s[k], where, room);
+      for (const k of ["narrate", "card", "title", "end", "caption"]) if (k in s) add(s[k], where, room);
     };
     for (const id of Cutaway.room.ids()) {
       const r = Cutaway.room.get(id);
@@ -74,6 +75,14 @@
       add(a.title, `act ${id}: title`, ""); add(a.name, `act ${id}: name`, ""); script(a.start, `act ${id}: start`, "");
     }
     Cutaway.hints.all().forEach((h, i) => (Array.isArray(h.text) ? h.text : [h.text]).forEach((t) => add(t, `hint ${i + 1}`, "")));
+    for (const id of Cutaway.sequence?.ids() ?? []) {
+      const q = Cutaway.sequence.get(id);
+      script(q?.steps, `sequence ${id}`, ""); script(q?.after, `sequence ${id}: after`, "");
+    }
+    // the title screen's texts and the gate's prompt
+    const ti = Cutaway.acts.title;
+    if (ti) for (const k of /** @type {const} */ (["name", "tagline", "footer"])) add(ti[k], `title screen: ${k}`, "");
+    add(Cutaway.sequence?.gate()?.prompt, "the gate: prompt", "");
     return out;
   }
 
@@ -200,7 +209,7 @@
         ...(differs || lang !== source() ? [el("div", { style: { color: "#777", fontSize: "11px", whiteSpace: "pre-wrap" } }, [t.text])] : []),
         area]);
     };
-    // grouped (this room: by hotspot; else by room, items, dialogues, acts, hints); a group's rows are made while it is open
+    // grouped (this room: by hotspot; else by room, items, dialogues, acts, hints, sequences, the title); a group's rows are made while it is open
     /** @type {Map<string, {where: string, room: string, text: string}[]>} */
     const groups = new Map();
     for (const t of list) { const g = groupOf(t); groups.set(g, [...(groups.get(g) ?? []), t]); }
@@ -216,6 +225,8 @@
     if (w.startsWith("dialog ")) return w.slice(0, w.indexOf("/") >= 0 ? w.indexOf("/") : w.length);
     if (w.startsWith("act ")) return "acts";
     if (w.startsWith("hint ")) return "hints";
+    if (w.startsWith("sequence ")) return w.split(":")[0];
+    if (w.startsWith("title screen") || w.startsWith("the gate")) return "title screen";
     return t.room || "the cast";
   }
 

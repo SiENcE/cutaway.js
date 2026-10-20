@@ -9,17 +9,25 @@
 // fits into the centre (Cutaway.display.reserve), unless a workspace puts a view of its own there (the
 // paint view). View > "Inspector in its own window" moves the inspector into an about:blank popup the
 // game page builds and drives (same origin, so it works from file://).
+// While it is open the game is paused (Play > Pause game, Ctrl+P): the clock is held (Cutaway.clock.held,
+// apart from the menus' `paused`), and so is the sound, except in the Sound and Voices tabs, where you
+// listen. Play > Step runs it on by 100 ms; the Play menu also plays sequences (from a shot mark too),
+// with the game running for them.
 // It saves layer files the game loads after its own code:
 // with the studio (tools/studio.mjs) straight into the game's folder, else through the browser's file
-// picker or as a download. The Room tab saves the shapes as `rooms/<id>.geo.js` (Cutaway.room.geometry).
+// picker or as a download. The Room tab saves the shapes as `rooms/<id>.geo.js` (Cutaway.room.geometry),
+// and warns when the game's page doesn't load that file.
 //   walk areas and holes      drag corners, double-click an edge for a new corner, Delete removes one
 //   hotspots                  polygons or rects (drag corners); their walk-to point (the cross)
-//   prop baselines            drag the cyan handle up or down
+//   props                     drag the place handle (the prop moves: `at`), the cyan baseline handle up or down
 //   lamps                     drag the source, or the handle on the reach circle
 //   effect areas              like polygons (haze, dust, rain), points (drips, steam, sparkles)
 // Click a shape to select it, drag inside it to move it, arrows nudge (Shift: 10 px), Ctrl+Z / Ctrl+Y
 // undo and redo. "+ Walk area" / "+ Hole" / "+ Hotspot": click the corners, then click the first
-// corner again or press Enter (Esc cancels).
+// corner again or press Enter (Esc cancels). The camera pans in a room bigger than the screen: the middle
+// button, the wheel (Shift: across), the arrows when nothing is selected.
+// The shapes are drawn over the whole picture (after the fade and the letterbox: frame.ui), so a black
+// screen doesn't hide them.
 "use strict";
 
 /**
@@ -37,7 +45,9 @@
  * @property {(dx: number, dy: number) => void} [translate]
  * @property {(i: number, x: number, y: number) => void} [insert]   a corner after corner i
  * @property {(i: number) => boolean} [remove]
- * @property {number} [extra]       index of the first handle that isn't a corner (walk-to, lamp reach)
+ * @property {number} [extra]       index of the first handle that isn't a corner (walk-to, lamp reach, a prop's place)
+ * @property {boolean} [pick]       false: a click inside the outline doesn't pick it (a prop's box: its handles do)
+ * @property {Pt[]} [line]          a line drawn with it (a prop's baseline)
  */
 
 /**
@@ -151,7 +161,19 @@ Cutaway.editor = (function () {
   let cursorText = null;
   /** @type {EditorTab[]} */
   const tabs = [];
-  let active = "room", modulesLoaded = false, roomDirty = false, beforeHelp = "room";
+  let active = "room", modulesLoaded = false, beforeHelp = "room";
+  /** @type {Set<string>} rooms whose shapes changed since they were saved */
+  const dirtyRooms = new Set();
+  /** @type {WeakSet<PropDef>} props moved in the editor (their place goes into the shapes file) */
+  const movedProps = new WeakSet();
+  /** the game is paused (the editor holds the clock); `audioHeld`: the sound is held too */
+  let holding = false, audioHeld = false, panned = false;
+  /** @type {{x: number, y: number, cam: Pt} | null} the camera dragged with the middle button */
+  let panDrag = null;
+  /** @type {string | null} the room the editor knows (another one comes: its undo goes) */
+  let knownRoom = null;
+  /** Tabs where you listen: the sound isn't held there. */
+  const LISTEN = ["sound", "voices"];
 
   /** What a tab has unsaved: its own `unsaved`, else its module's. @param {EditorTab} t */
   function unsavedOf(t) { return "unsaved" in t ? t.unsaved : /** @type {Record<string, any>} */ (api.modules)[t.id]?.unsaved; }
@@ -315,10 +337,19 @@ Cutaway.editor = (function () {
       if (!p.id) continue;
       const box = Cutaway.scene.propBox(p);
       if (!box) continue;
-      const b = p.baseline ?? p.at[1], cx = box[0] + Math.floor(box[2] / 2);
-      out.push({ key: `prop:${p.id}`, group: "prop", label: `${p.id} baseline ${b}`, color: COLORS.prop,
-        handles: [{ x: cx, y: b }], outline: [{ x: box[0], y: b }, { x: box[0] + box[2], y: b }],
-        move(_i, _x, y) { p.baseline = y; } });
+      // its place handle shows where it is drawn (shifted by its depth); a baseline of its own moves along
+      const b = p.baseline ?? p.at[1], cx = box[0] + Math.floor(box[2] / 2), sh = Cutaway.scene.parallax(p);
+      /** @param {number} dx @param {number} dy */
+      const shift = (dx, dy) => {
+        p.at = [p.at[0] + dx, p.at[1] + dy];
+        if (p.baseline) p.baseline += dy;
+        movedProps.add(p);
+      };
+      out.push({ key: `prop:${p.id}`, group: "prop", label: `${p.id} at ${p.at.join(", ")} baseline ${b}`, color: COLORS.prop,
+        handles: [{ x: cx, y: b }, { x: p.at[0] + sh.x, y: p.at[1] + sh.y }], extra: 1, outline: rectPts(...box), closed: true, pick: false,
+        line: [{ x: box[0], y: b }, { x: box[0] + box[2], y: b }],
+        move(i, x, y) { if (i === 0) p.baseline = y; else shift(x - (p.at[0] + sh.x), y - (p.at[1] + sh.y)); },
+        translate: shift });
     }
     (d.light?.lamps ?? []).forEach((l, i) => {
       const reach = l.r * (l.power ?? 1);
@@ -347,9 +378,13 @@ Cutaway.editor = (function () {
 
   // ------------------------------------------------------------------ geometry in and out
 
-  /** The current room's shapes as a geometry object. @returns {RoomGeometry} */
-  function geometry() {
-    const d = room();
+  /**
+   * A room's shapes as a geometry object (default: the current room's). A prop's place goes in when it
+   * was moved here, or the file as saved has it (`prev`); `all`: every prop's (undo).
+   * @param {Room | null} [d] @param {{all?: boolean, prev?: RoomGeometry | null}} [o]
+   * @returns {RoomGeometry}
+   */
+  function geometry(d = room(), o = {}) {
     if (!d) return {};
     /** @type {RoomGeometry} */
     const g = { walk: d.walk ?? [], holes: d.holes ?? [] };
@@ -362,11 +397,16 @@ Cutaway.editor = (function () {
     g.hotspots = hs;
     /** @type {NonNullable<RoomGeometry["props"]>} */
     const ps = {};
-    for (const p of d.props ?? []) if (p.id && p.baseline !== undefined) ps[p.id] = { baseline: p.baseline };
+    for (const p of d.props ?? []) {
+      if (!p.id) continue;
+      const at = o.all || movedProps.has(p) || !!o.prev?.props?.[p.id]?.at;
+      if (at || p.baseline !== undefined) ps[p.id] = { ...(at ? { at: p.at } : {}), ...(p.baseline !== undefined ? { baseline: p.baseline } : {}) };
+    }
     if (Object.keys(ps).length) g.props = ps;
     /** @type {NonNullable<RoomGeometry["lamps"]>} */
     const ls = {};
-    for (const l of d.light?.lamps ?? []) if (l.id) ls[l.id] = { at: l.at, r: l.r };
+    // a lamp without an id goes by its place in the list (as effects do)
+    (d.light?.lamps ?? []).forEach((l, i) => { ls[l.id ?? String(i)] = { at: l.at, r: l.r }; });
     if (Object.keys(ls).length) g.lamps = ls;
     /** @type {NonNullable<RoomGeometry["fx"]>} */
     const fs = {};
@@ -399,29 +439,85 @@ Cutaway.editor = (function () {
     return JSON.stringify(v);
   }
 
-  /** The geometry file for a room (default: the current one). @param {string} [id] */
-  function text(id) {
-    const d = room();
-    if (id && d?.id !== id) throw new Error("Cutaway.editor: open the room first");
+  /** The geometry file for a room (default: the current one). @param {string} [id] @param {RoomGeometry | null} [prev] the file as saved */
+  function text(id, prev) {
+    const d = id ? Cutaway.room.get(id) : room();
     if (!d) return "";
-    return `// Shapes of the room "${d.id}": walk areas, holes, hotspots, baselines, lamps, effect areas.\n` +
+    return `// Shapes of the room "${d.id}": walk areas, holes, hotspots, props' places and baselines, lamps, effect areas.\n` +
       `// Made with the Cutaway.js room editor (F10 or ?edit); the room's logic is in ${d.id}.js.\n"use strict";\n\n` +
-      `Cutaway.room.geometry(${JSON.stringify(d.id)}, ${fmt(geometry())});\n`;
+      `Cutaway.room.geometry(${JSON.stringify(d.id)}, ${fmt(geometry(d, { prev }))});\n`;
+  }
+
+  /**
+   * What a room's shapes file says now (the studio reads it; or the engine kept it), so a prop's place
+   * saved before stays in it.
+   * @param {string} id @param {string} path @returns {Promise<RoomGeometry | null>}
+   */
+  async function savedGeometry(id, path) {
+    if (studio.available) {
+      try {
+        const src = await studio.read(path);
+        /** @type {RoomGeometry | null} */
+        let g = null;
+        new Function("Cutaway", src)({ room: { geometry: (/** @type {string} */ _id, /** @type {RoomGeometry} */ x) => { g = x; } } });
+        return g;
+      } catch { /* not saved yet */ }
+    }
+    return /** @type {any} */ (Cutaway.room).geometryOf?.(id) ?? null;
+  }
+
+  /** A path relative to a page's folder ("game/rooms/a.geo.js" from "demo/index.html": "../game/rooms/a.geo.js"). @param {string} page @param {string} path */
+  function relTo(page, path) {
+    const a = page.split("/").slice(0, -1), b = path.split("/");
+    let i = 0;
+    while (i < a.length && i < b.length - 1 && a[i] === b[i]) i++;
+    return "../".repeat(a.length - i) + b.slice(i).join("/");
+  }
+
+  /**
+   * Does the game's page load a layer file? A warning if not (what is saved there would be lost on the
+   * next reload), else "". With the studio it reads the page; without, it looks at the scripts loaded.
+   * @param {string} path  where it was saved (in the game's folder)
+   */
+  async function notLoaded(path) {
+    const name = path.split("/").pop() ?? path;
+    if (studio.available && studio.config?.page) {
+      const page = String(studio.config.page), base = new URL("/" + page, location.origin), file = new URL("/" + path, location.origin).href;
+      let html = "";
+      try { html = await studio.read(page); } catch { return ""; }
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      if ([...doc.querySelectorAll("script[src]")].some((s) => new URL(s.getAttribute("src") ?? "", base).href === file)) return "";
+      return `WARNING: ${page} doesn't load ${path}, so after a reload the game won't have what was saved there. ` +
+        `Add <script src="${relTo(page, path)}"></script> to ${page}, after the room's own script.`;
+    }
+    if ([...document.scripts].some((s) => (s.getAttribute("src") ?? "").split("?")[0].split("/").pop() === name)) return "";
+    return `WARNING: the page loads no ${name}, so after a reload the game won't have what was saved. ` +
+      `Put the file in the game's rooms folder and add <script src=".../${name}"></script> to its index.html, after the room's own script.`;
   }
 
   /** @param {RoomGeometry} g */
   function restore(g) {
     const d = room();
     if (!d) return;
+    // straight into the room's data, not through Cutaway.room.geometry: what the room's file gave stays the engine's
     if (g.walk) d.walk = g.walk;
     if (g.holes) d.holes = g.holes;
-    Cutaway.room.geometry(d.id, g);
+    for (const [k, h] of Object.entries(d.hotspots ?? {})) {
+      const v = g.hotspots?.[k];
+      if (!v && !h.poly && !h.rect && !h.walkTo) continue;
+      delete h.poly; delete h.rect; delete h.walkTo;
+      if (v) { delete h.face; Object.assign(h, v); }
+    }
+    for (const [k, v] of Object.entries(g.props ?? {})) { const p = d.props?.find((q) => q.id === k); if (p) Object.assign(p, v); }
+    (d.light?.lamps ?? []).forEach((l, i) => { const v = g.lamps?.[l.id ?? String(i)]; if (v) Object.assign(l, v); });
+    (d.fx ?? []).forEach((f, i) => { const v = g.fx?.[f.id ?? String(i)]; if (v) Object.assign(f, v); });
     Cutaway.scene.refresh();
   }
 
   function pushUndo() {
-    roomDirty = true;
-    undoStack.push(JSON.stringify(geometry()));
+    const d = room();
+    if (d) dirtyRooms.add(d.id);
+    undoStack.push(JSON.stringify(geometry(d, { all: true })));
     if (undoStack.length > 200) undoStack.shift();
     redoStack = [];
   }
@@ -429,17 +525,30 @@ Cutaway.editor = (function () {
   function undoRedo(back) {
     const from = back ? undoStack : redoStack, to = back ? redoStack : undoStack, s = from.pop();
     if (!s) return;
-    to.push(JSON.stringify(geometry()));
+    to.push(JSON.stringify(geometry(room(), { all: true })));
     restore(JSON.parse(s));
     changed();
   }
 
   function changed() { Cutaway.scene.refresh(); panelDirty = true; }
 
+  /** Save the shapes: the current room's, and any other room changed since it was saved. */
   async function save() {
-    const d = room();
-    if (!d) return;
-    try { setStatus(await saveFile(studio.layer("room", { id: d.id }) || `${d.id}.geo.js`, text())); roomDirty = false; } catch (e) { setStatus("save failed: " + String(/** @type {any} */ (e)?.message ?? e)); }
+    const ids = [...new Set([...(room() ? [/** @type {Room} */ (room()).id] : []), ...dirtyRooms])], out = [];
+    let warned = false;
+    for (const id of ids) {
+      const path = studio.layer("room", { id }) || `${id}.geo.js`;
+      try {
+        const msg = await saveFile(path, text(id, await savedGeometry(id, path)));
+        out.push(msg);
+        if (msg === "not saved") continue;
+        dirtyRooms.delete(id);
+        const warn = await notLoaded(path);
+        if (warn) { out.push(warn); warned = true; }
+      } catch (e) { out.push(`${id}: save failed: ` + String(/** @type {any} */ (e)?.message ?? e)); }
+    }
+    if (warned) setLayout("output", true);
+    setStatus(out.join("\n"));
   }
 
   // ------------------------------------------------------------------ checks
@@ -468,14 +577,14 @@ Cutaway.editor = (function () {
 
   // ------------------------------------------------------------------ drawing
 
-  /** @param {CanvasRenderingContext2D} ctx @param {Pt} a @param {Pt} b */
-  function line(ctx, a, b) {
+  /** @param {CanvasRenderingContext2D} ctx @param {Pt} a @param {Pt} b @param {boolean} [dotted] */
+  function line(ctx, a, b, dotted = false) {
     let x0 = Math.round(a.x), y0 = Math.round(a.y);
     const x1 = Math.round(b.x), y1 = Math.round(b.y);
     const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
     let err = dx + dy;
     for (let n = 0; n < 4000; n++) {
-      ctx.fillRect(x0, y0, 1, 1);
+      if (!dotted || n % 2 === 0) ctx.fillRect(x0, y0, 1, 1);
       if (x0 === x1 && y0 === y1) break;
       const e2 = 2 * err;
       if (e2 >= dy) { err += dy; x0 += sx; }
@@ -501,17 +610,24 @@ Cutaway.editor = (function () {
       if (!show[it.group]) continue;
       const sel = it.key === selKey;
       ctx.fillStyle = sel ? "#ffffff" : it.color;
-      if (it.outline) {
-        const o = it.outline;
-        for (let i = 0; i + 1 < o.length; i++) line(ctx, o[i], o[i + 1]);
-        if (it.closed && o.length > 2) line(ctx, o[o.length - 1], o[0]);
+      if (it.outline) {                                  // a prop's box is dotted: its handles move it, not a click inside
+        const o = it.outline, dot = it.pick === false;
+        for (let i = 0; i + 1 < o.length; i++) line(ctx, o[i], o[i + 1], dot);
+        if (it.closed && o.length > 2) line(ctx, o[o.length - 1], o[0], dot);
       }
+      if (it.line) line(ctx, it.line[0], it.line[1]);
       if (it.group === "lamp") {                        // the reach circle, dotted
         const c = it.handles[0], r = Math.hypot(it.handles[1].x - c.x, it.handles[1].y - c.y);
         for (let i = 0; i < 64; i += 2) { const a = (i / 64) * Math.PI * 2; ctx.fillRect(Math.round(c.x + Math.cos(a) * r), Math.round(c.y + Math.sin(a) * r), 1, 1); }
       }
       it.handles.forEach((p, i) => {
         const isExtra = it.extra !== undefined && i >= it.extra;
+        if (it.group === "prop" && isExtra) {            // a prop's place: a diamond
+          const x = Math.round(p.x), y = Math.round(p.y);
+          ctx.fillStyle = sel ? (i === selHandle ? "#ff3ad0" : "#ffffff") : it.color;
+          ctx.fillRect(x - 2, y, 5, 1); ctx.fillRect(x, y - 2, 1, 5); ctx.fillRect(x - 1, y - 1, 3, 3);
+          return;
+        }
         if (it.group === "hotspot" && isExtra) {         // walk-to: a cross, linked to its hotspot
           ctx.fillStyle = sel ? "#ffffff" : COLORS.walkTo;
           ctx.fillRect(Math.round(p.x) - 3, Math.round(p.y), 7, 1); ctx.fillRect(Math.round(p.x), Math.round(p.y) - 3, 1, 7);
@@ -557,7 +673,7 @@ Cutaway.editor = (function () {
     const area = (o) => { let s = 0; for (let i = 0; i < o.length; i++) { const a = o[i], b = o[(i + 1) % o.length]; s += a.x * b.y - b.x * a.y; } return Math.abs(s / 2); };
     let best = null, bestA = Infinity;
     for (const it of items()) {
-      if (!show[it.group] || !it.outline || !it.closed) continue;
+      if (!show[it.group] || !it.outline || !it.closed || it.pick === false) continue;
       if (!Cutaway.walk.inPoly({ x: p.x + 0.5, y: p.y + 0.5 }, it.outline)) continue;
       const a = area(it.outline);
       if (a < bestA) { best = it; bestA = a; }
@@ -568,11 +684,35 @@ Cutaway.editor = (function () {
   /** @param {string} key */
   function find(key) { return items().find((it) => it.key === key) ?? null; }
 
+  // ------------------------------------------------------------------ the camera
+  // A room bigger than the screen: the editor moves the camera (the scene's scripted camera, kept inside
+  // the room); it is given back to the one playing when the editor closes.
+
+  /** Move the camera by room pixels; true if it moved. @param {number} dx @param {number} dy */
+  function pan(dx, dy) {
+    const c = Cutaway.scene.camera, x = c.x, y = c.y;
+    Cutaway.scene.cameraTo(x + dx, y + dy, { ms: 0 });
+    panned = true;
+    return c.x !== x || c.y !== y;
+  }
+
+  /** The wheel over the picture pans (Shift, or a room only as high as the screen: across). @param {WheelEvent} e */
+  function onWheel(e) {
+    if (e.target !== Cutaway.display.screen || e.ctrlKey) return;
+    e.preventDefault(); e.stopPropagation();
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 160 : 0.25;
+    /** @param {number} d */
+    const px = (d) => (d ? Math.sign(d) * Math.max(1, Math.round(Math.abs(d * k))) : 0);
+    const across = px(e.shiftKey ? e.deltaY || e.deltaX : e.deltaX), down = e.shiftKey ? 0 : px(e.deltaY);
+    if (!pan(across, down) && down && !across) pan(down, 0);
+  }
+
   /** @param {PointerEvent} e */
   function onDown(e) {
     if (menuOutside(e) && e.target === Cutaway.display.screen) { e.stopPropagation(); e.preventDefault(); return; }
     if (e.target !== Cutaway.display.screen) return;
     e.stopPropagation(); e.preventDefault();
+    if (e.button === 1) { const c = Cutaway.scene.camera; panDrag = { x: e.clientX, y: e.clientY, cam: { x: c.x, y: c.y } }; return; }
     const p = worldOf(e);
     if (active !== "room") { tabs.find((t) => t.id === active)?.pick?.(p, e.button); return; }
     if (drawing) {
@@ -600,6 +740,13 @@ Cutaway.editor = (function () {
 
   /** @param {PointerEvent} e */
   function onMove(e) {
+    if (panDrag) {
+      e.stopPropagation();
+      const a = Cutaway.display.toLogical(panDrag.x, panDrag.y), b = Cutaway.display.toLogical(e.clientX, e.clientY);
+      Cutaway.scene.cameraTo(panDrag.cam.x - (b.x - a.x), panDrag.cam.y - (b.y - a.y), { ms: 0 });
+      panned = true;
+      return;
+    }
     if (e.target !== Cutaway.display.screen && !drag) return;
     cursor = worldOf(e);
     if (!drag || active !== "room") return;
@@ -617,6 +764,7 @@ Cutaway.editor = (function () {
 
   /** @param {PointerEvent} e */
   function onUp(e) {
+    if (panDrag) { e.stopPropagation(); panDrag = null; }
     if (drag) { e.stopPropagation(); drag = null; }
   }
 
@@ -677,10 +825,11 @@ Cutaway.editor = (function () {
       return;
     }
     if (mod && e.code === "KeyS") { e.preventDefault(); e.stopPropagation(); if (e.shiftKey) saveAll(); else saveActive(); return; }   // in text fields too
-    const tag = /** @type {any} */ (e.target)?.tagName;
-    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    if ((mod && e.code === "KeyP") || e.code === "Pause") { e.preventDefault(); e.stopPropagation(); setHold(!holding); return; }       // not the browser's print
+    if (isField(e.target)) return;                          // the field's own keys (they don't reach the game: guard)
     if (["F9", "F11"].includes(e.code)) return;            // the debug overlay and fullscreen still work
     e.stopPropagation();
+    if (e.code === "F8") { e.preventDefault(); step(); return; }
     const lst = /** @type {any} */ (e.target)?.closest?.(".cw-lst"), ctl = lst ? listOf.get(lst) : null;
     if (ctl?.key(e)) { e.preventDefault(); return; }       // a list has the keyboard: it moves, folds, opens
     if (mod && e.code === "KeyZ") { e.preventDefault(); route(e.shiftKey ? "redo" : "undo"); return; }
@@ -689,6 +838,13 @@ Cutaway.editor = (function () {
     if (v?.key?.(e) || t.key?.(e)) { e.preventDefault(); return; }
     if (e.code === "Escape") { route("selectNone"); return; }
     if (e.code === "Delete" || e.code === "Backspace") { if (route("del")) e.preventDefault(); return; }
+    // the arrows pan the camera over the picture (in Room: while nothing is selected; else they nudge)
+    if (e.code.startsWith("Arrow") && !v && !(active === "room" && (selKey || drawing))) {
+      const k = e.shiftKey ? 40 : 8;
+      pan(e.code === "ArrowLeft" ? -k : e.code === "ArrowRight" ? k : 0, e.code === "ArrowUp" ? -k : e.code === "ArrowDown" ? k : 0);
+      e.preventDefault();
+      return;
+    }
     if (active !== "room") return;
     const it = selKey ? find(selKey) : null;
     if (e.code === "Enter" && drawing) finishDrawing();
@@ -699,6 +855,49 @@ Cutaway.editor = (function () {
       changed();
     } else return;
     e.preventDefault();
+  }
+
+  /** Is this a text field (its keys are its own)? @param {any} t */
+  function isField(t) { const tag = t?.tagName; return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || !!t?.isContentEditable; }
+
+  /**
+   * Keys typed in the editor's fields go to the field, never on to the game (its keys listen on the
+   * window, after the document): Esc would open the pause menu, Space skip a line. The editor's own
+   * capture listener lets them through to the field and its handlers first.
+   * @param {Event} e
+   */
+  function guard(e) { if (isField(e.target)) e.stopPropagation(); }
+
+  // ------------------------------------------------------------------ pausing the game
+
+  /** Hold the game (the clock; the sound too, outside the tabs where you listen) or let it run. @param {boolean} on */
+  function setHold(on) {
+    holding = on;
+    Cutaway.clock.held = on;
+    syncAudio();
+    panelDirty = true;
+    setStatus(on ? "the game is paused (Ctrl+P runs it; F8 steps)" : "the game runs");
+  }
+  /** The sound is held while the game is, except in Sound and Voices. */
+  function syncAudio() {
+    const want = isOpen && holding && !LISTEN.includes(active);
+    if (want !== audioHeld) { audioHeld = want; Cutaway.audio.hold(want); }
+  }
+  /** Run the paused game on by 100 ms (Play > Step, F8). */
+  function step() { Cutaway.clock.advance(100); }
+
+  /**
+   * Play a sequence in the game (from a shot mark: what comes before hurries): the game runs for it,
+   * then is paused again if it was.
+   * @param {string} id @param {string} [from]
+   */
+  async function playSequence(id, from) {
+    if (Cutaway.sequence.playing()) { setStatus(`"${Cutaway.sequence.playing()}" is playing: Play > Stop sequence first`); return; }
+    const was = holding;
+    if (was) setHold(false);
+    setStatus(`playing the sequence "${id}"${from ? ` from the shot "${from}"` : ""} (Play > Stop sequence ends it)`);
+    try { await Cutaway.sequence.play(id, from ? { from } : {}); } catch (e) { setStatus(errText(e)); }
+    if (was && isOpen && !holding) setHold(true);
   }
 
   /** Delete in the Room tab: the selected corner, else the selected walk area or hole. */
@@ -1002,7 +1201,15 @@ Cutaway.editor = (function () {
       ]],
       ["Art", []],
       ["Play", [
+        { label: "Pause game", key: "Ctrl+P", checked: holding, run: () => setHold(!holding), title: "hold the game's clock and sound while you edit (on when the editor opens)" },
+        { label: "Step (100 ms)", key: "F8", run: step, enabled: holding, title: "run the paused game on a little" },
         { label: "Play from here", key: "F10", run: close },
+        ...(Cutaway.sequence.ids().length ? [{ sep: true }, { head: "Sequences (the game runs for them)" },
+          { label: "Stop sequence", run: () => Cutaway.sequence.skip(), enabled: !!Cutaway.sequence.playing(), title: "as Esc in the game: its steps stop, `after` runs" },
+          { label: "Next shot", run: () => Cutaway.sequence.next(), enabled: !!Cutaway.sequence.playing(), title: "as Space in the game: on to the next shot mark" },
+          ...Cutaway.sequence.ids().flatMap((id) => [
+            { label: `▶ ${id}`, checked: Cutaway.sequence.playing() === id, run: () => { playSequence(id); }, enabled: !Cutaway.sequence.playing() },
+            ...Cutaway.sequence.shots(id).map((s) => ({ label: `    from "${s}"`, run: () => { playSequence(id, s); }, enabled: !Cutaway.sequence.playing(), title: `play ${id} from its shot mark "${s}"` }))])] : []),
         ...(acts.length ? [{ sep: true }, { head: "Begin an act (a new game)" },
           ...acts.map((id) => ({ label: id, checked: Cutaway.acts.current === id, run: () => mods.state?.beginAct(id), enabled: !!mods.state }))] : []),
         { sep: true },
@@ -1386,7 +1593,8 @@ Cutaway.editor = (function () {
     p.cursor = el("span", { className: "cw-dim" });
     p.dirty = el("span", { className: "cw-dirty" });
     p.studio = el("span", {});
-    statusEl.replaceChildren(p.msg, el("span", { className: "sp" }), p.cursor, p.dirty, p.studio,
+    p.hold = button("", () => setHold(!holding), "pause the game or let it run (Ctrl+P); F8 steps while paused");
+    statusEl.replaceChildren(p.hold, p.msg, el("span", { className: "sp" }), p.cursor, p.dirty, p.studio,
       button("Output", () => setLayout("output"), "the output pane: every message and the tasks' output"));
   }
 
@@ -1413,8 +1621,11 @@ Cutaway.editor = (function () {
       outputEl.replaceChildren(...log.map((s) => el("div", { className: "e", textContent: s })));
       outputEl.scrollTop = outputEl.scrollHeight;
     }
+    syncAudio();
     const p = statusParts;
     if (!p.msg) return;
+    const seq = Cutaway.sequence.playing(), hold = seq ? `▶ ${seq}` : holding ? "⏸ paused" : "▶ running";
+    if (p.hold.textContent !== hold) { p.hold.textContent = hold; p.hold.classList.toggle("on", holding); }
     const lines = status.split("\n"), msg = lines[0] + (lines.length > 1 ? `   (+${lines.length - 1} lines: Output)` : "");
     if (p.msg.textContent !== msg) p.msg.textContent = msg;
     const c = cursorText ?? (mounted ? "" : `room ${cursor.x}, ${cursor.y}${drawing ? `   ${drawing.group}: ${drawing.pts.length} corners` : ""}`);
@@ -1443,7 +1654,8 @@ Cutaway.editor = (function () {
     const probs = problems();
     panel.append(el("div", { style: { marginTop: "6px", color: probs.length ? "#ff6a5a" : "#7a7" } }, [probs.length ? probs.join("\n") : "no problems"]));
     panel.append(el("pre", { className: "cw-dim", style: { whiteSpace: "pre-wrap", marginTop: "8px", font: "inherit" } }, [
-      "click: select   drag: move\ndrag a corner   right click: delete it\ndouble-click an edge: new corner\narrows: nudge (Shift 10)   Del: delete\nCtrl+Z / Ctrl+Y: undo / redo\nF10: play   F9: debug overlay"]));
+      "click: select   drag: move\ndrag a corner   right click: delete it\ndouble-click an edge: new corner\narrows: nudge (Shift 10)   Del: delete\n" +
+      "pan: the middle button, the wheel, the arrows (nothing selected)\nCtrl+Z / Ctrl+Y: undo / redo\nCtrl+P: pause or run   F8: step\nF10: play   F9: debug overlay"]));
   }
 
   /** @param {EditItem} it */
@@ -1483,14 +1695,22 @@ Cutaway.editor = (function () {
   /** @param {string} id */
   async function openRoom(id) {
     if (Cutaway.scene.room?.id !== id) await Cutaway.scene.load(id, { enter: false });
-    selKey = null; selHandle = -1; drawing = null; undoStack = []; redoStack = [];
+    roomChanged();
+  }
+
+  /** Another room is shown (opened here, or the game or a sequence went there): the old one's undo and selection go. */
+  function roomChanged() {
+    knownRoom = Cutaway.scene.room?.id ?? null;
+    selKey = null; selHandle = -1; drawing = null; drag = null; undoStack = []; redoStack = [];
+    panned = false;                                       // a room load gives the camera back
     for (const t of tabs) t.onRoom?.();
     panelDirty = true;
   }
 
   const listeners = /** @type {[string, (e: any) => void][]} */ ([
-    ["pointerdown", onDown], ["pointermove", onMove], ["pointerup", onUp], ["dblclick", onDouble], ["keydown", onKey],
+    ["pointerdown", onDown], ["pointermove", onMove], ["pointerup", onUp], ["dblclick", onDouble], ["keydown", onKey], ["wheel", onWheel],
     ["contextmenu", (/** @type {Event} */ e) => { if (e.target === Cutaway.display.screen) e.preventDefault(); }],
+    ["mousedown", (/** @type {MouseEvent} */ e) => { if (e.button === 1 && e.target === Cutaway.display.screen) e.preventDefault(); }],   // no autoscroll
   ]);
 
   /** Load the tab modules next to this file (once). */
@@ -1554,7 +1774,10 @@ Cutaway.editor = (function () {
     Cutaway.ui.setVisible(false);
     Cutaway.ui.setHud(showHud);                          // the portraits and buttons would cover the shapes
     Cutaway.display.screen.style.cursor = "crosshair";
-    for (const [type, fn] of listeners) window.addEventListener(type, fn, true);
+    for (const [type, fn] of listeners) window.addEventListener(type, fn, { capture: true, passive: false });
+    document.addEventListener("keydown", guard);
+    knownRoom = Cutaway.scene.room?.id ?? null;
+    setHold(true);
     panelDirty = true; outputDirty = true;
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(tick);
@@ -1577,22 +1800,38 @@ Cutaway.editor = (function () {
     Cutaway.ui.setHud(true);
     Cutaway.display.screen.style.cursor = "none";
     for (const [type, fn] of listeners) window.removeEventListener(type, fn, true);
+    document.removeEventListener("keydown", guard);
+    holding = false; panDrag = null;
+    Cutaway.clock.held = false;
+    syncAudio();
+    if (panned && !Cutaway.sequence.playing()) Cutaway.scene.cameraFollow();   // the camera back to the one playing
+    panned = false;
   }
 
   tabs.push({ id: "room", label: "Room", build: buildRoom, save, undo: () => undoRedo(true), redo: () => undoRedo(false), del: deleteSelected,
-    selectNone: roomSelectNone, get unsaved() { return roomDirty; } });
+    selectNone: roomSelectNone, get unsaved() { return dirtyRooms.size; } });
   // the game page goes (a reload): its editor window goes with it; unsaved changes ask first
   window.addEventListener("pagehide", () => { if (win && !win.closed) win.close(); });
   window.addEventListener("beforeunload", (e) => { if (unsaved().length) { e.preventDefault(); e.returnValue = ""; } });
-  Cutaway.events.on("scene.drawn", (/** @type {CanvasRenderingContext2D} */ ctx) => {
-    if (!isOpen) return;
+  // over the whole picture, after the fade and the letterbox (in room pixels, as the camera shows them)
+  Cutaway.events.on("frame.ui", (/** @type {CanvasRenderingContext2D} */ ctx) => {
+    if (!isOpen || !Cutaway.scene.room) return;
+    const cam = Cutaway.scene.camera;
+    ctx.save();
+    ctx.translate(-cam.x, -cam.y);
     if (active === "room") render(ctx); else tabs.find((t) => t.id === active)?.render?.(ctx);
+    ctx.restore();
   });
+  Cutaway.events.on("room.enter", (/** @type {{id: string}} */ e) => { if (isOpen && e.id !== knownRoom) roomChanged(); });
   Cutaway.events.on("room.entered", () => { panelDirty = true; });
 
   const api = {
     open, close, text, geometry, items, problems, save, openRoom, studio, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
-    list, fold, prefixGroups,
+    list, fold, prefixGroups, playSequence, step, pan, notLoaded, relTo,
+    /** Is the game paused by the editor? */
+    get paused() { return holding; },
+    /** Pause the game or let it run (Play > Pause game). @param {boolean} on */
+    pause(on) { if (isOpen) setHold(on); },
     /** What the tab modules share with each other and the tests. @type {Record<string, any>} */
     modules: {},
     get isOpen() { return isOpen; },

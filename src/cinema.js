@@ -108,12 +108,13 @@ Cutaway.cinema = (function () {
     c.shown = n;
   }
 
-  /** No bars, no caption, no dissolve (a sequence's end, a new game). */
+  /** No bars, no caption, no dissolve, a clean picture (a sequence's end, a new game). */
   function reset() {
     Cutaway.tween.stop("letterbox");
     bars = 0;
     caption = null;
     Cutaway.fx.stopDissolve();
+    Cutaway.fx.stopTape();
   }
 
   Cutaway.script.action("letterbox", (s) => {

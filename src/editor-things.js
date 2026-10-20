@@ -1,6 +1,7 @@
 // Cutaway.js editor, Things tab: the properties of the room and of what is in it (hotspots, props,
 // lamps, effects, actors) and of the items, and their scripts (what looking, using, talking, taking and
-// using an item on them does; a room's entering): each opens as blocks in the centre (editor-script.js).
+// using an item on them does; a room's entering; a sequence's steps and what a skip runs): each opens as
+// blocks in the centre (editor-script.js).
 // Pick a thing in the list or click it on the picture, change a field or a step and the game does it at
 // once; Save writes the edits layer (Cutaway.edits in game/edits.js, the studio's "edits" layer), which
 // the Dialogue tab shares. Texts are changed in the Texts tab, shapes in the Room tab.
@@ -8,7 +9,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  /** @type {string} "room", "hot:<id>", "prop:<id>", "lamp:<id>", "fx:<id>", "actor:<id>", "item:<id>" */
+  /** @type {string} "room", "hot:<id>", "prop:<id>", "lamp:<id>", "fx:<id>", "actor:<id>", "item:<id>", "seq:<id>" */
   let sel = "room";
   let dirty = false;
   /** @type {{kind: EditKind, id: string, path: string[], title: string, view: EditorView} | null} the script open in the centre */
@@ -22,9 +23,10 @@
   const FIELDS = {
     room: [
       { path: "music.theme", type: "theme" }, { path: "music.section", type: "section" }, { path: "music.intensity", type: "number", hint: "0..1" },
-      { path: "ambience", type: "loops", hint: "sound loops, comma separated" },
+      { path: "ambience", type: "loops", hint: 'sound loops, comma separated; with settings, JSON: [{ "sfx": "rain", "gain": 1 }]' },
       { path: "light.ambient", type: "number", hint: "0.75..1 (style guide)" }, { path: "light.color", type: "color" },
       { path: "scale", type: "json", hint: "{ far: [y, s], near: [y, s] }" }, { path: "background", type: "sprite" },
+      { path: "size", type: "json", hint: "[w, h]: wider or taller than the screen scrolls" }, { path: "color", type: "color", hint: "a fill under the background" },
     ],
     hot: [{ path: "z", type: "number", hint: "higher wins where hotspots overlap" }, { path: "hidden", type: "bool" }, { path: "prop", type: "text", hint: "a prop to click on (no shape)" }],
     prop: [{ path: "image", type: "sprite" }, { path: "at", type: "json", hint: "[x, y]" }, { path: "anchor", type: "json", hint: "[x, y] in the sprite" },
@@ -50,6 +52,7 @@
     if (kind === "fx") return r?.fx?.find((f, i) => (f.id ?? String(i)) === id);
     if (kind === "actor") return Cutaway.actors.get(id)?.def;
     if (kind === "item") return Cutaway.item.get(id);
+    if (kind === "seq") return Cutaway.sequence?.get(id) ?? null;
     return null;
   }
   /** @param {any} o @param {string} path */
@@ -79,6 +82,7 @@
     if (kind === "hot") return r ? { kind: "rooms", id: r.id, base: ["hotspots", id] } : null;
     if (kind === "item") return { kind: "items", id, base: [] };
     if (kind === "actor") return { kind: "actors", id, base: [] };
+    if (kind === "seq") return { kind: "sequences", id, base: [] };
     return null;
   }
 
@@ -86,7 +90,8 @@
   function scripts() {
     const obj = target(), kind = sel.split(":")[0];
     if (!obj) return null;
-    const verbs = kind === "room" ? ["enter"] : kind === "hot" ? ["look", "use", "talk", "take"] : kind === "item" ? ["look"] : kind === "actor" ? ["look", "talk"] : [];
+    const verbs = kind === "room" ? ["enter"] : kind === "hot" ? ["look", "use", "talk", "take"] : kind === "item" ? ["look"] : kind === "actor" ? ["look", "talk"]
+      : kind === "seq" ? ["steps", "after"] : [];
     const withKey = kind === "item" ? "combine" : kind === "hot" || kind === "actor" ? "with" : "";
     /** @type {{label: string, path: string[], value: any}[]} */
     const list = verbs.filter((v) => obj[v] !== undefined).map((v) => ({ label: v, path: [v], value: obj[v] }));
@@ -98,16 +103,18 @@
   function openScript(path, label) {
     const w = where(), S = E.modules.script;
     if (!w || !S) return;
-    const full = [...w.base, ...path];
-    const title = `${sel.startsWith("hot:") ? `${w.id}/${sel.slice(4)}` : sel.startsWith("item:") ? `item ${w.id}` : w.id}: ${label}`;
+    const full = [...w.base, ...path], seq = w.kind === "sequences";
+    const title = `${sel.startsWith("hot:") ? `${w.id}/${sel.slice(4)}` : sel.startsWith("item:") ? `item ${w.id}` : seq ? `sequence ${w.id}` : w.id}: ${label}`;
     const get = () => full.reduce((/** @type {any} */ v, k) => (v == null ? undefined : v[k]),
-      w.kind === "rooms" ? Cutaway.room.get(w.id) : w.kind === "items" ? Cutaway.item.get(w.id) : Cutaway.actors.get(w.id)?.def);
+      w.kind === "rooms" ? Cutaway.room.get(w.id) : w.kind === "items" ? Cutaway.item.get(w.id) : seq ? Cutaway.sequence.get(w.id) : Cutaway.actors.get(w.id)?.def);
     const hotspot = sel.startsWith("hot:") ? sel.slice(4) : undefined;
     const view = S.view({ title, value: get(),
-      change: (/** @type {any[] | null} */ v) => { Cutaway.edits.change(w.kind, w.id, patchOf(full, v)); dirty = true; E.refresh(); },
+      // a sequence always has steps: removed, they are none
+      change: (/** @type {any[] | null} */ v) => { Cutaway.edits.change(w.kind, w.id, patchOf(full, v === null && seq && full[0] === "steps" ? [] : v)); dirty = true; E.refresh(); },
       changed: () => Cutaway.edits.changed(w.kind, w.id, full),
       revert: () => { Cutaway.edits.revert(w.kind, w.id, full); E.refresh(); return get(); },
-      test: (/** @type {any[]} */ v) => { E.close(); Cutaway.script.run(v, { path: `edit.${full.join(".")}`, hotspot }); },
+      // a sequence plays in the editor (the game runs for it); other scripts close the editor and run
+      test: (/** @type {any[]} */ v) => { if (seq) { E.playSequence(w.id); return; } E.close(); Cutaway.script.run(v, { path: `edit.${full.join(".")}`, hotspot }); },
       close: () => { open = null; E.refresh(); } });
     open = { kind: w.kind, id: w.id, path: full, title, view };
     E.refresh();
@@ -139,8 +146,17 @@
     if (f.type === "sprite") return select(Cutaway.assets.names());
     if (f.type === "theme") return select(Cutaway.score?.ids?.() ?? []);
     if (f.type === "section") { const th = get(obj, "music.theme"); return select(th && Cutaway.score?.has?.(th) ? Object.keys(Cutaway.score.get(th).sections) : []); }
-    if (f.type === "loops") return el("input", { value: (v ?? []).map((/** @type {any} */ a) => (typeof a === "string" ? a : JSON.stringify(a))).join(", "), style: { ...st, width: "200px" },
-      onchange: (/** @type {any} */ e) => set(String(e.target.value).split(",").map((x) => x.trim()).filter(Boolean).map((x) => (x.startsWith("{") ? JSON.parse(x) : x))) });
+    if (f.type === "loops") {
+      // names: "rain, wind"; a loop with settings makes the whole list JSON (its commas would split it)
+      /** @type {any[]} */
+      const loops = Array.isArray(v) ? v : v ? [v] : [];
+      const i = /** @type {HTMLInputElement} */ (el("input", { value: loops.every((a) => typeof a === "string") ? loops.join(", ") : JSON.stringify(loops), style: { ...st, width: "100%", boxSizing: "border-box" },
+        onchange: () => {
+          const t = i.value.trim();
+          try { set(t.startsWith("[") ? JSON.parse(t) : t.split(",").map((x) => x.trim()).filter(Boolean)); i.style.borderColor = ""; } catch { i.style.borderColor = "#ff6a5a"; }
+        } }));
+      return i;
+    }
     if (f.type === "json") {
       const a = /** @type {HTMLTextAreaElement} */ (el("textarea", { value: v === undefined ? "" : JSON.stringify(v), rows: 2, style: { ...st, width: "100%", boxSizing: "border-box" },
         onchange: () => { try { set(a.value.trim() ? JSON.parse(a.value) : undefined); a.style.borderColor = "#4a4066"; } catch { a.style.borderColor = "#ff6a5a"; } } }));
@@ -160,7 +176,19 @@
     (r?.fx ?? []).forEach((f, i) => out.push({ key: `fx:${f.id ?? i}`, label: `${f.kind} ${f.id ?? i}`, group: "effects" }));
     for (const a of Cutaway.actors.all()) out.push({ key: `actor:${a.id}`, label: a.id + (a.room === r?.id ? "  (here)" : ""), group: "actors", dim: a.room !== r?.id });
     for (const id of Cutaway.item.ids()) out.push({ key: `item:${id}`, label: id, group: "items" });
+    for (const id of Cutaway.sequence?.ids() ?? []) out.push({ key: `seq:${id}`, label: id, group: "sequences", mark: Cutaway.edits.changed("sequences", id) ? "●" : "" });
     return out;
+  }
+
+  /** A sequence's buttons: play it in the game (the editor stays), or from one of its shot marks. @param {string} id */
+  function sequenceBox(id) {
+    const shots = Cutaway.sequence.shots(id);
+    const from = /** @type {HTMLSelectElement} */ (el("select", { title: "play it from this shot mark (what comes before hurries)" },
+      [el("option", { value: "", textContent: "from the start" }), ...shots.map((s) => el("option", { value: s, textContent: `from shot "${s}"` }))]));
+    return el("div", { className: "cw-sec" }, [
+      button("▶ Play", () => { E.playSequence(id, from.value || undefined); }, "play it in the game (the game runs for it, then it is paused again)"), from,
+      button("■ Stop", () => Cutaway.sequence.skip(), "stop it (as Esc in the game: `after` runs)"),
+      el("div", { className: "cw-dim" }, [`${shots.length} shot marks. Its captions and lines are in Texts.`])]);
   }
 
   function build(/** @type {HTMLElement} */ box) {
@@ -176,6 +204,7 @@
       form.append(el("div", { style: { margin: "3px 0" } }, [el("div", { className: "cw-dim" }, [f.path + (f.hint ? `  (${f.hint})` : "")]), input(f, obj)]));
     }
     box.append(form);
+    if (kind === "seq") box.append(sequenceBox(sel.slice(4)));
     const sc = scripts(), w = where(), S = E.modules.script;
     if (sc && w && S && (sc.list.length || sc.verbs.length || sc.withKey)) {
       const add = /** @type {HTMLSelectElement} */ (el("select", { onchange: () => {
@@ -201,15 +230,16 @@
     }
   }
 
-  /** Click on the picture: the hotspot or actor there (else a prop's box). @param {{x: number, y: number}} p */
+  /** Click on the picture: the hotspot or actor there (else a prop's box: shown ones first, hidden ones last). @param {{x: number, y: number}} p */
   function pick(p) {
     const h = Cutaway.scene.hotspotAt(p.x, p.y);
     if (h) sel = h.actor ? `actor:${h.actor}` : `hot:${h.id}`;
     else {
-      const r = room(), prop = (r?.props ?? []).slice().reverse().find((q) => {
+      const r = room(), under = (r?.props ?? []).slice().reverse().filter((q) => {
         const b = q.id ? Cutaway.scene.propBox(q) : null;
         return b && p.x >= b[0] && p.x < b[0] + b[2] && p.y >= b[1] && p.y < b[1] + b[3];
       });
+      const prop = under.find((q) => !Cutaway.state.isHidden(q.id ?? "", !!q.hidden)) ?? under[0];
       sel = prop?.id ? `prop:${prop.id}` : "room";
     }
     E.refresh();
@@ -230,7 +260,9 @@
     ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h, w + 1, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w, y, 1, h);
   }
 
-  E.tab({ id: "things", label: "Things", build, pick, render, onRoom() { sel = "room"; open = null; }, save: () => save(),
+  // another room: what belonged to the old one goes (actors, items and sequences stay picked and open)
+  E.tab({ id: "things", label: "Things", build, pick, render, save: () => save(),
+    onRoom() { if (!/^(actor|item|seq):/.test(sel)) sel = "room"; if (open?.kind === "rooms") open = null; },
     selectNone() { if (open) open = null; else sel = "room"; E.refresh(); }, view: () => open?.view ?? null });
   E.modules.things = { get unsaved() { return dirty; }, save, target, get selected() { return sel; }, openScript, get script() { return open; },
     /** Another tab changed the edits layer (the Dialogue tab): it is saved with this one. */

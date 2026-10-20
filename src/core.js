@@ -55,12 +55,14 @@ Cutaway.events = (function () {
 /**
  * The clock: game logic runs in fixed steps of 1/60 s, drawing runs once per animation frame.
  * Time is in milliseconds. A manual clock (`setManual(true)`) only moves on `advance(ms)`, which
- * makes tests, headless checks and trailer captures repeatable.
+ * makes tests, headless checks and trailer captures repeatable. Two things stop real time: `paused`
+ * belongs to the menus, `held` to the editor (each sets and clears its own, so neither releases the
+ * other's); drawing goes on, and `advance` still steps.
  */
 Cutaway.clock = (function () {
   const STEP = 1000 / 60;
   const MAX_CATCH_UP = 250;                       // after a stall, skip ahead instead of racing
-  let time = 0, acc = 0, last = -1, running = false, manual = false, paused = false, raf = 0;
+  let time = 0, acc = 0, last = -1, running = false, manual = false, paused = false, held = false, raf = 0;
   /** @type {((dt: number) => void)[]} */
   const updaters = [];
   /** @type {(() => void)[]} */
@@ -89,7 +91,7 @@ Cutaway.clock = (function () {
     if (last < 0) last = now;
     acc += Math.min(MAX_CATCH_UP, now - last);
     last = now;
-    if (paused) acc = 0;
+    if (paused || held) acc = 0;
     while (acc >= STEP) { tick(); acc -= STEP; }
     render();
   }
@@ -101,6 +103,10 @@ Cutaway.clock = (function () {
     get paused() { return paused; },
     /** @param {boolean} p */
     set paused(p) { paused = p; },
+    /** The editor holds the game (its own switch beside the menus' `paused`). */
+    get held() { return held; },
+    /** @param {boolean} h */
+    set held(h) { held = h; },
     /** Run `fn(dt)` on every logic step. @param {(dt: number) => void} fn */
     onUpdate(fn) { updaters.push(fn); },
     /** Run `fn()` once per drawn frame. @param {() => void} fn */
@@ -120,13 +126,14 @@ Cutaway.clock = (function () {
       if (!on && running) { last = -1; raf = requestAnimationFrame(frame); }
     },
     /**
-     * Resolves after `ms` of game time (stands still while paused or in a manual clock).
+     * Resolves after `ms` of game time (stands still while paused, held or in a manual clock).
      * @param {number} ms
      * @returns {Promise<void>}
      */
     wait(ms) { return new Promise((done) => timers.push({ at: time + ms, done })); },
     /**
-     * Advance the manual clock by `ms` (in whole logic steps) and draw once.
+     * Advance the clock by `ms` (in whole logic steps) and draw once: a manual clock, or a held one
+     * stepped by hand (the editor's Step).
      * @param {number} ms
      */
     advance(ms) {

@@ -1,9 +1,11 @@
 // Cutaway.js editor, scripts as blocks: a script (a list of steps) shown as rows to edit, one row per
 // step: a line (of the one playing, or of someone), narration, a dialogue, walking, facing, going to a
-// room, items, flags, things shown and hidden, sounds, the screen, and `if` / `once` with their
-// branches (they fold). An action the blocks don't know keeps its data (its JSON shows). The Things tab
-// opens a hotspot's, an item's, an actor's or a room's scripts with it in the centre; the Dialogue tab
-// uses it for what its choices do. Each change goes into the game at once (the edits layer).
+// room, items, flags, things shown and hidden, sounds, the screen, the cinema steps of sequences (shot
+// marks, the camera, props moved and played, letterbox, captions, dissolves, the worn tape, cards), and `if` / `once`
+// with their branches (they fold). A step's kind is its first key that names an action, as the script
+// runner reads it; an action the blocks don't know keeps its data (its JSON shows). The Things tab
+// opens a hotspot's, an item's, an actor's, a room's or a sequence's scripts with it in the centre; the
+// Dialogue tab uses it for what its choices do. Each change goes into the game at once (the edits layer).
 // Keys (on a row): Up and Down pick a row, Alt+Up and Alt+Down move the step, Enter edits its first
 // field (Esc back to the row), Insert or + adds a line after it, Delete removes it, Ctrl+D doubles it,
 // Ctrl+C / Ctrl+X / Ctrl+V copy, cut and paste steps, Left and Right fold an if or once. Rows drag by
@@ -14,8 +16,11 @@
   const E = Cutaway.editor, el = E.el, button = E.button;
 
   /**
-   * @typedef {"text" | "str" | "num" | "bool" | "goon" | "xy" | "actor" | "who" | "item" | "room" | "dir" | "sfx" | "dialog" | "cond" | "flag" | "obj" | "json" | "fade"} FieldType
-   * who: an actor, or nobody for the one playing; goon: "the script goes on meanwhile" (wait: false)
+   * @typedef {"text" | "str" | "num" | "bool" | "goon" | "xy" | "actor" | "who" | "item" | "room" | "dir" | "sfx" | "dialog" | "cond" | "flag" | "obj" | "json" | "fade"
+   *   | "camera" | "ease" | "sprite" | "bars" | "caption" | "at" | "typing" | "seq" | "act"} FieldType
+   * who: an actor, or nobody for the one playing; goon: "the script goes on meanwhile" (wait: false);
+   * fade: "in", "out" or a level 0..1; camera: [x, y] or "follow"; bars: true, false or a height;
+   * caption: a text, or empty for false (clears it); typing: typed in, with a sound per letter
    * @typedef {{label: string, group: string, fields: [string, FieldType][], make: () => any}} StepKind
    */
   /** @type {Record<string, StepKind>} */
@@ -44,23 +49,46 @@
     sfx: { label: "sound", group: "sound", fields: [["sfx", "sfx"], ["gain", "num"]], make: () => ({ sfx: Cutaway.sfx.names().find((n) => !n.startsWith("_")) ?? "" }) },
     stinger: { label: "stinger", group: "sound", fields: [["stinger", "str"]], make: () => ({ stinger: "" }) },
     music: { label: "music", group: "sound", fields: [["music", "json"]], make: () => ({ music: { intensity: 0.5 } }) },
-    fade: { label: "fade", group: "screen", fields: [["fade", "fade"]], make: () => ({ fade: "out" }) },
+    fade: { label: "fade", group: "screen", fields: [["fade", "fade"], ["ms", "num"], ["color", "str"]], make: () => ({ fade: "out" }) },
     shake: { label: "shake", group: "screen", fields: [["shake", "num"]], make: () => ({ shake: 300 }) },
+    card: { label: "card", group: "screen", fields: [["card", "text"], ["title", "str"]], make: () => ({ card: "" }) },
+    act: { label: "go on to an act", group: "screen", fields: [["act", "act"]], make: () => ({ act: "next" }) },
+    shot: { label: "shot mark", group: "cinema", fields: [["shot", "str"]], make: () => ({ shot: "" }) },
+    camera: { label: "camera", group: "cinema", fields: [["camera", "camera"], ["ms", "num"], ["ease", "ease"], ["wait", "goon"]], make: () => ({ camera: [0, 0], ms: 1000 }) },
+    move: { label: "move prop", group: "cinema", fields: [["move", "obj"], ["to", "xy"], ["by", "xy"], ["ms", "num"], ["ease", "ease"], ["wait", "goon"]], make: () => ({ move: "", to: [160, 150], ms: 1000 }) },
+    play: { label: "play prop", group: "cinema", fields: [["play", "obj"], ["anim", "sprite"], ["loop", "bool"], ["wait", "goon"]], make: () => ({ play: "" }) },
+    letterbox: { label: "letterbox", group: "cinema", fields: [["letterbox", "bars"], ["ms", "num"], ["ease", "ease"], ["wait", "goon"]], make: () => ({ letterbox: true, ms: 800 }) },
+    caption: { label: "caption", group: "cinema", fields: [["caption", "caption"], ["at", "at"], ["type", "typing"], ["speed", "num"], ["ms", "num"], ["wait", "goon"]], make: () => ({ caption: "", ms: 2500 }) },
+    dissolve: { label: "dissolve (ms)", group: "cinema", fields: [["dissolve", "num"]], make: () => ({ dissolve: 800 }) },
+    open: { label: "open door (for the scene)", group: "cinema", fields: [["open", "obj"], ["sfx", "sfx"], ["ms", "num"]], make: () => ({ open: "", sfx: "", ms: 260 }) },
+    close: { label: "close door", group: "cinema", fields: [["close", "obj"], ["sfx", "sfx"]], make: () => ({ close: "" }) },
+    tape: { label: "worn tape (0..1)", group: "cinema", fields: [["tape", "num"], ["ms", "num"], ["wait", "goon"]], make: () => ({ tape: 0.8, ms: 700 }) },
+    sequence: { label: "play sequence", group: "cinema", fields: [["sequence", "seq"]], make: () => ({ sequence: Cutaway.sequence?.ids()[0] ?? "" }) },
     other: { label: "other (JSON)", group: "other", fields: [], make: () => ({}) },
   };
+  /** Not steps of their own: the `line` row is a plain string, `other` anything else. */
+  const SPECIAL = ["line", "if", "once", "other"];
   /** The branches of the flow steps: [key, label]. @type {Record<string, [string, string][]>} */
   const BRANCHES = { if: [["then", "then"], ["else", "else"]], once: [["once", "the first time"], ["else", "after that"]] };
   const TALK = ["line", "say", "narrate"];
 
   function firstActor() { return Cutaway.scene.active?.id ?? Cutaway.actors.all()[0]?.id ?? ""; }
 
-  /** The kind of a step. @param {any} s */
+  /**
+   * The kind of a step: as the script runner reads it, its first key that names an action (`{ goto,
+   * at, face }` goes to a room, it doesn't turn anyone); one the blocks don't know is "other".
+   * @param {any} s
+   */
   function kindOf(s) {
     if (typeof s === "string") return "line";
-    if (!s || typeof s !== "object") return "other";
+    if (!s || typeof s !== "object" || Array.isArray(s)) return "other";
     if ("if" in s) return "if";
     if ("once" in s) return "once";
-    for (const k of Object.keys(KINDS)) if (!["line", "if", "once", "other"].includes(k) && k in s) return k;
+    const actions = new Set(Cutaway.script.names());
+    for (const k of Object.keys(s)) {
+      if (k in KINDS && !SPECIAL.includes(k)) return k;
+      if (actions.has(k)) return "other";
+    }
     return "other";
   }
 
@@ -79,7 +107,8 @@
     if (kind === "say" && !s.say) { const t = s.text ?? ""; delete s.text; s.say = t; }
     if (kind === "walk" && !s.walk) { s.walk = s.to ?? [160, 150]; delete s.to; }
     if (kind === "face" && !s.face) { s.face = s.to ?? "right"; delete s.to; }
-    // the main key first, as people write it
+    // the main key first, as people write it (no key before it named an action, so the runner reads
+    // it the same); the others keep their order
     return { [kind]: s[kind] ?? "", ...s };
   }
 
@@ -237,11 +266,40 @@
         case "dialog": input = select(Cutaway.dialog.ids(), "(a dialogue)"); break;
         case "sfx": input = select(Cutaway.sfx.names().filter((n) => !n.startsWith("_")).sort(), "(a sound)"); break;
         case "dir": input = select(["left", "right", "up", "down"], "(as they are)"); break;
-        case "fade": input = select(["out", "in"], "(fade)"); break;
+        case "fade":
+          input = text("", v === undefined ? "" : String(v), (t) => { t = t.trim(); if (!t) return undefined; if (t === "in" || t === "out") return t; const n = Number(t); if (isNaN(n)) throw new Error(t); return n; }, "cw-sc-fade");
+          input.style.width = "60px"; input.title = "out (black), in (back), or how dark: 0..1"; break;
+        case "ease": input = select(["linear", "in", "out", "inOut"], "(inOut)"); break;
+        case "at": input = select(["bl", "br", "tl", "tr", "c"], "(bottom left)", (x) => /** @type {Record<string, string>} */ ({ bl: "bottom left", br: "bottom right", tl: "top left", tr: "top right", c: "the middle" })[x]); break;
+        case "typing": {
+          const now = v === "sound" ? "sound" : v ? "yes" : "";
+          const s = /** @type {HTMLSelectElement} */ (el("select", { onchange: () => set(s.value === "sound" ? "sound" : s.value === "yes" ? true : undefined) },
+            [["", "(at once)"], ["yes", "typed"], ["sound", "typed, a sound a letter"]].map(([x, l]) => el("option", { value: x, textContent: l, selected: x === now }))));
+          input = s; break;
+        }
+        case "seq": input = select(Cutaway.sequence?.ids() ?? [], "(a sequence)"); break;
+        case "act": input = select(["next", ...Cutaway.act.ids()], "(an act)"); break;
+        case "sprite": input = text("", v ?? "", (t) => t.trim() || undefined, "cw-sc-sprites"); input.style.width = "140px"; input.title = "a sprite or animation (none: its own image)"; break;
+        case "caption":
+          input = text("text", typeof v === "string" ? v : "", (t) => t || false);
+          /** @type {HTMLInputElement} */ (input).placeholder = "(empty: clears the caption)"; break;
+        case "bars":
+          input = text("", v === undefined ? "" : String(v), (t) => { t = t.trim(); if (t === "" || t === "true") return true; if (t === "false") return false; const n = Number(t); if (isNaN(n)) throw new Error(t); return n; }, "cw-sc-bars");
+          input.style.width = "60px"; input.title = "true (2.39:1), false (away) or the bars' height in px"; break;
+        case "camera": {
+          const follow = v === "follow", [x, y] = Array.isArray(v) ? v : ["", ""];
+          const a = /** @type {HTMLInputElement} */ (el("input", { value: x, disabled: follow, style: { width: "40px" } })), b = /** @type {HTMLInputElement} */ (el("input", { value: y, disabled: follow, style: { width: "40px" } }));
+          const ch = () => set([Number(a.value) || 0, Number(b.value) || 0]);
+          a.addEventListener("change", ch); b.addEventListener("change", ch);
+          a.dataset.f = id; b.dataset.f = id + ".y";
+          const fl = el("label", { className: "fd", title: "give the camera back to the one playing" }, [el("input", { type: "checkbox", checked: follow,
+            onchange: (/** @type {any} */ e) => set(e.target.checked ? "follow" : [Number(a.value) || 0, Number(b.value) || 0]) }), "follow"]);
+          return el("span", { className: "fd" }, ["to ", a, " ", b, " ", fl]);
+        }
         default: input = text("", "", (t) => t);
       }
       input.dataset.f = id;
-      return el("span", { className: "fd" + (type === "text" || type === "cond" ? " grow" : "") }, [k === kind || type === "text" ? "" : `${k} `, input]);
+      return el("span", { className: "fd" + (type === "text" || type === "cond" || type === "caption" ? " grow" : "") }, [k === kind || type === "text" ? "" : `${k} `, input]);
     }
 
     /** Put a step at a path. @param {string} path @param {any} step */
@@ -489,9 +547,10 @@
     for (const id of Cutaway.item.ids()) scan(Cutaway.item.get(id));
     for (const id of Cutaway.dialog.ids()) scan(Cutaway.dialog.get(id));
     const r = Cutaway.scene.room, objs = [...Object.keys(r?.hotspots ?? {}), ...(r?.props ?? []).map((p) => p.id).filter(Boolean)];
-    box.replaceChildren(
-      el("datalist", { id: "cw-sc-flags" }, [...flags].sort().map((f) => el("option", { value: f }))),
-      el("datalist", { id: "cw-sc-objs" }, [...new Set(objs)].map((f) => el("option", { value: /** @type {string} */ (f) }))));
+    /** @param {string} id @param {string[]} values */
+    const dl = (id, values) => el("datalist", { id }, values.map((f) => el("option", { value: f })));
+    box.replaceChildren(dl("cw-sc-flags", [...flags].sort()), dl("cw-sc-objs", /** @type {string[]} */ ([...new Set(objs)])),
+      dl("cw-sc-sprites", Cutaway.assets.names().slice().sort()), dl("cw-sc-fade", ["out", "in", "0.5"]), dl("cw-sc-bars", ["true", "false"]));
   }
 
   /**
@@ -534,5 +593,5 @@
     };
   }
 
-  E.modules.script = { blocks, view, summary, kindOf, KINDS, condText, condOf, datalists };
+  E.modules.script = { blocks, view, summary, kindOf, read, write, KINDS, condText, condOf, datalists };
 })();

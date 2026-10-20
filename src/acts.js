@@ -20,7 +20,10 @@
 // A prologue: an act's `prologue` is a sequence (a film that tells the story so far) played when the act
 // is begun as a new game from the title screen, before its card; Esc skips it. The title menu plays the
 // first act's prologue again ("watch the prologue"). Only where Cutaway.start allows it (not with
-// ?nointro, ?act= or ?edit, and never in the Node tools).
+// ?nointro, ?act= or ?edit, and never in the Node tools). The music fades out as it begins: the film
+// sets its own ({ music: { theme, fade } } fades a theme in from the silence).
+// The title screen's entrance: the logo and the small print fade in, then the menu rises from below
+// the screen; a click or a key finishes it at once.
 "use strict";
 
 /**
@@ -68,6 +71,11 @@ Cutaway.act = (function () {
 
 Cutaway.acts = (function () {
   const TITLE_LOOK = { y: -18, w: 136, dim: 0.2, pause: false, fixed: true };   // above the small print
+  // the title's entrance (ms from its start): the logo and the small print fade in, then the menu rises
+  // from below the screen. A click or a key finishes it at once (and still counts for the menu).
+  const LOGO = [100, 1100], RISE = [1000, 1700];
+  // a prologue begins in silence: the music fades out with the picture (s), the film brings its own
+  const PROLOGUE_FADE = 0.8;
   /** @type {string | null} the act being played */
   let current = null;
   /** @type {TitleOptions | null} */
@@ -81,6 +89,8 @@ Cutaway.acts = (function () {
   /** May an act's prologue play? (Cutaway.start allows it; the tools and ?nointro don't) */
   let prologues = false;
   let gameId = "game", titleOpen = false;
+  /** how far the title's entrance is, 0..1 (a tween: settle() waits for it, the Node tools skip it) */
+  let entrance = 1;
   /** @type {{members: string[], locked: string[], staying?: string[]} | null} the party as the game started */
   let party0 = null;
   /** @type {Map<string, HTMLCanvasElement>} */
@@ -129,6 +139,8 @@ Cutaway.acts = (function () {
     const a = Cutaway.act.get(id);
     if (!a) throw new Error(`Cutaway: no act "${id}"`);
     titleOpen = false;
+    const film = o.fresh && o.prologue !== false && prologues && a.prologue && Cutaway.sequence?.get(a.prologue) ? a.prologue : null;
+    if (film) Cutaway.events.emit("music", { stop: true, fade: PROLOGUE_FADE });
     if (Cutaway.scene.room) await Cutaway.fx.transition("out");     // (at start-up there is nothing to fade)
     // flags a fresh act keeps from the act before (not on a new game or a start from the title)
     const kept = !o.fresh && a.fresh ? (a.keep ?? []).filter((f) => Cutaway.state.flag(f) !== undefined).map((f) => [f, Cutaway.state.flag(f)]) : [];
@@ -136,7 +148,7 @@ Cutaway.acts = (function () {
     for (const [f, v] of kept) Cutaway.state.set(f, v);
     current = id;
     unlock(id);
-    if (o.fresh && o.prologue !== false && prologues && a.prologue && Cutaway.sequence?.get(a.prologue)) await prologue(a.prologue);
+    if (film) await prologue(film);
     Cutaway.events.emit("act", { id });
     const steps = a.start === undefined ? [] : Array.isArray(a.start) ? a.start : [a.start];
     const card = (a.title || a.name) && o.card !== false ? [{ card: a.name ?? "", title: a.title }] : [];
@@ -163,10 +175,14 @@ Cutaway.acts = (function () {
     if (title) await toTitle();
   }
 
+  /** A part of the entrance (0..1) between two of its moments. @param {number[]} span */
+  function part(span) { return Cutaway.util.clamp((entrance * RISE[1] - span[0]) / (span[1] - span[0]), 0, 1); }
+
   /** The title screen's menu. */
   function titlePage() {
     if (!title) return;
     const newest = Cutaway.save.newest(), acts = unlocked(), start = first();
+    const rise = Cutaway.util.ease("out"), look = { ...TITLE_LOOK, below: () => 1 - rise(part(RISE)) };
     Cutaway.menu.page(Cutaway.i18n.t(title.tagline ?? ""), [
       ...(start ? [{ label: t("title.new"), run: () => { Cutaway.menu.close(); begin(start, { fresh: true }); } }] : []),
       ...(newest ? [{ label: t("title.continue"), run: () => resume(newest.slot) }] : []),
@@ -177,7 +193,7 @@ Cutaway.acts = (function () {
       { label: t("menu.settings"), run: () => Cutaway.menu.settings(titlePage, TITLE_LOOK) },
       { label: t("menu.fullscreen"), run: () => Cutaway.display.toggleFullscreen() },
       ...(quit ? [{ label: t("title.quit"), run: quit }] : []),
-    ], null, TITLE_LOOK);
+    ], null, look);
   }
 
   function actsPage() {
@@ -205,6 +221,7 @@ Cutaway.acts = (function () {
     if (!seq) return;
     Cutaway.menu.close();
     titleOpen = false;
+    Cutaway.events.emit("music", { stop: true, fade: PROLOGUE_FADE });
     await Cutaway.fx.transition("out");
     await prologue(seq);
     showTitle();
@@ -236,9 +253,12 @@ Cutaway.acts = (function () {
     if (!title) return;
     reset();
     titleOpen = true;
-    if (title.room) Cutaway.scene.load(title.room, { backdrop: title.view ?? [0, 0] });
+    // after an intro that ends on the title's room, it stays as it is (its clock, its rain)
+    if (title.room) Cutaway.scene.load(title.room, { backdrop: title.view ?? [0, 0], keep: true });
     if (title.music) Cutaway.events.emit("music", title.music);
     Cutaway.fx.transition("in");
+    entrance = 0;
+    Cutaway.tween.to({ key: "title.entrance", ms: RISE[1], ease: "linear", step: (k) => { entrance = k; } });
     titlePage();
   }
 
@@ -264,12 +284,20 @@ Cutaway.acts = (function () {
     return c;
   }
 
-  /** @type {UiLayer} the logo and the small print, over the title's menu */
+  /** @type {UiLayer} the logo and the small print, over the title's menu; its entrance */
   const layer = {
-    z: 101,
+    z: 101, modal: true,
+    click() {
+      if (titleOpen && Cutaway.tween.has("title.entrance")) Cutaway.tween.finish("title.entrance");
+      return false;
+    },
     render(ctx) {
       if (!titleOpen || !title || Cutaway.menu.card) return;
       const W = Cutaway.display.width, H = Cutaway.display.height, f = Cutaway.ui.font(), s = Cutaway.ui.style;
+      const alpha = part(LOGO);
+      if (alpha <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = alpha;
       const logo = title.logo && Cutaway.assets.get(title.logo)?.frames[0];
       if (logo) Cutaway.assets.draw(ctx, /** @type {string} */ (title.logo), Math.floor(W / 2), 10, { anchor: [Math.floor(logo.w / 2), 0] });
       else if (title.name) { const c = big(Cutaway.i18n.t(title.name)); ctx.drawImage(c, Math.floor((W - c.width) / 2), 22); }
@@ -277,6 +305,7 @@ Cutaway.acts = (function () {
         const txt = Cutaway.i18n.t(title.footer);
         f.draw(ctx, txt, W - 4 - f.measure(txt), H - 11, { color: "#d8d4e4", outline: s.outline });
       }
+      ctx.restore();
     },
   };
 
@@ -287,6 +316,8 @@ Cutaway.acts = (function () {
     get titleOpen() { return titleOpen; },
     /** Has the game a title screen? */
     get hasTitle() { return !!title; },
+    /** The title screen's options (room, view, logo, name, tagline, footer), or null: for the editor. */
+    get title() { return title; },
     /** The act to begin a new game with. */
     first,
     /**
@@ -302,6 +333,7 @@ Cutaway.acts = (function () {
     restore(id) { current = id ?? null; titleOpen = false; },
     init() {
       Cutaway.ui.addLayer(layer);
+      Cutaway.events.on("key", () => { if (titleOpen && Cutaway.tween.has("title.entrance")) Cutaway.tween.finish("title.entrance"); });
       Cutaway.script.action("act", (s, ctx) => {
         const ids = Cutaway.act.ids();
         const next = s.act === "next" ? ids[ids.indexOf(current ?? "") + 1] : s.act;

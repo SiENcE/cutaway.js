@@ -19,8 +19,9 @@
  *   text?: () => string, options?: [any, string][], get?: () => any, pick?: (v: any) => void}} Entry
  * How a page shows: `y` its top (default: centred; below 0: its bottom, counted from the screen's), `w` its width, `dim` how dark the room behind gets
  * (0..1), `pause` whether the game stops meanwhile, `fixed` that Esc and right clicks can't leave it
- * (the title screen).
- * @typedef {{y?: number, w?: number, dim?: number, pause?: boolean, fixed?: boolean}} PageLook
+ * (the title screen), `below` how far it still is below its place as it rises in (0..1 of the way from
+ * under the screen; clicks and rows count where it will be).
+ * @typedef {{y?: number, w?: number, dim?: number, pause?: boolean, fixed?: boolean, below?: () => number}} PageLook
  */
 
 Cutaway.menu = (function () {
@@ -100,12 +101,14 @@ Cutaway.menu = (function () {
     return e.more ? 4 : 0;
   }
 
-  function geometry() {
+  /** Where the page is; `drawn`: where it shows now, lower while it rises in. @param {boolean} [drawn] */
+  function geometry(drawn = false) {
     const f = Cutaway.ui.font(), list = entries ?? [], n = list.length, h = TOP + n * ROW + B + 2;
     const need = Math.max(f.measure(title) + 40, ...list.map((e) => 2 * B + 18 + f.measure(e.label) + (valueWidth(e) ? valueWidth(e) + 10 : 0)));
     const SW = Cutaway.display.width, w = Math.min(SW - 6, Math.max(look.w ?? W, need));
     const H = Cutaway.display.height, y = look.y === undefined ? Math.round((H - h + PLATE) / 2) : look.y < 0 ? H + look.y - h : look.y;
-    return { x: Math.round((SW - w) / 2), y, w, h };
+    const below = drawn && look.below ? Cutaway.util.clamp(look.below(), 0, 1) : 0;
+    return { x: Math.round((SW - w) / 2), y: y + Math.round(below * (H - y + PLATE + 3)), w, h };
   }
 
   /** The top of row i's text. @param {{y: number}} g @param {number} i */
@@ -283,17 +286,19 @@ Cutaway.menu = (function () {
   /** @param {CanvasRenderingContext2D} ctx */
   function renderPage(ctx) {
     if (!entries) return;
-    const f = Cutaway.ui.font(), s = Cutaway.ui.style, c = colours(), SW = Cutaway.display.width, SH = Cutaway.display.height, g = geometry();
-    ctx.fillStyle = `rgba(0, 0, 0, ${look.dim ?? 0.45})`;
+    const f = Cutaway.ui.font(), s = Cutaway.ui.style, c = colours(), SW = Cutaway.display.width, SH = Cutaway.display.height, g = geometry(true);
+    const shown = 1 - (look.below ? Cutaway.util.clamp(look.below(), 0, 1) : 0);
+    ctx.fillStyle = `rgba(0, 0, 0, ${(look.dim ?? 0.45) * shown})`;
     ctx.fillRect(0, 0, SW, SH);
     frame(ctx, g.x, g.y, g.w, g.h);
+    if (shown <= 0) return;
     const pw = f.measure(title) + 16, px = Math.round(g.x + (g.w - pw) / 2), py = g.y - PLATE;   // the heading's plate across the top edge
     frame(ctx, px, py, pw, 15, { small: true, fill: c.plate });
     ctx.fillStyle = c.face;
     ctx.fillRect(px + 2, py + 2, pw - 4, 1);
     f.draw(ctx, title, g.x + g.w / 2, py + 4, { align: "center", color: s.accent, outline: s.outline });
     entries.forEach((e, i) => {
-      const y = rowY(g, i), on = i === hoverIx, color = on ? s.accent : "#ffffff", v = valueBox(e);
+      const y = rowY(g, i), on = i === hoverIx && shown >= 1, color = on ? s.accent : "#ffffff", v = valueBox(e);
       if (on) {
         ctx.fillStyle = c.hover;
         ctx.fillRect(g.x + B + 1, y - 2, g.w - 2 * B - 2, ROW);

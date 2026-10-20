@@ -1,7 +1,8 @@
 // The editor's lists, script blocks, dialogue editing and voices in headless Chrome on the demo: the
 // keyboard moves through a list and keeps its focus when the panels are built again, a group folds; a
 // step moves with Alt+Down (into the game and the edits layer) and Ctrl+Z takes it back; a node renamed
-// takes its gotos along; a recording is cut to the voice and holds its line.
+// takes its gotos along; a recording is cut to the voice and holds its line; a sequence's steps edit as
+// blocks.
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { launch, sleep } from "../tools/lib/chrome.mjs";
@@ -76,6 +77,20 @@ export default async function (t) {
       const c = Cutaway.voice.clip("bolt", line.text);
       return [c.from >= 150 && c.from <= 260, c.ms >= 900 && c.ms <= 1150, c.gain > 2, Cutaway.voice.clipMs("bolt", line.text) > c.ms, V.selected !== line.key, E.unsaved().includes("Voices 1")].join(" ");`);
     t.ok("voices: a recording is cut, levelled, holds its line; the next line is picked", vo === "true true true true true true", vo);
+
+    // a sequence in Things: its steps as blocks (the cinema steps have kinds of their own), a caption
+    // changed goes into the game and the edits layer; its captions are texts; the Play menu plays it
+    const sq = await run(`E.show("things"); E.modules.things.select("seq:intro"); await frame();
+      E.modules.things.openScript(["steps"], "steps"); await frame(); await frame();
+      const kinds = [...document.querySelectorAll(".cw-centre .cw-step select.kind")].map((s) => s.value);
+      const cap = [...document.querySelectorAll(".cw-centre [data-f]")].find((x) => x.dataset.f === "3:caption");
+      cap.value = "Somewhere, a tiny house."; cap.dispatchEvent(new Event("change")); await frame();
+      const texts = E.modules.texts.collect().filter((x) => x.where.startsWith("sequence intro")).map((x) => x.text);
+      const play = E.menus().find((m) => m[0] === "Play")[1].map((i) => i.label ?? "");
+      return [kinds.slice(0, 4).join(","), kinds.includes("other"), Cutaway.sequence.get("intro").steps[3].caption, Cutaway.edits.changed("sequences", "intro", ["steps"]),
+        texts.includes("Somewhere, a tiny house."), play.includes("▶ intro") && play.some((l) => l.includes('from "sky"'))].join(" ");`);
+    t.ok("sequences: steps as blocks, a caption changed in the game and the layer, its texts, the Play menu",
+      sq === "shot,goto,letterbox,caption false Somewhere, a tiny house. true true true", sq);
     t.ok("editor blocks: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

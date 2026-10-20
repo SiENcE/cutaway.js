@@ -4,15 +4,19 @@
 //   { stinger: "discovery" }                                          a one-shot on the next beat, in key
 //   { music: { speaker: 1 } } ... { music: { speaker: 0, fade: 4 } }  the music from a radio in the scene,
 //                                                                     then opening up to the full score
+//   { music: { stop: true, fade: 1 } }                                fade out (seconds) and stop: silence
+//   { music: { theme: "storm", fade: 5 } }                            a theme starting from silence fades in
 // The director turns each request into a musical move: wait for the next jump point, play the
-// transition segment, fade the layers over a bar. It ducks the music a little under speech.
+// transition segment, fade the layers over a bar. It ducks the music a little under speech. A stop
+// doesn't wait for the music: what plays fades away at once, and the next theme starts at once.
 // A room's `music` may be a theme id or a state object. Music starts once audio is unlocked.
 // Cutaway.music.render() renders offline (tools, tests: the timing can be checked exactly).
 "use strict";
 
 /**
- * speaker: 0..1, how much it sounds like a small speaker in the scene; fade: seconds to get there.
- * @typedef {{theme?: string, section?: string, intensity?: number, speaker?: number, fade?: number}} MusicState
+ * speaker: 0..1, how much it sounds like a small speaker in the scene; fade: seconds to get there (also
+ * how long a stop fades out, and how long a theme that starts from silence fades in).
+ * @typedef {{theme?: string, section?: string, intensity?: number, speaker?: number, fade?: number, stop?: boolean}} MusicState
  */
 
 Cutaway.music = (function () {
@@ -21,6 +25,8 @@ Cutaway.music = (function () {
   let player = null;
   /** @type {Map<string, GainNode>} */
   const layers = new Map();
+  /** @type {GainNode | null} between the layers and the music bus: a stop fades it out, a start from silence in */
+  let fader = null;
   /** @type {MusicState} */
   let wanted = { intensity: 0.5 };
   let timer = 0, ducked = false;
@@ -32,7 +38,8 @@ Cutaway.music = (function () {
     let g = layers.get(name);
     const c = Cutaway.audio.ctx, b = Cutaway.audio.buses;
     if (!c || !b) throw new Error("Cutaway.music: no audio");
-    if (!g) { g = c.createGain(); g.gain.value = name === "base" ? 1 : 0; g.connect(b.music); layers.set(name, g); }
+    if (!fader) { fader = c.createGain(); fader.connect(b.music); }
+    if (!g) { g = c.createGain(); g.gain.value = name === "base" ? 1 : 0; g.connect(fader); layers.set(name, g); }
     return g;
   }
 
@@ -53,11 +60,20 @@ Cutaway.music = (function () {
     });
   }
 
-  /** Apply the wanted state to the player. @param {number} now */
-  function apply(now) {
+  /** Apply the wanted state to the player; from silence, the theme fades in over `fadeIn` s. @param {number} now @param {number} [fadeIn] */
+  function apply(now, fadeIn = 0) {
     if (!player || !wanted.theme) return;
-    if (!player.pos) { player.intensity = wanted.intensity ?? 0.5; player.start(wanted.theme, now + 0.05, wanted.section); }
-    else player.request(wanted.theme, wanted.section);
+    if (!player.pos) {
+      player.intensity = wanted.intensity ?? 0.5;
+      player.start(wanted.theme, now + 0.05, wanted.section);
+      if (fadeIn > 0) {
+        layerNode("base");
+        const p = /** @type {GainNode} */ (fader).gain;
+        p.cancelScheduledValues(now);
+        p.setValueAtTime(0, now);
+        p.linearRampToValueAtTime(1, now + fadeIn);
+      }
+    } else player.request(wanted.theme, wanted.section);
     player.setIntensity(wanted.intensity ?? 0.5, now);
   }
 
@@ -74,10 +90,31 @@ Cutaway.music = (function () {
    * @param {MusicState | string} s
    */
   function set(s) {
+    if (typeof s === "object" && s.stop) { fadeOut(s.fade ?? 0); return; }
     merge(s);
     if (typeof s === "object" && s.speaker !== undefined) Cutaway.audio.speaker(s.speaker, s.fade ?? 0);
     const c = Cutaway.audio.ctx;
-    if (c && player) apply(c.currentTime);
+    if (c && player) apply(c.currentTime, typeof s === "object" ? s.fade : 0);
+  }
+
+  /**
+   * Stop: what plays fades out over `seconds` (its notes already scheduled with it), and a fresh player
+   * waits, silent, for the next theme, which then starts at once.
+   * @param {number} seconds
+   */
+  function fadeOut(seconds) {
+    wanted = { intensity: wanted.intensity };
+    const c = Cutaway.audio.ctx;
+    if (!c || !player) return;
+    const old = fader, nodes = [...layers.values()], now = c.currentTime, s = Math.max(0.03, seconds);
+    layers.clear();
+    fader = null;
+    player = makePlayer();
+    if (!old) return;
+    old.gain.cancelScheduledValues(now);
+    old.gain.setValueAtTime(old.gain.value, now);
+    old.gain.linearRampToValueAtTime(0, now + s);
+    setTimeout(() => { for (const g of [...nodes, old]) g.disconnect(); }, (s + LOOKAHEAD + 0.2) * 1000);
   }
 
   /** @param {MusicState | string} s */
@@ -116,8 +153,9 @@ Cutaway.music = (function () {
    */
   async function render(o) {
     const sr = o.sampleRate ?? 44100, c = new OfflineAudioContext(2, Math.ceil(o.seconds * sr), sr);
-    const keepPlayer = player, keepLayers = new Map(layers), keepWanted = wanted, keepLog = log, keepAudio = Cutaway.audio.save();
+    const keepPlayer = player, keepLayers = new Map(layers), keepFader = fader, keepWanted = wanted, keepLog = log, keepAudio = Cutaway.audio.save();
     layers.clear();
+    fader = null;
     Cutaway.audio.init({ context: c });
     Cutaway.audio.speaker(0, 0, 0);
     player = makePlayer();
@@ -145,7 +183,7 @@ Cutaway.music = (function () {
       player.pump(o.seconds);
       return await c.startRendering();
     } finally {
-      player = keepPlayer; wanted = keepWanted; log = keepLog;
+      player = keepPlayer; wanted = keepWanted; log = keepLog; fader = keepFader;
       Cutaway.audio.restore(keepAudio);
       layers.clear();
       for (const [k, v] of keepLayers) layers.set(k, v);
@@ -191,6 +229,8 @@ Cutaway.music = (function () {
       player = null;
       for (const g of layers.values()) g.disconnect();
       layers.clear();
+      fader?.disconnect();
+      fader = null;
     },
     /** Hook the director to the game: rooms, script actions, speech. */
     init() {

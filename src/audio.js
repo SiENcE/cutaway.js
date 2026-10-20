@@ -30,7 +30,7 @@ Cutaway.audio = (function () {
   const volume = { master: 0.8, music: 0.7, voice: 0.8, sfx: 0.8 };
   /** @type {(() => void)[]} */
   const readyFns = [];
-  let muted = false;
+  let muted = false, held = false;
 
   /**
    * A reverb impulse: decaying stereo noise, darker towards the end.
@@ -85,6 +85,7 @@ Cutaway.audio = (function () {
     speaker(speakerAmount, 0);
     applyVolumes();
     if (!o.context) {                                 // offline renders don't start the game's sound
+      if (held && "suspend" in c) /** @type {AudioContext} */ (c).suspend();
       for (const fn of readyFns.splice(0)) fn();
       Cutaway.events.emit("audio.ready", {});
     }
@@ -121,20 +122,30 @@ Cutaway.audio = (function () {
     buses.sfx.gain.value = volume.sfx;
   }
 
+  /** The live context runs unless the page is hidden or the sound is held (the editor). */
+  function wake() {
+    const c = /** @type {AudioContext | null} */ (ctx);
+    if (!c || !("suspend" in c)) return;
+    if (held || (typeof document !== "undefined" && document.hidden)) { if (c.state === "running") c.suspend(); }
+    else if (c.state === "suspended") c.resume();
+  }
+
   /** Create (or resume) the live context on the first user gesture; suspend while the page is hidden. */
   function hook() {
     const unlock = () => {
       if (!ctx) init();
-      const c = /** @type {AudioContext} */ (ctx);
-      if (c.state === "suspended" && "resume" in c) c.resume();
+      wake();
     };
     for (const ev of ["pointerdown", "keydown", "touchend"]) window.addEventListener(ev, unlock, { capture: true });
-    document.addEventListener("visibilitychange", () => {
-      const c = /** @type {AudioContext | null} */ (ctx);
-      if (!c || !("suspend" in c)) return;
-      if (document.hidden) c.suspend(); else c.resume();
-    });
+    document.addEventListener("visibilitychange", wake);
   }
+
+  /**
+   * Hold the sound (the editor pauses the game): the live context is suspended, so music, loops and
+   * lines stop where they are, until it is released (and the page is shown).
+   * @param {boolean} on
+   */
+  function hold(on) { held = on; wake(); }
 
   /**
    * May sound start now, without the player's click or key (a desktop shell, a browser that allows
@@ -163,7 +174,9 @@ Cutaway.audio = (function () {
   }
 
   return {
-    init, hook, impulse, speaker, autoplay,
+    init, hook, impulse, speaker, autoplay, hold,
+    /** Is the sound held (the editor)? */
+    get held() { return held; },
     /** How much the music sounds like a small speaker now (the last value asked for). */
     get speakerAmount() { return speakerAmount; },
     /** The current context and buses, to put back after an offline render. */

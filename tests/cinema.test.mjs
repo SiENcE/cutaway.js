@@ -249,6 +249,55 @@ export default async function (t) {
     t.ok("assets: a frame names its page", a.frames.some((f) => f.image && f.image !== anim.image) && Math.abs(a.total - n * 83) < 1);
     rmSync(dir, { recursive: true, force: true });
   }
+  {
+    // a room loaded again with `keep` (a film that ends on the title's room) keeps its clock and props
+    const g = await demo(), C = g.C;
+    await C.scene.load("hall", { backdrop: [0, 0] });
+    for (let i = 0; i < 12; i++) C.scene.update(50);                       // (the tools don't run the scene's clock)
+    const prop = C.scene.room.props.find((q) => q.id), box = () => JSON.stringify(C.scene.propBox(prop));
+    const was = box();
+    C.scene.moveProp(prop.id, [prop.at[0] + 7, prop.at[1]]);
+    const t0 = C.scene.time, moved = box();
+    await C.scene.load("hall", { backdrop: [0, 0], keep: true });
+    t.ok("scene: keep holds the room's clock and moved props", C.scene.time === t0 && t0 >= 600 && box() === moved && moved !== was, `${t0} -> ${C.scene.time}`);
+    await C.scene.load("hall", { backdrop: [0, 0] });
+    t.ok("scene: without keep, the room starts over", C.scene.time === 0);
+    await C.scene.load("yard", { backdrop: [0, 0], keep: true });
+    t.ok("scene: keep doesn't hold another room's clock", C.scene.time === 0);
+
+    // the title's entrance: a tween (settle() waits for it); a key finishes it at once
+    C.acts.configure({ id: "cinema-test", title: g.options.title });
+    C.acts.showTitle();
+    t.ok("title: its entrance runs", C.tween.has("title.entrance") && C.acts.titleOpen);
+    await pass(C, 2000);
+    t.ok("title: the entrance ends (logo, then the menu risen)", !C.tween.has("title.entrance") && C.menu.isOpen);
+    C.acts.showTitle();
+    C.events.emit("key", { code: "KeyX", key: "x", event: { preventDefault() {} } });
+    t.ok("title: a key finishes the entrance", !C.tween.has("title.entrance"));
+    const p = C.menu.rowPoint(0);
+    t.ok("title: rows are where they will be, also while it rises", p.y > 60 && p.y < 180, JSON.stringify(p));
+
+    // a door standing open while someone goes through it: shown for the scene only, not saved
+    await C.scene.load("hall", { backdrop: [0, 0] });
+    const doorShown = () => C.scene.props().some((q) => q.def.id === "door");
+    const before = doorShown();
+    C.scene.showProp("door");
+    const during = doorShown() && C.state.isHidden("door", true);
+    await C.scene.load("hall", { backdrop: [0, 0] });
+    t.ok("scene: showProp shows a hidden prop for the scene only", !before && during && !doorShown());
+    await C.script.run([{ open: "yard/door" }]);
+    const elsewhere = doorShown();
+    await C.script.run([{ open: "hall/door", ms: 0 }]);
+    const here = doorShown();
+    await C.script.run([{ close: "door" }]);
+    t.ok("script: open and close a door for the scene, by room/id too (not in another room)", !elsewhere && here && !doorShown());
+
+    // { tape } is an action everywhere (the screen's own where there is one)
+    let ran = false;
+    await C.script.run([{ tape: 1, ms: 300 }, { tape: 0 }, { set: "after_tape" }]);
+    ran = C.state.flag("after_tape") === true;
+    t.ok("tape: an action (a no-op without a screen)", ran);
+  }
 }
 
 /** The vm's localStorage: start without an autosave. @param {any} C */

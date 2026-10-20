@@ -10,10 +10,13 @@
 //   { kind: "steam", at: [x, y], count: 6, rise: 18, color }                   rising wisps (kettle, breath)
 // Any effect may have `if: cond` (shown while it holds) and `lamp: "id"` (follows that lamp's flicker
 // and switches off with it). Effects draw over the lit room, under the interface.
-// Screen fades: { fade: "out", ms: 400, color: "#000" } and { fade: "in" }; room changes fade by
+// Screen fades: { fade: "out", ms: 400, color: "#000" } and { fade: "in" } (`wait: false` goes on meanwhile); room changes fade by
 // themselves (Cutaway.fx.transition, or `transition: false` on a goto). A dissolve ({ dissolve: ms },
 // or `transition: "dissolve"` on a goto) keeps the picture as it is now and lets whatever comes next
 // show through it pixel by pixel, in the order of a 4x4 Bayer pattern (16 steps, no blended colours).
+// A worn tape ({ tape: 1, ms: 400 }, 0 = a clean picture): the picture as a played-back video tape, its
+// rows wavering and tearing, a tracking band rolling up through it, snow and drop-outs; the level fades
+// like a fade does. It lies over the fade too (black tape still has noise), under the interface.
 "use strict";
 
 /**
@@ -49,6 +52,10 @@ Cutaway.fx = (function () {
   let dissolving = null;
   /** @type {CanvasPattern[]} the masks of the 16 steps (what is still old), made once */
   const masks = [];
+  /** @type {{from: number, to: number, start: number, ms: number}} */
+  let tapeState = { from: 0, to: 0, start: 0, ms: 0 };
+  /** @type {HTMLCanvasElement | null} the frame as it was, rows are copied back from it shifted */
+  let tapeCopy = null;
 
   /** A repeatable random number in 0..1 for (a, b). @param {number} a @param {number} b */
   function rand(a, b) {
@@ -257,21 +264,100 @@ Cutaway.fx = (function () {
     ctx.drawImage(d.temp, 0, 0);
   }
 
-  /** The screen pass over the room: a dissolve's old picture, then the fade. @param {CanvasRenderingContext2D} ctx */
+  /** How worn the tape looks now (0 = clean). */
+  function tapeLevel() {
+    const f = tapeState, p = f.ms > 0 ? Cutaway.util.clamp((Cutaway.clock.time - f.start) / f.ms, 0, 1) : 1;
+    return f.from + (f.to - f.from) * p;
+  }
+
+  /**
+   * Let the picture look like a worn video tape (0 = clean, 1 = barely holding). Resolves when the
+   * level is reached.
+   * @param {number} to @param {number} [ms]
+   */
+  function tape(to, ms = 0) {
+    tapeState = { from: tapeLevel(), to: Cutaway.util.clamp(to, 0, 1), start: Cutaway.clock.time, ms };
+    if (!active || ms <= 0) { tapeState.ms = 0; tapeState.from = tapeState.to; return Promise.resolve(); }
+    return Cutaway.clock.wait(ms);
+  }
+
+  /**
+   * The tape's faults, a pure function of the clock (25 noise frames a second): rows that waver and
+   * tear, the tracking band rolling up, snow, drop-outs, now and then a hop of the whole picture.
+   * @param {CanvasRenderingContext2D} ctx
+   */
+  function renderTape(ctx) {
+    const k = tapeLevel();
+    if (k <= 0.001) return;
+    const W = Cutaway.display.width, H = Cutaway.display.height, t = Cutaway.clock.time, n = Math.floor(t / 40);
+    if (!tapeCopy || tapeCopy.width !== W || tapeCopy.height !== H) { tapeCopy = document.createElement("canvas"); tapeCopy.width = W; tapeCopy.height = H; }
+    const g = /** @type {CanvasRenderingContext2D} */ (tapeCopy.getContext("2d"));
+    g.globalCompositeOperation = "copy";
+    g.drawImage(ctx.canvas, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    const band = H + 30 - ((t * 0.05) % (H + 60)), bandH = 5 + 9 * k;           // the tracking band, rolling up
+    const hop = rand(n, 7) < k * k * 0.12 ? 1 + Math.floor(rand(n, 8) * 2 * k) : 0;
+    const tear = rand(n, 9) < k * 0.5 ? { y: Math.floor(rand(n, 10) * H), h: 1 + Math.floor(rand(n, 11) * 4), dx: Math.round((rand(n, 12) - 0.5) * 24 * k) } : null;
+    /** @param {number} y */
+    const shift = (y) => {
+      let dx = Math.round(k * 1.6 * Math.sin(y / 11 + t / 190) * (0.4 + rand(n >> 2, y >> 3)));
+      if (Math.abs(y - band) < bandH) dx += Math.round(k * (4 + 9 * rand(n, y)));
+      if (tear && y >= tear.y && y < tear.y + tear.h) dx += tear.dx;
+      return dx;
+    };
+    ctx.fillStyle = "#000";
+    for (let y = 0; y < H;) {                                // rows with the same shift go together
+      const dx = shift(y);
+      let y2 = y + 1;
+      while (y2 < H && shift(y2) === dx) y2++;
+      const sy = Math.max(0, y - hop);
+      if (dx || hop) {
+        ctx.fillRect(0, y, W, y2 - y);
+        ctx.drawImage(tapeCopy, 0, sy, W, y2 - y, dx, y, W, y2 - y);
+      }
+      y = y2;
+    }
+    // the band's own noise: grey streaks, brighter in its middle
+    for (let y = Math.max(0, Math.floor(band - bandH)); y < Math.min(H, band + bandH); y++) {
+      const near = 1 - Math.abs(y - band) / bandH;
+      for (let i = 0; i < 3 + 10 * k * near; i++) {
+        const x = Math.floor(rand(n * 131 + y, i) * W), w = 1 + Math.floor(rand(y, n + i) * 12);
+        ctx.fillStyle = `rgba(230, 232, 255, ${(0.25 + 0.55 * near * k).toFixed(3)})`;
+        ctx.fillRect(x, y, w, 1);
+      }
+    }
+    // snow and drop-outs over the whole picture
+    const snow = Math.floor(k * k * 900 + k * 60);
+    for (let i = 0; i < snow; i++) {
+      const x = Math.floor(rand(n, i * 2) * W), y = Math.floor(rand(n, i * 2 + 1) * H), v = rand(i, n);
+      ctx.fillStyle = v < 0.5 ? `rgba(255, 255, 255, ${(0.35 + 0.5 * k).toFixed(3)})` : `rgba(10, 10, 20, ${(0.3 + 0.4 * k).toFixed(3)})`;
+      ctx.fillRect(x, y, v > 0.93 ? 2 + Math.floor(v * 6) : 1, 1);
+    }
+    if (k > 0.5) {                                           // a worn tape loses its colour a little
+      ctx.fillStyle = `rgba(150, 160, 210, ${((k - 0.5) * 0.24).toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  /** The screen pass over the room: a dissolve's old picture, the fade, then a worn tape's faults. @param {CanvasRenderingContext2D} ctx */
   function renderFade(ctx) {
     renderDissolve(ctx);
     const a = level();
-    if (a <= 0) return;
-    ctx.fillStyle = rgba(fadeState.color, a);
-    ctx.fillRect(0, 0, Cutaway.display.width, Cutaway.display.height);
+    if (a > 0) {
+      ctx.fillStyle = rgba(fadeState.color, a);
+      ctx.fillRect(0, 0, Cutaway.display.width, Cutaway.display.height);
+    }
+    renderTape(ctx);
   }
 
   return {
-    render, renderFade, fade, level, kinds, rand, dissolve, dissolveKeeps,
+    render, renderFade, fade, level, kinds, rand, dissolve, dissolveKeeps, tape, tapeLevel,
     /** Is a dissolve showing? */
     get dissolving() { return !!dissolving; },
     /** End a dissolve at once (a skipped cutscene). */
     stopDissolve() { dissolving = null; },
+    /** A clean picture again at once (a sequence's end). */
+    stopTape() { tapeState = { from: 0, to: 0, start: 0, ms: 0 }; },
     /** Is the screen on (fades and transitions run)? Off in the Node tools. */
     get active() { return active; },
     /**
@@ -288,7 +374,12 @@ Cutaway.fx = (function () {
       active = true;
       Cutaway.script.action("fade", (s) => {
         const v = s.fade, to = v === "in" ? 0 : v === "out" ? 1 : Number(v);
-        return fade(Number.isFinite(to) ? to : 1, Cutaway.script.fast ? 0 : s.ms ?? 400, s.color);
+        const done = fade(Number.isFinite(to) ? to : 1, Cutaway.script.fast ? 0 : s.ms ?? 400, s.color);
+        return s.wait === false ? undefined : done;
+      });
+      Cutaway.script.action("tape", (s) => {
+        const done = tape(Number(s.tape) || 0, Cutaway.script.fast ? 0 : Number(s.ms) || 0);
+        return s.wait === false ? undefined : done;
       });
     },
   };

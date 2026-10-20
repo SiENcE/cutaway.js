@@ -22,6 +22,7 @@ Cutaway.start({
   demo: { acts: ["act1"], link: "https://...", text: "Thanks for playing!" },
   quit: () => window.close(),         // the title screen offers Quit (desktop shells)
   intro: "intro",                     // a sequence before the title screen, the first time (below)
+  introAlways: false,                 // true: the intro on every start
   gate: { room: "vcr", prompt: "@press_play" },  // where sound needs a click first: a still and a prompt
   dev: true,                          // F9, F10, ?edit, ?debug, ?act= (turn off in releases)
 });
@@ -31,6 +32,9 @@ Cutaway.start({
   after the title screen if there is one.
 - Other options: `border` (colour around the picture), `scale` (force one), `transition`
   (`{ out, in }` fade lengths in ms), `settings` (the player's defaults, any of the keys below), `manualClock`.
+- The editor holds the game while it is open (`Cutaway.clock.held`: the logic stands, drawing goes on,
+  `Cutaway.clock.advance` still steps; `Cutaway.audio.hold(true)` suspends the sound). The menus'
+  own pause is `Cutaway.clock.paused`.
 - `intro` and `gate`: see "Sequences and the intro".
 - Query switches: `?manual` (the clock moves only on `Cutaway.clock.advance`), `?act=<id>` (begin an
   act at once, no title or card, no intro), `?nointro` (leave the intro out), `?edit` (open the editor;
@@ -70,7 +74,7 @@ box (`prop`, default: the prop with the same id).
 | `talk`, `use`, `take`, `exit` | left click runs the first of these that it has |
 | `with: { item: script, "*": script }` | an item used on it (`"*"`: any other item) |
 | `walkTo: [x, y]`, `face` | where the actor stands, and which way it faces (`left right up down`) |
-| `exit: { to, at, face }` | a door: go to that room, stand there |
+| `exit: { to, at, face, door, sfx }` | a door: go to that room, stand there. Party members who follow head for it with the one played. `door` names a hidden prop (the door standing open) shown as the actor gets there, with the sound `sfx`, a moment before the room changes (the scene's, not saved). Give a door's `walkTo` at the door itself, so everyone walks up to it |
 | `if` | it only exists while this condition holds |
 | `hidden` | starts hidden (`{ show: id }` shows it) |
 | `z` | higher wins where hotspots overlap |
@@ -170,12 +174,13 @@ it changes the state; a `{ dialog }` counts as more), a square when it is the la
 | `{ dialog: "bolt", node }` | a dialogue |
 | `{ card: "Night", title: "Act 2" }`, `{ end: "The end." }` | full-screen cards; `end` ends the game |
 | `{ act: "next" }`, `{ act: "act2" }` | go on to an act (a demo ends there) |
-| `{ music: { theme, section, intensity } }`, `{ stinger: "found" }` | music |
-| `{ sfx: "door", at: [x, y], gain }`, `{ fade: "out", ms, color }`, `{ shake: 300 }` | sound and screen (a white `fade` of 100 ms is a flash) |
+| `{ music: { theme, section, intensity } }`, `{ music: { stop: true, fade: 1 } }`, `{ stinger: "found" }` | music |
+| `{ sfx: "door", at: [x, y], gain }`, `{ fade: "out", ms, color, wait: false }`, `{ shake: 300 }` | sound and screen (a white `fade` of 100 ms is a flash; `fade` takes a level 0..1 too; `wait: false` goes on while it fades) |
 | `{ camera: [x, y], ms, ease, wait: false }`, `{ camera: "follow" }` | move the camera (its top left), below |
 | `{ move: "crate", to: [x, y], ms, ease, wait: false }`, `{ move: "crate", by: [dx, dy] }` | move a prop of this room |
+| `{ open: "door_open", sfx: "creak", ms: 260 }`, `{ close: "door_open", sfx }` | show a hidden prop of this room for the scene only (a door standing open while someone comes or goes through it; not saved, gone when the room is entered again), with a sound, then wait `ms`; `close` takes it back. `"room/door_open"` names the room too (in a dialog, after a goto): in another room it does nothing |
 | `{ play: "tv", anim: "tv_news", loop: true, wait: false }` | play a prop's animation from its first frame |
-| `{ letterbox: true, ms }`, `{ caption: "Paris, 1925.", at: "bl", type: true, ms }`, `{ dissolve: 800 }` | cinema, below |
+| `{ letterbox: true, ms }`, `{ caption: "Paris, 1925.", at: "bl", type: true, ms }`, `{ dissolve: 800 }`, `{ tape: 1, ms }` | cinema, below |
 | `{ sequence: "flashback" }`, `{ shot: "name" }` | play a sequence; mark a shot in one ("Sequences and the intro") |
 | `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic |
 
@@ -209,6 +214,12 @@ Positions may be fractional while moving; drawing is always in whole pixels.
   (16 steps, never a blended colour). The script goes on at once. `{ goto: "room", transition:
   "dissolve", dissolve: ms }` changes rooms that way (default 800 ms). Like the fades, it is off in the
   Node tools.
+- `{ tape: 0..1, ms }`: the picture as a worn video tape played back (1: barely holding, 0: clean),
+  reached over `ms` like a fade (`wait: false`: the script goes on). Its rows waver and tear, a
+  tracking band rolls up through it, snow and drop-outs flicker, now and then the picture hops; at
+  higher levels it loses a little colour. It lies over the fade too (a black tape still has noise),
+  under the bars and the interface. Every fault is a function of the clock, so screenshots repeat. A
+  sequence's end clears it; off in the Node tools.
 - The bars and the caption are drawn over the room and the fade, under lines and the interface. None
   of it is saved.
 
@@ -240,7 +251,10 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   `keep: ["photo"]` lists flags that do come along when the act before goes on into it (an optional
   deed that pays off later); a start from the title screen or the acts menu leaves them unset.
 - `title` (start option) puts a title screen first, over a room shown as a backdrop: new game,
-  continue (the newest save), acts, load, settings, fullscreen, quit.
+  continue (the newest save), acts, load, settings, fullscreen, quit. It makes an entrance: the logo
+  (or the name) and the small print fade in, then the menu rises from below the screen (under two
+  seconds); a click or a key finishes it at once and still counts for the menu. An intro that ends
+  showing the title's room goes on into it without a jump (the room keeps its clock and its rain).
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"
   card (a button that opens `link`, one back to the title).
 - `prologue: "id"`: a sequence that tells the story so far, played when the act is begun as a new game
@@ -248,6 +262,9 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   black. Esc skips it, a click or Space goes on a shot. The title screen gets "Watch the prologue"
   (`@cutaway.title.prologue`) for the first act's. `?nointro`, `?edit` and `?act=` leave it out, and so
   do the Node tools (`Cutaway.acts.configure({ prologues })`; `play.mjs --intro` plays it, a click and Esc).
+  The title's music fades out with the picture as it begins; the film brings its own (a theme set with
+  `fade` fades in from the silence, `{ music: { stop: true, fade } }` lets it go at the end, and in
+  its `after` for a skip).
 
 ## Sequences and the intro
 
@@ -276,7 +293,11 @@ Cutaway.sequence("intro", {
   shown, so shot rooms usually leave them out and the sequence sets the music.
 - `{ shot: "name" }` marks where a shot begins (the event `"sequence.shot"`). Space, Enter or a click
   skip to the next mark: the steps in between run at once (lines, sounds, cards and waits are passed
-  over, moves arrive, their state changes stay), through a cut to black.
+  over, moves arrive, their state changes stay), through a cut to black. A held key's repeats don't
+  count (holding Space at the gate doesn't skip the intro's shots).
+- `Cutaway.sequence.play(id, { from: "name" })` starts at a shot mark (the steps before it hurry
+  through, so their state is there); `Cutaway.sequence.shots(id)` lists the marks, and
+  `Cutaway.sequence.gate()` the gate's options. The editor's Play menu uses them.
 - Esc (or a right click, a long press on a phone) skips the whole sequence: the steps stop where they
   are, the screen goes black, `after` runs (at once), and whatever comes next fades in.
 - When it ends, the letterbox, the caption and the camera are cleared and the scene is back in the
@@ -285,8 +306,10 @@ Cutaway.sequence("intro", {
 - Dialogues in a sequence would wait for the player; leave them out.
 - `intro: "id"` (start option) plays it before the title screen (or the first act) the first time the
   game starts on this machine; skipped or not, it is then remembered (`Cutaway.settings.seen(id)`, kept
-  beside the settings, not reset with them). The title screen gets "Watch intro" (`@cutaway.title.intro`)
-  to see it again. `?act=`, `?nointro` and `?edit` leave it out.
+  beside the settings, not reset with them). `introAlways: true` plays it on every start (an intro
+  short enough, or one that leads into the title: a click goes on a shot, Esc skips it). The title
+  screen gets "Watch intro" (`@cutaway.title.intro`) to see it again. `?act=`, `?nointro` and `?edit`
+  leave it out.
 - `gate: { room, view, prompt }` (start option): browsers let sound start only after a click or a key.
   Before the intro and the title, if sound can't start yet, the gate shows `room` as a still (at `view`,
   its top left) with `prompt` blinking at the bottom (default `@cutaway.gate.prompt`, "Click to start");
@@ -341,6 +364,10 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 - Layers fade in and out with the intensity; stingers (`Cutaway.score.stinger`) play on the next beat
   in the current key.
 - The game sets states, not tracks: a room's `music`, or `{ music: { theme, section, intensity } }`.
+- `{ music: { stop: true, fade: 1.5 } }` doesn't wait for a jump point: what plays fades out over
+  `fade` seconds and the music is silent. The next theme then starts at once, from its first bar; with
+  `fade` it fades in over that many seconds (`{ music: { theme: "storm", fade: 5 } }`). Between two
+  films, or from a title screen into a prologue, this is the clean cut.
 - `{ music: { speaker: 1 } }` makes the music sound like a small speaker in the scene (a radio, a
   boombox); `{ music: { speaker: 0, fade: 6 } }` opens it up to the full score over 6 seconds. A room
   whose `music` doesn't name `speaker` plays full range.
@@ -364,7 +391,7 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 |---|---|
 | `Cutaway.room.geometry(id, {...})` | shapes (Room tab) |
 | `Cutaway.i18n.layer(lang, {...})` | texts as changed (Texts tab) |
-| `Cutaway.edits({ rooms, items, actors, dialogs })` | properties and scripts (Things tab), dialogues (Dialogue tab): objects merge, lists of things by id, values and scripts replace, `null` removes; a dialogue is kept whole (it replaces the game's tree) |
+| `Cutaway.edits({ rooms, items, actors, dialogs, sequences })` | properties and scripts (Things tab), dialogues (Dialogue tab), sequences (Things tab: their `steps` and `after` as blocks): objects merge, lists of things by id (by their place in the list when they have none), values and scripts replace, `null` removes; a dialogue is kept whole (it replaces the game's tree), a sequence's `steps` and `after` too |
 | `Cutaway.sfx.layer(defs, file)` | sounds made or changed, recorded sounds (Sound tab) |
 | `Cutaway.voice.layer(lang, {...})` | recorded voices per line (Voices tab), `assets/voices.<lang>.js` |
 | `Cutaway.assets.pack(...)` | imported and painted art (Art tab, the paint view; `art/import/` packed by `tools/build-atlas.mjs`): a name there replaces the game's own picture |

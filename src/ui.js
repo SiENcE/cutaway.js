@@ -13,6 +13,8 @@
 //   hotspot by a few pixels still hit it. Tab (or the eye button, shown once the screen is touched)
 //   marks every hotspot for a moment; the menu button opens the pause menu. The hint button (a bulb,
 //   for mouse and touch, when the game has hints) shows what to try next.
+//   Going through an exit, party members who follow head for it too; an exit's `door` (a hidden
+//   prop: the door standing open) shows as the actor gets there, a moment before the room changes.
 // Other parts of the interface (satchel, portraits, dialogue choices, the menu) plug in as layers.
 // In a cutscene (a sequence plays: setCutscene) only lines and the modal layers (cards, the menu) show:
 // no cursor, labels, marks, satchel, portraits or buttons.
@@ -75,6 +77,7 @@ Cutaway.ui = (function () {
   let clickSeq = 0, pointerType = "mouse", visible = true, hud = true, cutscene = false, textSpeed = 1, markUntil = 0, markHeld = false;
   /** the click that started the current approach was a double click: run there */
   let running = false;
+  const DOOR_MS = 260;                                   // an exit's door stands open this long before the room changes
   /** @type {{text: string, x: number, y: number, until: number} | null} what a finger is on */
   let touchLabel = null;
   // buttons (12x11): a bulb (hint), an eye (show hotspots) and three bars (menu)
@@ -164,6 +167,23 @@ Cutaway.ui = (function () {
   }
 
   /**
+   * Party members who go along through an exit head for it with the one played, each a step further
+   * back on the way they come from (the room changes once the one played is there).
+   * @param {Hotspot} h
+   */
+  function followToExit(h) {
+    const a = Cutaway.scene.active, map = Cutaway.scene.walkMap, to = h.def.walkTo;
+    if (!a || !map || !to) return;
+    Cutaway.party.followers(Cutaway.scene.room?.id ?? null, a.id).forEach((m, i) => {
+      const f = Cutaway.actors.get(m);
+      if (!f) return;
+      const dx = f.x - to[0], dy = f.y - to[1], d = Math.hypot(dx, dy) || 1, back = Math.min(d, 14 * (i + 1));
+      const p = map.nearest({ x: to[0] + (dx / d) * back, y: to[1] + (dy / d) * back });
+      if (p) f.walkTo(Math.round(p.x), Math.round(p.y), running);
+    });
+  }
+
+  /**
    * Do something with a hotspot: "act" (its default action), "look", or use an item on it.
    * @param {string} id
    * @param {"act" | "look"} how
@@ -186,9 +206,15 @@ Cutaway.ui = (function () {
       await Cutaway.script.run(h.def.look ?? "@cutaway.look", { path: `${base}.look`, hotspot: id });
       return;
     }
+    if (verb === "exit") followToExit(h);
     if (!(await approach(h))) return;
     if (verb === "exit") {
       const e = /** @type {ExitDef} */ (h.def.exit);
+      if (e.door && !Cutaway.script.fast) {             // the door opens, a moment to see it, then through
+        Cutaway.scene.showProp(e.door);
+        if (e.sfx) Cutaway.events.emit("sfx", { sfx: e.sfx, at: h.def.walkTo });
+        await Cutaway.clock.wait(DOOR_MS);
+      }
       await Cutaway.script.run({ goto: e.to, at: e.at, face: e.face }, { path: `${base}.exit`, hotspot: id });
       return;
     }

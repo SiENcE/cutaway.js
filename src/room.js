@@ -40,6 +40,8 @@
  * @property {string} to             room id
  * @property {[number, number]} [at] where the actor arrives
  * @property {Facing} [face]
+ * @property {string} [door]         a prop (hidden: the door standing open) shown as the actor goes through
+ * @property {string} [sfx]          a sound as it opens
  */
 /**
  * @typedef {object} HotspotDef
@@ -127,7 +129,7 @@ Cutaway.room = (function () {
       if (v.baseline !== undefined) p.baseline = v.baseline;
     }
     for (const [k, v] of Object.entries(g.lamps ?? {})) {
-      const l = (d.light?.lamps ?? []).find((q) => q.id === k);
+      const lamps = d.light?.lamps ?? [], l = lamps.find((q) => q.id === k) ?? (/^\d+$/.test(k) ? lamps[Number(k)] : undefined);
       if (!l) { issues.push(`room ${d.id}: geometry for unknown lamp "${k}"`); continue; }
       if (v.at) l.at = copy(v.at);
       if (v.r !== undefined) l.r = v.r;
@@ -162,6 +164,8 @@ Cutaway.room = (function () {
   };
   /** Problems found while applying geometry files. */
   room.geometryIssues = () => issues.slice();
+  /** What a room's geometry file gave (the editor keeps it when it saves again), or null. @param {string} id */
+  room.geometryOf = (id) => geos.get(id) ?? null;
   /** @param {string} id */
   room.get = (id) => {
     const d = defs.get(id);
@@ -198,7 +202,7 @@ Cutaway.scene = (function () {
   let scripted = null;
   /** a sequence is playing: gotos show rooms as shots */
   let filming = false;
-  /** @typedef {{pos?: {x: number, y: number}, play?: {image?: string, start: number, loop: boolean}}} LiveProp */
+  /** @typedef {{pos?: {x: number, y: number}, play?: {image?: string, start: number, loop: boolean}, shown?: boolean}} LiveProp */
   /** @type {Map<PropDef, LiveProp>} what scripts did to the props since the room was entered */
   let live = new Map();
 
@@ -206,20 +210,24 @@ Cutaway.scene = (function () {
    * Show a room and run its `enter` script (unless `enter: false`, as when loading a save).
    * Actors whose `room` is this id appear in it. A backdrop (`backdrop: [x, y]`, the camera's top left;
    * the title screen) is only shown: no enter script, not visited, no autosave. So is a shot (`shot:
-   * true`, a goto while a sequence plays), but its camera is the sequence's to move.
+   * true`, a goto while a sequence plays), but its camera is the sequence's to move. `keep: true` keeps
+   * the scene as it is when the room is the one shown already (its clock, its props: a film that ends
+   * on the title screen's room goes on into it without a jump).
    * @param {string} id
-   * @param {{enter?: boolean, backdrop?: [number, number], shot?: boolean}} [o]
+   * @param {{enter?: boolean, backdrop?: [number, number], shot?: boolean, keep?: boolean}} [o]
    */
   async function load(id, o = {}) {
-    const def = Cutaway.room.get(id);
+    const def = Cutaway.room.get(id), same = !!o.keep && current === def;
     current = def;
     walkMap = mapOf(def);
     view = o.backdrop ?? null;
-    for (const p of live.keys()) if (p.id) Cutaway.tween.stop("prop:" + p.id);
     Cutaway.tween.stop("camera");
     scripted = null;
-    live = new Map();
-    time = 0;                                              // the scene's clock starts with the room: its scrolling layers stand where they are drawn
+    if (!same) {
+      for (const p of live.keys()) if (p.id) Cutaway.tween.stop("prop:" + p.id);
+      live = new Map();
+      time = 0;                                            // the scene's clock starts with the room: its scrolling layers stand where they are drawn
+    }
     follow(true);
     Cutaway.events.emit("room.enter", { id, music: def.music });
     if (view || o.shot) return;
@@ -317,7 +325,7 @@ Cutaway.scene = (function () {
     /** @type {{def: PropDef, image: string}[]} */
     const out = [];
     for (const p of current?.props ?? []) {
-      if (p.id && Cutaway.state.isHidden(p.id, !!p.hidden)) continue;
+      if (p.id && Cutaway.state.isHidden(p.id, !!p.hidden) && !live.get(p)?.shown) continue;
       if (!p.id && p.hidden) continue;
       const st = p.id && p.states ? Cutaway.state.objState(p.id) : "";
       out.push({ def: p, image: live.get(p)?.play?.image ?? ((st && p.states?.[st]) || p.image) });
@@ -375,6 +383,18 @@ Cutaway.scene = (function () {
     return Cutaway.tween.to({ key: "prop:" + id, ms: o.ms, ease: o.ease, step: (k) => {
       pos.x = from.x + (to[0] - from.x) * k; pos.y = from.y + (to[1] - from.y) * k;
     } });
+  }
+
+  /**
+   * Show a hidden prop for as long as the room is shown (a door standing open as someone goes
+   * through it): the scene's, not the save's. `on: false` takes that back.
+   * @param {string} id
+   * @param {boolean} [on]
+   */
+  function showProp(id, on = true) {
+    const p = propDef(id), l = live.get(p) ?? {};
+    l.shown = on;
+    live.set(p, l);
   }
 
   /**
@@ -536,7 +556,7 @@ Cutaway.scene = (function () {
 
   return {
     load, go, update, render, follow, actorsHere, hotspots, hotspotAt, props, propBox, scaleAt, refresh, scrollXs,
-    cameraTo, cameraFollow, moveProp, playProp, parallax, unload,
+    cameraTo, cameraFollow, moveProp, playProp, showProp, parallax, unload,
     /** Where a prop of the current room stands now (moved or not; without its depth). @param {string} id */
     propAt(id) { return placeOf(propDef(id)); },
     get room() { return current; },

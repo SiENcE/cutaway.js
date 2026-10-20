@@ -16,7 +16,13 @@ Help > Editor guide, with the engine's reference beside it (everything a game's 
   picker, or downloads the file.
 - **Play** (the ▶ button, or F10) closes the editor and plays from where you are; F10 again opens it.
   F9 shows the debug overlay.
-- `?edit` leaves the game's intro out (so does `?nointro`); the title screen's "Watch intro" plays it.
+- **The game is paused** while the editor is open: nobody walks, scripts and sequences wait, scrolling
+  props and effects stand still, the music and the room's sound are held (not in Sound and Voices, where
+  you listen). **Ctrl+P** (or the Pause key, Play > Pause game, the ⏸ button in the status bar) lets it
+  run while you watch, and pauses it again; **F8** (Play > Step) runs the paused game on by 100 ms.
+  Closing the editor lets it run.
+- `?edit` leaves the game's intro and the acts' prologues out (so does `?nointro`); the title screen's
+  "Watch intro" plays it, and Play > Sequences plays any of them in an editor session.
 
 ## The layout
 
@@ -34,7 +40,8 @@ The editor docks around the game in its own page, like most editors:
   own there while it is active: the paint view, or a pxl source. Switch to another workspace and the
   game picture is back; come back and the view is too.
 - **The inspector** on the right: the active workspace's panel.
-- **The status bar** at the bottom: the last message (click it for all of it), the cursor's position in
+- **The status bar** at the bottom: whether the game is paused (⏸ paused, ▶ running, or the sequence
+  playing; click it to switch), the last message (click it for all of it), the cursor's position in
   the room (or the pixel and its colour while painting), what isn't saved, the studio. **Output** opens
   the output pane above it: every message, and the output of the tasks.
 
@@ -69,7 +76,7 @@ the same way at their headings (also with Enter or Space on the heading).
 | View | the debug overlay (F9), **Game interface** (the portraits, satchel and buttons; hidden while editing, so they don't cover the shapes), the Room shapes to show (walk, hole, hotspot, prop, lamp, fx), the left panel, the inspector, the output pane, **Inspector in its own window**, fullscreen (F11) |
 | Room | the rooms (open one), **+ Walk area**, **+ Hole**, **+ Hotspot**, save the shapes |
 | Art | **Edit pixels** (the selected sprite), **New sprite**, **Revert** to the game's art, **Import PNG**, **Export PNG**, **Reload art**, the pxl sources (with the studio) |
-| Play | **Play from here** (F10), begin an act as a new game, **Test dialogue** (the one picked in Dialogue) |
+| Play | **Pause game** (Ctrl+P), **Step** (F8: 100 ms), **Play from here** (F10); the **sequences**: each one, and each from one of its shot marks (the game runs while it plays, then is paused again), **Stop sequence** (as Esc in the game: `after` runs), **Next shot** (as Space); begin an act as a new game, **Test dialogue** (the one picked in Dialogue) |
 | Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, State |
 | Help | the editor guide (F1), the reference, the keys |
 
@@ -78,16 +85,30 @@ it took); the menus, the browser and the status bar stay with the game. Browsers
 when the page opens it by itself (`?edit`): then it stays docked, open it from the View menu.
 
 ## Room: shapes
-Walk areas (green), holes (red), hotspots (orange), walk-to points (the yellow cross), prop baselines
-(cyan), lamps (their reach) and effect areas (blue), drawn over the room.
+Walk areas (green), holes (red), hotspots (orange), walk-to points (the yellow cross), props (cyan: a
+dotted box, their place and their baseline), lamps (their reach) and effect areas (blue), drawn over
+the whole picture (a black fade or the letterbox doesn't hide them).
 - Click a shape to select it (or pick it in the left panel), drag inside it to move it, drag a corner,
   **double-click** an edge for a new corner, **right click** a corner (or Delete) to remove it. Arrows
   nudge (Shift: 10 px).
+- A **prop** moves by its place handle (the diamond: where it stands, `at`), or by the arrows while it
+  is selected; its own baseline goes along. The handle on its baseline moves only the baseline. A prop
+  moved here (or whose place the shapes file already has) keeps its place in the shapes file.
 - **+ Walk area / + Hole / + Hotspot**: click the corners, then the first one again (or Enter).
-- Ctrl+Z / Ctrl+Y undo and redo; **Save** (Ctrl+S) writes `rooms/<id>.geo.js`.
+- **The camera**: in a room wider or taller than the screen, drag with the **middle button**, turn the
+  **wheel** (Shift+wheel: across), or press the **arrows** while nothing is selected. Closing the editor
+  gives the camera back to the one playing.
+- Ctrl+Z / Ctrl+Y undo and redo (in the room on screen: when another room comes, by the game or a
+  sequence, the undo starts again). **Save** (Ctrl+S) writes `rooms/<id>.geo.js`, and that of any other
+  room changed since it was saved. If the game's page doesn't load that file, it says so (in the output
+  pane) with the `<script>` line to add to `index.html`, after the room's own script: else what was saved
+  is gone after a reload.
+- A lamp without an `id` can be moved, but its place isn't saved in the shapes file: give it an id (the
+  room's problems list it).
 
 ## Texts
-Every text of the game with where it is used: lines, looks, names, dialogue choices, cards and hints.
+Every text of the game with where it is used: lines, looks, names, dialogue choices, cards, hints, the
+sequences' lines and captions, the title screen (its name, tagline and footer) and the gate's prompt.
 - Change one and the game shows it at once. **Save** writes the language's text layer
   (`strings/<lang>.texts.js`).
 - **this room** shows only the texts of the room you are in (grouped by hotspot); without it they are
@@ -98,16 +119,22 @@ Every text of the game with where it is used: lines, looks, names, dialogue choi
   game's languages.
 
 ## Things
-The properties of the room (music, ambience, light, depth scale, background) and of what is in it:
-hotspots (`z`, hidden), props (image, position, anchor, flip, baseline, scroll, depth), lamps (power, colour,
-flicker, glow), effects (colour, count, speed ...), actors (colour, speed, running speed, costume,
-voice, portraits) and items (icon).
-- Pick a thing in the list, in the left panel, or **click it on the picture**. **Save** writes the
-  edits layer (`edits.js`). A thing's texts are in Texts, its shape in Room.
+The properties of the room (music, ambience, light, depth scale, background, size, fill colour) and of
+what is in it: hotspots (`z`, hidden), props (image, position, anchor, flip, baseline, scroll, depth), lamps
+(power, colour, flicker, glow), effects (colour, count, speed ...), actors (colour, speed, running speed,
+costume, voice, portraits), items (icon) and the sequences.
+- Pick a thing in the list, in the left panel, or **click it on the picture** (a prop that is shown
+  before one that is hidden there). **Save** writes the edits layer (`edits.js`). A thing's texts are
+  in Texts, its shape in Room. Lamps and effects without an `id` go by their place in the room's list.
+- **ambience**: the loops' names, comma separated; a loop with settings (`{ "sfx": "rain", "gain": 1 }`)
+  makes it a JSON list (`[...]`), which is shown and taken as it is.
 - **scripts**: what the thing does: a hotspot's look, use, talk, take and "with <item>" (an item used on
-  it), an item's look and "combine <item>", an actor's look, talk and "with <item>", a room's enter.
-  Each shows a summary; click one to edit it as blocks in the centre (next section). **+ script** adds
-  one it hasn't got. A ● marks a script the edits layer changed.
+  it), an item's look and "combine <item>", an actor's look, talk and "with <item>", a room's enter, a
+  sequence's **steps** and **after** (what a skip with Esc runs). Each shows a summary; click one to edit
+  it as blocks in the centre (next section). **+ script** adds one it hasn't got. A ● marks a script the
+  edits layer changed.
+- A **sequence** has **▶ Play** (in the game, the editor stays open; from the start or from one of its
+  shot marks: what comes before hurries, as a skip does) and **■ Stop**. Its ▶ Test plays it too.
 - A prop's **depth** is its parallax against the camera (1 the room, 0 fixed on the screen, 0.5 far
   away, above 1 a foreground). The picture, its outline and its baseline show it where it is for the
   camera now, and a click there picks it.
@@ -124,10 +151,16 @@ its fields:
 | give, take, remove item | the item, to or from whom (take: what it hides) |
 | set, unset, count up a flag; show, hide a thing; a thing's state | the flag (known flags are suggested) or the thing |
 | if, once | the condition (`flag`, `!flag`, `has:item`, `flag=3`, `at:actor=room`; `a, b` = all of them; JSON for `{ or: [...] }`) and their branches: then / else, the first time / after that. They fold |
-| wait, sound, stinger, music, fade, shake | how long, which, how loud ... |
+| wait, sound, stinger, music, shake | how long, which, how loud ... |
+| fade | `out` (black), `in` (back) or how dark (0..1), ms, colour |
+| card, go on to an act | the card's text and title; `next` or an act |
+| shot mark, camera, move prop, play prop | a shot's name; where the camera goes (or **follow**), ms, ease, "go on"; the prop, to or by (x y); the prop, its animation, loop |
+| letterbox, caption, dissolve, worn tape, play sequence | `true`, `false` or the bars' height, ms; the caption's text (empty: clears it), where, typed in (with a sound), letters a second, how long it stays; ms; how worn (0..1), ms, "go on"; which sequence |
 | other (JSON) | any action the blocks don't know (a game's own), as JSON |
 
-- A step's data the form doesn't show stays as it is (a **more** field, JSON).
+- A step's kind is its first key that names an action, as the game reads it (`{ goto, at, face }` goes
+  to a room; `face` there is where they look). A step's data the form doesn't show stays as it is (a
+  **more** field, JSON); editing keeps its keys in their order.
 - Change a field (Enter or leaving it) or the kind, and the game does it from now on; **▶ Test**
   closes the editor and runs the script. **Revert** goes back to the game's own script; **Remove**
   leaves the thing without one (the default line). File > Save (Ctrl+S in Things) writes `edits.js`.
@@ -274,9 +307,9 @@ loads only the art.
 
 | layer | file (the studio's `layers`) | what |
 |---|---|---|
-| room | `game/rooms/<id>.geo.js` | shapes: walk areas, holes, hotspot outlines, walk-to points, baselines, lamps, effect areas |
+| room | `game/rooms/<id>.geo.js` | shapes: walk areas, holes, hotspot outlines, walk-to points, props' places (moved ones) and baselines, lamps, effect areas |
 | texts | `game/strings/<lang>.texts.js` | the texts as changed, per language |
-| edits | `game/edits.js` | properties of rooms, hotspots, props, lamps, effects, actors and items; their scripts; dialogues (whole) |
+| edits | `game/edits.js` | properties of rooms, hotspots, props, lamps, effects, actors and items; their scripts; dialogues (whole); sequences' steps and after |
 | sounds | `game/sounds.edit.js` | synthesised sounds made or changed |
 | audio | `assets/audio.js` | recorded sounds (embedded) |
 | voices | `assets/voices.<lang>.js` | recorded voices per line (embedded), one file per language |
@@ -299,6 +332,8 @@ The page must load each layer after the game's own data (the game's `index.html`
 | key | |
 |---|---|
 | F10 | close the editor and play (and open it again) |
+| Ctrl+P, Pause | pause the game or let it run |
+| F8 | run the paused game on by 100 ms |
 | Up Down Home End PgUp PgDn | move through a list (what the cursor gets to is picked) |
 | letters, /, Enter | jump to a name, the list's filter, open (a list) |
 | Left Right, + - | fold or open a group, all groups (a list); fold an if or once (blocks) |
@@ -311,7 +346,8 @@ The page must load each layer after the game's own data (the game's `index.html`
 | Ctrl+Z / Ctrl+Y | undo / redo (Room, the paint view); also Ctrl+Shift+Z |
 | Delete | remove the selected corner or shape (Room), clear the selection (Paint), remove a step, a choice or a recording |
 | Esc | close a menu, cancel drawing, clear the selection |
-| arrows, Shift | nudge 1 or 10 px (Room); move a floating selection (Paint) |
+| arrows, Shift | nudge 1 or 10 px (Room); pan the camera (nothing selected: 8 or 40 px); move a floating selection (Paint) |
+| middle button, wheel | pan the camera over the picture (Shift+wheel: across) |
 | B E G L R I M | the paint tools: pencil, eraser, fill, line, rectangle, picker, select |
 | X, Shift+M, Shift+H, Shift+V | swap the colours, mirror, flip H, flip V (Paint) |
 | wheel, + -, 0, Space | zoom, fit, pan (Paint) |

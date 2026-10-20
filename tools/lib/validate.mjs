@@ -133,6 +133,13 @@ export function validate(C, o = {}) {
         ms(s.ms, where); ease(s.ease, where);
         break;
       case "play": prop(String(v), roomId, where); if (s.anim !== undefined) asset(s.anim, where); break;
+      case "open": case "close": {
+        // "room/id" names a door of a room the scene may have gone to (after a goto, in a dialog)
+        const [r, id] = String(v).includes("/") ? String(v).split("/") : [roomId, String(v)];
+        prop(id, r, where);
+        if (s.sfx !== undefined && C.sfx && !C.sfx.has(s.sfx)) err(where, `unknown sound "${s.sfx}"`);
+        break;
+      }
       case "letterbox": if (typeof v !== "boolean" && !(Number(v) >= 0)) err(where, "letterbox is true, false or the bars' height in px"); ms(s.ms, where); ease(s.ease, where); break;
       case "caption":
         if (v !== false && v !== null) text(v, where);
@@ -217,6 +224,9 @@ export function validate(C, o = {}) {
       if (h.exit) {
         room(h.exit.to, hw + ".exit");
         if (h.exit.at && xy(h.exit.at, hw + ".exit.at") && roomIds.has(h.exit.to)) mustReach.get(h.exit.to).push([h.exit.at[0], h.exit.at[1], hw + ".exit.at", true]);
+        if (h.exit.door !== undefined && !(r.props ?? []).some((p) => p.id === h.exit.door)) err(hw + ".exit.door", `no prop "${h.exit.door}" in the room (the door standing open)`);
+        if (h.exit.door !== undefined && !h.walkTo) warn(hw, "a door without a walkTo: give it one at the door, so everyone walks up to it");
+        if (h.exit.sfx !== undefined && C.sfx && !C.sfx.has(h.exit.sfx)) err(hw + ".exit.sfx", `unknown sound "${h.exit.sfx}"`);
       }
     }
     script(r.enter, id, w + ".enter");
