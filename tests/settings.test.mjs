@@ -23,6 +23,22 @@ export default async function (t) {
     t.ok("lines: on click, a line waits when its time is up (and the actor stops talking)", waits[0] === true && waits[1] !== "talk", JSON.stringify(waits));
     t.ok("lines: Space goes on", await chrome.ev(`${key("Space")} !Cutaway.ui.line`));
     t.ok("lines: settle() goes past waiting lines", await chrome.ev(`Cutaway.ui.say(Cutaway.scene.active, "A line."); Cutaway.debug.settle().then(() => !Cutaway.ui.line)`));
+    // each line's mark: more to come (an arrow) or the last (a square), looking ahead through ifs and the script around
+    const marks = await chrome.ev(`(async () => {
+      const seen = [];
+      Cutaway.state.set("mark_flag");
+      const run = Cutaway.script.run(["One.", { wait: 0 }, { if: "!mark_flag", then: ["Never."] }, { if: "mark_flag", then: ["Two.", { wait: 10 }] },
+        { set: "mark_later" }, { if: "mark_later", then: [{ narrate: "Three." }] }]);
+      for (let i = 0; i < 30 && seen.length < 3; i++) {
+        const l = Cutaway.ui.line;
+        if (l && seen[seen.length - 1]?.[0] !== l.text) seen.push([l.text, l.more]);
+        ${key("Space")} Cutaway.clock.advance(50); await new Promise((r) => setTimeout(r, 5));
+      }
+      await Cutaway.debug.settle(); await run;
+      return seen;
+    })()`);
+    t.ok("lines: an arrow while more follows, a square on the last", JSON.stringify(marks) === JSON.stringify([["One.", true], ["Two.", true], ["Three.", false]]), JSON.stringify(marks));
+    t.ok("lines: a lone line (a look, a hint) is the last", await chrome.ev(`Cutaway.script.run("Alone."); const m = Cutaway.ui.line?.more; Cutaway.debug.settle().then(() => m === false)`));
 
     // the settings' pages
     const pages = await chrome.ev("Cutaway.menu.settings(); Cutaway.menu.rows.length");

@@ -94,7 +94,7 @@ Cutaway.dialogs = (function () {
       const { c, i } = open[k];
       if (c.once) Cutaway.state.set(`~dlg.${id}.${node}.${i}`);
       const path = `dialog.${id}.${node}.${i}`;
-      if (!c.silent) await Cutaway.script.exec({ say: c.text }, { path: path + ".say" });
+      if (!c.silent) await Cutaway.script.exec({ say: c.text }, { path: path + ".say", after: () => Cutaway.script.speaks(c.then) });
       if (c.then) await Cutaway.script.exec(c.then, { path });
       if (c.goto === "end") return;
       if (c.goto) node = c.goto;

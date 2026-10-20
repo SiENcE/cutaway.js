@@ -3,15 +3,15 @@
 // passed with "new game", the hint button is tried once, and the end card goes back to the title.
 // The intro (Cutaway.start({ intro })) is left out (?nointro); --intro plays it first, through to the
 // title screen, then again from "Watch intro" with a click (the next shot) and Esc (skip it all).
-//   node tools/play.mjs <index.html> [--path path.json] [--max states] [--shots dir] [--touch] [--intro] [--size 844x390] [--dpr 3]
+//   node tools/play.mjs <index.html> [--path path.json] [--max states] [--workers N] [--shots dir] [--touch] [--intro] [--size 844x390] [--dpr 3]
 // Must end with "all passed"; a demo that ends before the path does stops there. --shots saves a screenshot after every move. --touch plays it like a
 // phone: a mobile viewport, taps for clicks and long presses for looks.
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { launch } from "./lib/chrome.mjs";
-import { loadGame } from "./lib/game.mjs";
-import { makeSolver, describe } from "./lib/solver.mjs";
+import { availableParallelism } from "node:os";
+import { makeSolver, loadFor, describe } from "./lib/solver.mjs";
 
 const args = process.argv.slice(2), page = args.find((a, i) => !a.startsWith("--") && !["--path", "--shots", "--size", "--dpr", "--max"].includes(args[i - 1]));
 if (!page) { console.error("usage: node tools/play.mjs <index.html> [--path path.json] [--shots dir] [--touch] [--intro] [--size WxH] [--dpr n]"); process.exit(2); }
@@ -21,7 +21,8 @@ const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : nu
 let path;
 if (opt("--path")) path = JSON.parse(readFileSync(opt("--path"), "utf8"));
 else {
-  const r = await (await makeSolver(loadGame(page))).search({ maxStates: Number(opt("--max") ?? 100000) });
+  const setup = { page }, workers = Number(opt("--workers") ?? Math.min(12, availableParallelism() - 1));
+  const r = await (await makeSolver(loadFor(setup), { workers, setup })).search({ maxStates: Number(opt("--max") ?? 100000) });
   if (!r.solved) { console.log("FAIL  the solver found no way to the end"); process.exit(1); }
   path = r.path;
 }

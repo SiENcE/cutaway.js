@@ -2,7 +2,7 @@
 // unsolvable variant fails and a soft-lock is found.
 import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
-import { makeSolver } from "../tools/lib/solver.mjs";
+import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
 
 async function demo(patch) {
   const g = loadGame("demo/index.html");
@@ -59,6 +59,10 @@ export default async function (t) {
   const r = await solver.search({ full: true });
   t.ok("solve: the demo can be finished", r.solved && r.path.length > 0, `${r.states} states`);
   t.ok("solve: no soft-locks in the demo", r.complete && r.softlocks.length === 0);
+  // worker threads search the same states and find the same way
+  const setup = { page: "demo/index.html" }, par = await (await makeSolver(loadFor(setup), { workers: 2, setup })).search({ full: true });
+  t.ok("solve: with workers, the same states, way and hints", par.states === r.states && JSON.stringify(par.path) === JSON.stringify(r.path) &&
+    par.softlocks.length === 0 && JSON.stringify(par.hints?.uses) === JSON.stringify(r.hints?.uses), `${par.states} vs ${r.states}`);
 
   const s2 = await makeSolver(await demo((C) => { C.room.get("hall").hotspots.shelf.use[0].then[0].then[0] = { set: "nothing" }; }));
   t.ok("solve: no key, no end", !(await s2.search()).solved);

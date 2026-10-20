@@ -15,6 +15,7 @@
  * @property {string} [hotspot]   the hotspot that started the script
  * @property {string} [item]      the item used on it
  * @property {{stopped: boolean}} [cancel]  once `stopped`, no further step runs (nested ones neither)
+ * @property {() => boolean} [after]  does a line still follow this step (in this script or the one around it)?
  */
 
 Cutaway.script = (function () {
@@ -52,8 +53,34 @@ Cutaway.script = (function () {
     const list = Array.isArray(script) ? script : [script];
     for (let i = 0; i < list.length; i++) {
       if (ctx.cancel?.stopped) return;
-      await step(list[i], { ...ctx, path: `${ctx.path}.${i}` });
+      const outer = ctx.after;
+      await step(list[i], { ...ctx, path: `${ctx.path}.${i}`, after: () => speaks(list.slice(i + 1)) || !!outer?.() });
     }
+  }
+
+  /** The steps that change the state (after one of them, an `if` further on may go either way). */
+  const CHANGES = ["set", "unset", "inc", "give", "take", "remove", "state", "show", "hide", "place", "goto", "bag"];
+
+  /**
+   * Is there a line (say, narrate, or a dialogue) in these steps, as things stand? An `if` counts by the state now,
+   * or either way once a step before it changes the state; a `once` either way. The UI marks a line
+   * with what comes next: more to read, or the end.
+   * @param {Script} script
+   * @param {{changed: boolean}} [seen]
+   */
+  function speaks(script, seen = { changed: false }) {
+    if (script === undefined || script === null) return false;
+    for (const s of Array.isArray(script) ? script : [script]) {
+      if (typeof s === "string") return true;
+      if (!s || typeof s !== "object") continue;
+      if ("if" in s) {
+        if (seen.changed ? speaks(s.then, seen) || speaks(s.else, seen) : speaks(Cutaway.state.test(s.if) ? s.then : s.else, seen)) return true;
+      } else if ("once" in s) {
+        if (speaks(s.once, seen) || speaks(s.else, seen)) return true;
+      } else if ("say" in s || "narrate" in s || "dialog" in s) return true;   // a dialogue: the talk goes on
+      else if (CHANGES.some((k) => k in s)) seen.changed = true;
+    }
+    return false;
   }
 
   /**
@@ -86,7 +113,7 @@ Cutaway.script = (function () {
     const who = "text" in s ? s.say : undefined, text = "text" in s ? s.text : s.say;
     const a = actorOf(who);
     if (fast) return;
-    return Cutaway.ui.say(a, Cutaway.i18n.t(text), { id: s.id ?? ctx.path });
+    return Cutaway.ui.say(a, Cutaway.i18n.t(text), { id: s.id ?? ctx.path, more: !!ctx.after?.() });
   }
 
   /** @param {any} v @returns {[number, number]} */
@@ -106,8 +133,8 @@ Cutaway.script = (function () {
 
   const builtins = {
     say,
-    /** @param {Record<string, any>} s */
-    narrate: (s) => (fast ? undefined : Cutaway.ui.narrate(Cutaway.i18n.t(s.narrate))),
+    /** @param {Record<string, any>} s @param {ScriptContext} ctx */
+    narrate: (s, ctx) => (fast ? undefined : Cutaway.ui.narrate(Cutaway.i18n.t(s.narrate), { more: !!ctx.after?.() })),
     walk,
     /** { face: "left" } or { face: "actor", to: "left" } @param {Record<string, any>} s */
     face: (s) => { "to" in s ? actorOf(s.face).face(s.to) : actorOf().face(s.face); },
@@ -188,7 +215,7 @@ Cutaway.script = (function () {
   for (const [k, fn] of Object.entries(builtins)) actions.set(k, fn);
 
   return {
-    run, exec, sleep,
+    run, exec, sleep, speaks,
     /** Is a script running (the player waits)? */
     get busy() { return busy > 0; },
     /** Fast mode: lines, sounds and waits pass at once (a sequence skipping ahead). */

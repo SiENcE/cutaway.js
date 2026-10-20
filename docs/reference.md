@@ -148,9 +148,13 @@ A choice: `text` (the active actor says it, unless `silent`), `if`, `once`, `the
 
 A script is a list of steps, run one after another. A plain string is a line for the active actor.
 
+Every line ends in a mark: an arrow when another line follows (later in the script, or in the one
+around it, as the state stands: an `if` counts by its condition now, or either way once a step before
+it changes the state; a `{ dialog }` counts as more), a square when it is the last.
+
 | step | |
 |---|---|
-| `"Hello!"`, `{ say: "bolt", text: "Hi." }` | a line (over the speaker, in their colour) |
+| `"Hello!"`, `{ say: "bolt", text: "Hi." }` | a line (over the speaker, in their colour; it ends in an arrow if another line follows, a square if it is the last, below) |
 | `{ narrate: "Meanwhile..." }` | a line at the top |
 | `{ walk: [x, y] }`, `{ walk: "bolt", to: [x, y], face, run: true, wait: false, free: true }` | walk (`wait: false`: the script goes on; `free: true`: in a straight line, ignoring the walk areas, e.g. wading out into water) |
 | `{ face: "left" }`, `{ face: "bolt", to: "up" }` | turn |
@@ -363,7 +367,7 @@ The page loads each layer file after the game's own data.
 - Settings belong to the player, not the save (localStorage per game). The pause menu's Settings has
   four pages: Sound (`master`, `music`, `sfx`, `voice` 0..1, `voices`, `muteUnfocused`), Text and
   dialogue (`textSpeed` 2 / 1.5 / 1 / 0.7, `advance` "auto" or "click": lines wait for a click, a key
-  or Space, with a blinking arrow; `textBox`), Picture (fullscreen, `fit` "sharp" or "fill", `crt`
+  or Space, the arrow bobbing; `textBox`), Picture (fullscreen, `fit` "sharp" or "fill", `crt`
   "off" / "scanlines" / "crt", `motion`: shake and flickering lamps), Controls (`swapButtons`: in the
   room the left button looks, `alwaysRun`, `holdMs` 300 / 450 / 700, `buttons`: the eye and menu
   buttons for the mouse too, `hintButton`), and "Reset to defaults". `Cutaway.start({ settings })` sets
@@ -381,7 +385,7 @@ The page loads each layer file after the game's own data.
 | tool | |
 |---|---|
 | `node tools/validate.mjs index.html` | every reference resolves, shapes are sound, texts are translated |
-| `node tools/solve.mjs index.html --full` | proves the game can be finished, lists soft-locks, checks hints |
+| `node tools/solve.mjs index.html --full` | proves the game can be finished, lists soft-locks, checks hints (`--workers N`: threads that search, default one less than the cores, at most 12; `--max N` states) |
 | `node tools/play.mjs index.html [--touch] [--intro]` | plays it through in headless Chrome with real clicks (or taps); `--intro` plays the intro first |
 | `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks (`studio.json`: write, layers, tasks, palette) |
 | `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`; `--intro` lets the intro play) |

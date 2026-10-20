@@ -3,8 +3,9 @@
 //   first one it has); on the floor, walk. A double click (or tap) runs. Right click (or a long
 //   press): look at it.
 //   Hovering a hotspot shows its name next to the cursor. Speech appears above the speaker in the
-//   speaker's colour; a click skips the current line. The player's settings may make lines wait for a
-//   click (a blinking arrow shows when its time is up), put a box behind them, swap what the mouse's
+//   speaker's colour; a click skips the current line. Each line ends in a mark: an arrow if another
+//   line follows, a square if it is the last. The player's settings may make lines wait for a
+//   click (the arrow bobs when its time is up), put a box behind them, swap what the mouse's
 //   buttons do in the room, make every walk a run, show the touch buttons for the mouse too.
 //   Holding an inventory item: click a hotspot or actor to use the item on it, right click to put
 //   it back.
@@ -59,7 +60,7 @@ Cutaway.ui = (function () {
   /** @type {HTMLCanvasElement | null} */
   let arrow = null;
 
-  /** @type {{actor: InstanceType<typeof Cutaway.actor.Actor> | null, lines: string[], color: string, until: number, done: () => void, since: number, waiting?: boolean} | null} */
+  /** @type {{actor: InstanceType<typeof Cutaway.actor.Actor> | null, lines: string[], color: string, until: number, done: () => void, since: number, more: boolean, waiting?: boolean} | null} */
   let line = null;
   /** The player's choices (Cutaway.settings): lines wait for a click, a box behind them, ... */
   const opts = { advance: /** @type {"auto" | "click"} */ ("auto"), textBox: false, swap: false, alwaysRun: false, buttons: false, hintButton: true };
@@ -91,14 +92,14 @@ Cutaway.ui = (function () {
    * Show a line above an actor until its time is up or the player clicks.
    * @param {InstanceType<typeof Cutaway.actor.Actor>} actor
    * @param {string} text
-   * @param {{id?: string}} [o]  id = the line's id (voices use it)
+   * @param {{id?: string, more?: boolean}} [o]  id = the line's id (voices use it); more = another line follows (its mark)
    * @returns {Promise<void>}
    */
   function say(actor, text, o = {}) {
     finishLine();
     const ms = lineMs(text);
     return new Promise((done) => {
-      line = { actor, lines: font().wrap(text, skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time };
+      line = { actor, lines: font().wrap(text, skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
       if (actor.state === "idle") actor.setState("talk");
       Cutaway.events.emit("say", { actor: actor.id, text, id: o.id, ms });
     });
@@ -107,13 +108,14 @@ Cutaway.ui = (function () {
   /**
    * A line from nobody in particular, at the top of the screen.
    * @param {string} text
+   * @param {{more?: boolean}} [o]  more = another line follows (its mark)
    * @returns {Promise<void>}
    */
-  function narrate(text) {
+  function narrate(text, o = {}) {
     finishLine();
     const ms = lineMs(text);
     return new Promise((done) => {
-      line = { actor: null, lines: font().wrap(text, 260), color: "#ffffff", until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time };
+      line = { actor: null, lines: font().wrap(text, 260), color: "#ffffff", until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
     });
   }
 
@@ -369,19 +371,27 @@ Cutaway.ui = (function () {
         x = s.x; y = s.y - line.actor.height() - 4 - n * lh;
       }
       const wMax = Math.max(...line.lines.map((l) => f.measure(l))), pad = opts.textBox ? 3 : 0;
-      x = Cutaway.util.clamp(Math.round(x), Math.ceil(wMax / 2) + 2 + pad, W - Math.ceil(wMax / 2) - 2 - pad);
+      // its mark after the last word, all the time it shows: an arrow if another line follows, a square
+      // if it is the last; once a line waits for a click, the arrow bobs. Room is kept for it on the right.
+      x = Cutaway.util.clamp(Math.round(x), Math.ceil(wMax / 2) + 2 + pad, W - Math.ceil(wMax / 2) - 10 - pad);
       y = Math.max(2 + pad, Math.round(y));
+      const last = line.lines[n - 1], ax = x + Math.ceil(f.measure(last) / 2) + 3, left = x - Math.ceil(wMax / 2) - pad;
       if (opts.textBox) {
         ctx.fillStyle = skin.panel;
-        ctx.fillRect(x - Math.ceil(wMax / 2) - pad, y - pad, wMax + 2 * pad + 1, n * lh + 2 * pad - 1);
+        ctx.fillRect(left, y - pad, Math.max(wMax + 2 * pad + 1, ax + 6 + pad - left), n * lh + 2 * pad - 1);
       }
       line.lines.forEach((l, i) => f.draw(ctx, l, x, y + i * lh, { color: line?.color, outline: skin.outline, align: "center" }));
-      if (line.waiting && Math.floor((Cutaway.clock.time - line.until) / 400) % 2 === 0) {   // a blinking arrow: click to go on
-        const last = line.lines[n - 1], ax = Math.min(W - 6, x + Math.ceil(f.measure(last) / 2) + 3), ay = y + (n - 1) * lh + 2;
-        ctx.fillStyle = skin.outline;
+      const bob = line.waiting && line.more && Math.floor((Cutaway.clock.time - line.until) / 400) % 2 === 1 ? 1 : 0;
+      const ay = y + (n - 1) * lh + 2 + bob;
+      ctx.fillStyle = skin.outline;
+      if (line.more) {
         ctx.fillRect(ax - 1, ay - 1, 7, 3); ctx.fillRect(ax, ay + 2, 5, 2); ctx.fillRect(ax + 1, ay + 4, 3, 1); ctx.fillRect(ax + 2, ay + 5, 1, 1);
         ctx.fillStyle = line.color;
         ctx.fillRect(ax, ay, 5, 1); ctx.fillRect(ax + 1, ay + 1, 3, 1); ctx.fillRect(ax + 2, ay + 2, 1, 1);
+      } else {
+        ctx.fillRect(ax, ay - 1, 5, 5);
+        ctx.fillStyle = line.color;
+        ctx.fillRect(ax + 1, ay, 3, 3);
       }
     }
     if (hud) for (const l of layers.slice().sort((a, b) => a.z - b.z)) if (!cutscene || l.modal) l.render?.(ctx);
@@ -471,7 +481,7 @@ Cutaway.ui = (function () {
     /** The hotspot under the pointer, if any. */
     get hover() { return hover; },
     /** The line on screen, if any. */
-    get line() { return line ? { actor: line.actor?.id ?? null, text: line.lines.join(" "), waiting: !!line.waiting } : null; },
+    get line() { return line ? { actor: line.actor?.id ?? null, text: line.lines.join(" "), waiting: !!line.waiting, more: line.more } : null; },
     /** The inventory item on the cursor. */
     get held() { return held; },
     /** @param {string | null} id */
