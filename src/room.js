@@ -219,6 +219,7 @@ Cutaway.scene = (function () {
     Cutaway.tween.stop("camera");
     scripted = null;
     live = new Map();
+    time = 0;                                              // the scene's clock starts with the room: its scrolling layers stand where they are drawn
     follow(true);
     Cutaway.events.emit("room.enter", { id, music: def.music });
     if (view || o.shot) return;

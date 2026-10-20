@@ -89,7 +89,7 @@ in front).
 | `baseline` | the sorting y (default `at[1]`; 0: always behind) |
 | `states: { open: "box_open" }` | an image per object state (`{ state: "box", value: "open" }`) |
 | `flip`, `hidden` | |
-| `scroll: -40` | px per second along x (negative: to the left); the image repeats across the room, so scenery passes by (a ride, clouds). Layers at different speeds give parallax |
+| `scroll: -40` | px per second along x (negative: to the left); the image repeats across the room, so scenery passes by (a ride, clouds). Layers at different speeds give parallax. The scene's clock starts when the room loads, so a scrolling layer stands where it is drawn at first |
 | `depth: 0.5` | parallax against the camera (default 1, the room): on the screen it is at `at - camera * depth`, in whole pixels. 0 stays put on the screen, 0.5 is far away (half the camera's speed), 1.4 a foreground that passes faster. A hotspot that uses the prop's box follows it; hotspots with their own shape stay in room coordinates. The editor draws and picks it where it shows |
 
 A script can move a prop (`{ move }`) and play its animation from the start (`{ play }`). Both belong
@@ -243,6 +243,11 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   continue (the newest save), acts, load, settings, fullscreen, quit.
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"
   card (a button that opens `link`, one back to the title).
+- `prologue: "id"`: a sequence that tells the story so far, played when the act is begun as a new game
+  (from the title screen or the acts menu), before its `start` steps and card; from black, back to
+  black. Esc skips it, a click or Space goes on a shot. The title screen gets "Watch the prologue"
+  (`@cutaway.title.prologue`) for the first act's. `?nointro`, `?edit` and `?act=` leave it out, and so
+  do the Node tools (`Cutaway.acts.configure({ prologues })`; `play.mjs --intro` plays it, a click and Esc).
 
 ## Sequences and the intro
 

@@ -17,6 +17,10 @@
 // large as a placeholder), and new game, continue (the newest save), acts, load, "watch intro" (when
 // the game has one: Cutaway.start({ intro })), settings, fullscreen, and quit when the shell can
 // (Cutaway.start({ quit })).
+// A prologue: an act's `prologue` is a sequence (a film that tells the story so far) played when the act
+// is begun as a new game from the title screen, before its card; Esc skips it. The title menu plays the
+// first act's prologue again ("watch the prologue"). Only where Cutaway.start allows it (not with
+// ?nointro, ?act= or ?edit, and never in the Node tools).
 "use strict";
 
 /**
@@ -26,6 +30,7 @@
  * @property {string} [title]    the card's heading ("Act 1")
  * @property {string} [name]     the card's text, the act's name ("The Hall")
  * @property {Script} [start]    steps before the card and the room: place actors, lock members, set flags
+ * @property {string} [prologue] a sequence played before it all when the act is begun as a new game from the title screen
  * @property {boolean} [fresh]   always begin from a clean state, also when the act before goes on into it:
  *                               what it carries over, its `start` gives (the same act from the title screen
  *                               and from the end of the one before, and one state for the solver)
@@ -73,6 +78,8 @@ Cutaway.acts = (function () {
   let quit = null;
   /** @type {string | null} the intro sequence ("watch intro" on the title screen) */
   let intro = null;
+  /** May an act's prologue play? (Cutaway.start allows it; the tools and ?nointro don't) */
+  let prologues = false;
   let gameId = "game", titleOpen = false;
   /** @type {{members: string[], locked: string[], staying?: string[]} | null} the party as the game started */
   let party0 = null;
@@ -113,9 +120,10 @@ Cutaway.acts = (function () {
 
   /**
    * Begin an act: its start steps, its card, its room (whose enter script runs). `fresh` makes it a
-   * new game; `card: false` leaves the card out. Resolves when the room's enter script has finished.
+   * new game; `card: false` leaves the card out, `prologue: false` its prologue (it plays only on a
+   * fresh begin). Resolves when the room's enter script has finished.
    * @param {string} id
-   * @param {{fresh?: boolean, card?: boolean}} [o]
+   * @param {{fresh?: boolean, card?: boolean, prologue?: boolean}} [o]
    */
   async function begin(id, o = {}) {
     const a = Cutaway.act.get(id);
@@ -128,6 +136,7 @@ Cutaway.acts = (function () {
     for (const [f, v] of kept) Cutaway.state.set(f, v);
     current = id;
     unlock(id);
+    if (o.fresh && o.prologue !== false && prologues && a.prologue && Cutaway.sequence?.get(a.prologue)) await prologue(a.prologue);
     Cutaway.events.emit("act", { id });
     const steps = a.start === undefined ? [] : Array.isArray(a.start) ? a.start : [a.start];
     const card = (a.title || a.name) && o.card !== false ? [{ card: a.name ?? "", title: a.title }] : [];
@@ -164,6 +173,7 @@ Cutaway.acts = (function () {
       ...(acts.length > 1 ? [{ label: t("title.acts"), run: actsPage }] : []),
       ...(newest ? [{ label: t("menu.load"), run: () => Cutaway.menu.loadPage(titlePage, TITLE_LOOK) }] : []),
       ...(intro && Cutaway.sequence?.get(intro) ? [{ label: t("title.intro"), run: watchIntro }] : []),
+      ...(prologues && start && Cutaway.sequence?.get(Cutaway.act.get(start)?.prologue ?? "") ? [{ label: t("title.prologue"), run: watchPrologue }] : []),
       { label: t("menu.settings"), run: () => Cutaway.menu.settings(titlePage, TITLE_LOOK) },
       { label: t("menu.fullscreen"), run: () => Cutaway.display.toggleFullscreen() },
       ...(quit ? [{ label: t("title.quit"), run: quit }] : []),
@@ -178,6 +188,26 @@ Cutaway.acts = (function () {
       }),
       { label: t("menu.back"), run: titlePage },
     ], titlePage, TITLE_LOOK);
+  }
+
+  /** A prologue: from black, the film, and black again for what follows (the act's card). @param {string} seq */
+  async function prologue(seq) {
+    Cutaway.scene.unload();
+    Cutaway.fx.fade(0, 0);
+    await Cutaway.sequence.play(seq, { restore: false });
+    Cutaway.scene.unload();
+    Cutaway.fx.fade(0, 0);
+  }
+
+  /** The first act's prologue again, from the title screen, and back. */
+  async function watchPrologue() {
+    const seq = Cutaway.act.get(first() ?? "")?.prologue;
+    if (!seq) return;
+    Cutaway.menu.close();
+    titleOpen = false;
+    await Cutaway.fx.transition("out");
+    await prologue(seq);
+    showTitle();
   }
 
   /** The intro again, from the title screen, and back. */
@@ -251,7 +281,7 @@ Cutaway.acts = (function () {
   };
 
   return {
-    begin, toTitle, showTitle, available, unlocked, reset, watchIntro,
+    begin, toTitle, showTitle, available, unlocked, reset, watchIntro, watchPrologue,
     /** The act being played. */
     get current() { return current; },
     get titleOpen() { return titleOpen; },
@@ -261,10 +291,11 @@ Cutaway.acts = (function () {
     first,
     /**
      * Set up from the start options. Call after the party is set (a new game starts with it).
-     * @param {{id?: string, title?: TitleOptions, demo?: DemoOptions, quit?: () => void, intro?: string}} o
+     * @param {{id?: string, title?: TitleOptions, demo?: DemoOptions, quit?: () => void, intro?: string, prologues?: boolean}} o
      */
     configure(o) {
       gameId = o.id ?? gameId; title = o.title ?? null; demo = o.demo ?? null; quit = o.quit ?? null; intro = o.intro ?? null;
+      prologues = !!o.prologues;
       party0 = Cutaway.party.snapshot();
     },
     /** The act a save was made in. @param {string | null | undefined} id */

@@ -16,6 +16,23 @@ async function demo(patch, opts) {
 
 export default async function (t) {
   {
+    // a prologue: a sequence before the act's card on a new game, only where it is allowed (not in the tools)
+    const pro = (C) => {
+      C.sequence("pro", { steps: [{ shot: "one" }, { set: "~pro_seen" }] });
+      C.act.get("act1").prologue = "pro";
+    };
+    const { C } = await demo(pro);
+    t.ok("prologue: the tools leave it out", !C.state.flag("~pro_seen"));
+    C.acts.configure({ prologues: true });
+    await C.acts.begin("act1", { fresh: true });
+    t.ok("prologue: a new game plays it, then the act", C.state.flag("~pro_seen") === true && C.acts.current === "act1" && C.scene.room.id === "hall");
+    C.state.unset("~pro_seen");
+    await C.acts.begin("act1", { fresh: true, prologue: false });
+    t.ok("prologue: prologue: false leaves it out (?act=)", !C.state.flag("~pro_seen"));
+    await C.acts.begin("act1");
+    t.ok("prologue: not when an act goes on", !C.state.flag("~pro_seen"));
+  }
+  {
     const { C } = await demo();
     t.ok("acts: the demo begins its act", C.acts.current === "act1" && C.scene.room.id === "hall" && C.scene.active.id === "pip");
     C.state.set("got_key");

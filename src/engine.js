@@ -127,7 +127,9 @@ Cutaway.start = async function (o = {}) {
   Cutaway.party.set(o.party ?? (o.actor ? [o.actor] : []));
   Cutaway.party.setFollow(!!o.follow);
   if (o.inventory === "shared") Cutaway.state.share(Cutaway.party.members());
-  Cutaway.acts.configure({ id: o.id, title: o.title, demo: o.demo, quit: o.quit, intro: o.intro });
+  // an act's prologue plays where the intro may (not with ?nointro or ?edit; ?act= begins without it)
+  Cutaway.acts.configure({ id: o.id, title: o.title, demo: o.demo, quit: o.quit, intro: o.intro,
+    prologues: !params.has("nointro") && !(dev && params.has("edit")) });
   // these run in the background (the opening, the first room's enter script, the title screen)
   const act = (dev && params.get("act")) || o.act;
   const begin = () => {
@@ -136,7 +138,7 @@ Cutaway.start = async function (o = {}) {
     else if (o.room) Cutaway.scene.load(o.room);
   };
   const intro = o.intro && !params.has("nointro") && !(dev && params.has("edit")) && !Cutaway.settings.seen(o.intro) ? o.intro : undefined;
-  if (act) Cutaway.acts.begin(act, { fresh: true, card: false });
+  if (act) Cutaway.acts.begin(act, { fresh: true, card: false, prologue: false });
   else if ((o.gate || intro) && Cutaway.sequence) Cutaway.sequence.opening({ gate: o.gate, intro }).then(begin);
   else begin();
   if (dev && (o.debug || params.has("debug"))) Cutaway.debug.toggle(true);

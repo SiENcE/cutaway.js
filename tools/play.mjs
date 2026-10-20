@@ -2,7 +2,8 @@
 // mouse clicks (hotspots, portraits, the satchel, dialogue lines) on a manual clock. A title screen is
 // passed with "new game", the hint button is tried once, and the end card goes back to the title.
 // The intro (Cutaway.start({ intro })) is left out (?nointro); --intro plays it first, through to the
-// title screen, then again from "Watch intro" with a click (the next shot) and Esc (skip it all).
+// title screen, then again from "Watch intro" with a click (the next shot) and Esc (skip it all); and the
+// first act's prologue on the new game (a click on, Esc skips it).
 //   node tools/play.mjs <index.html> [--path path.json] [--max states] [--workers N] [--shots dir] [--touch] [--intro] [--size 844x390] [--dpr 3]
 // Must end with "all passed"; a demo that ends before the path does stops there. --shots saves a screenshot after every move. --touch plays it like a
 // phone: a mobile viewport, taps for clicks and long presses for looks.
@@ -122,6 +123,20 @@ try {
     const rows = await chrome.ev("Cutaway.menu.rows");
     check("title screen: " + (rows ?? []).join(" / "), Array.isArray(rows) && rows.length > 0);
     await click(await chrome.ev("Cutaway.menu.rowPoint(0)"));             // new game
+    // the first act's prologue (with --intro; ?nointro leaves it out): a click goes on a shot, Esc skips it
+    const pro = await chrome.ev("Cutaway.act.get(Cutaway.act.ids()[0] ?? '')?.prologue ?? null");
+    if (intro && pro) {
+      await chrome.ev("__play.step(1500)");
+      check("a new game begins with the prologue: " + pro, (await chrome.ev("Cutaway.sequence.playing()")) === pro);
+      const before = await chrome.ev("__play.shot");
+      await click({ x: 160, y: 90 });
+      await chrome.ev("new Promise((r) => setTimeout(r, 300))");
+      const after = await chrome.ev("__play.shot");
+      check(`  a click goes on to the next shot (${before} > ${after})`, await chrome.ev("!!Cutaway.sequence.playing()") && after !== before);
+      if (touch) await chrome.hold(160, 90); else await chrome.key("Escape");
+      await chrome.ev("new Promise((r) => setTimeout(r, 300))");
+      check(`  ${touch ? "a long press" : "Esc"} skips the rest: the act begins`, (await settle()) !== "timeout" && !(await chrome.ev("Cutaway.sequence.playing()")) && !!(await chrome.ev("Cutaway.acts.current")));
+    }
   }
   check("starts", (await settle()) !== "timeout");
   if (await chrome.ev("Cutaway.hints.any()")) {
