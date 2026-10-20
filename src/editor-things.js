@@ -1,7 +1,9 @@
 // Cutaway.js editor, Things tab: the properties of the room and of what is in it (hotspots, props,
-// lamps, effects, actors) and of the items. Pick a thing in the list or click it on the picture, change a
-// field and the game shows it at once; Save writes the edits layer (Cutaway.edits in game/edits.js, the
-// studio's "edits" layer). Texts are changed in the Texts tab, shapes in the Room tab, logic in code.
+// lamps, effects, actors) and of the items, and their scripts (what looking, using, talking, taking and
+// using an item on them does; a room's entering): each opens as blocks in the centre (editor-script.js).
+// Pick a thing in the list or click it on the picture, change a field or a step and the game does it at
+// once; Save writes the edits layer (Cutaway.edits in game/edits.js, the studio's "edits" layer), which
+// the Dialogue tab shares. Texts are changed in the Texts tab, shapes in the Room tab.
 "use strict";
 
 (function () {
@@ -9,6 +11,8 @@
   /** @type {string} "room", "hot:<id>", "prop:<id>", "lamp:<id>", "fx:<id>", "actor:<id>", "item:<id>" */
   let sel = "room";
   let dirty = false;
+  /** @type {{kind: EditKind, id: string, path: string[], title: string, view: EditorView} | null} the script open in the centre */
+  let open = null;
 
   /**
    * A field: a path into the thing's data and how to edit it.
@@ -50,8 +54,8 @@
   }
   /** @param {any} o @param {string} path */
   const get = (o, path) => path.split(".").reduce((v, k) => (v == null ? undefined : v[k]), o);
-  /** A patch that sets one path. @param {string} path @param {any} v */
-  const patchOf = (path, v) => path.split(".").reverse().reduce((acc, k) => ({ [k]: acc }), v);
+  /** A patch that sets one path ("a.b.c" or its parts). @param {string | string[]} path @param {any} v */
+  const patchOf = (path, v) => (Array.isArray(path) ? path : path.split(".")).slice().reverse().reduce((acc, k) => ({ [k]: acc }), v);
 
   /** Change a field: in the live data and in the edits layer. @param {Field} f @param {any} v */
   function change(f, v) {
@@ -68,9 +72,51 @@
     dirty = true;
   }
 
+  /** Where the picked thing's data is in the edits layer: its kind, id and the path in it. @returns {{kind: EditKind, id: string, base: string[]} | null} */
+  function where() {
+    const r = room(), [kind, id] = sel.includes(":") ? [sel.slice(0, sel.indexOf(":")), sel.slice(sel.indexOf(":") + 1)] : [sel, ""];
+    if (kind === "room") return r ? { kind: "rooms", id: r.id, base: [] } : null;
+    if (kind === "hot") return r ? { kind: "rooms", id: r.id, base: ["hotspots", id] } : null;
+    if (kind === "item") return { kind: "items", id, base: [] };
+    if (kind === "actor") return { kind: "actors", id, base: [] };
+    return null;
+  }
+
+  /** The scripts the picked thing has, and the verbs it could have. */
+  function scripts() {
+    const obj = target(), kind = sel.split(":")[0];
+    if (!obj) return null;
+    const verbs = kind === "room" ? ["enter"] : kind === "hot" ? ["look", "use", "talk", "take"] : kind === "item" ? ["look"] : kind === "actor" ? ["look", "talk"] : [];
+    const withKey = kind === "item" ? "combine" : kind === "hot" || kind === "actor" ? "with" : "";
+    /** @type {{label: string, path: string[], value: any}[]} */
+    const list = verbs.filter((v) => obj[v] !== undefined).map((v) => ({ label: v, path: [v], value: obj[v] }));
+    if (withKey) for (const [k, v] of Object.entries(obj[withKey] ?? {})) list.push({ label: `${withKey} ${k}`, path: [withKey, k], value: v });
+    return { verbs: verbs.filter((v) => obj[v] === undefined), withKey, list };
+  }
+
+  /** Open a script of the picked thing in the centre. @param {string[]} path @param {string} label */
+  function openScript(path, label) {
+    const w = where(), S = E.modules.script;
+    if (!w || !S) return;
+    const full = [...w.base, ...path];
+    const title = `${sel.startsWith("hot:") ? `${w.id}/${sel.slice(4)}` : sel.startsWith("item:") ? `item ${w.id}` : w.id}: ${label}`;
+    const get = () => full.reduce((/** @type {any} */ v, k) => (v == null ? undefined : v[k]),
+      w.kind === "rooms" ? Cutaway.room.get(w.id) : w.kind === "items" ? Cutaway.item.get(w.id) : Cutaway.actors.get(w.id)?.def);
+    const hotspot = sel.startsWith("hot:") ? sel.slice(4) : undefined;
+    const view = S.view({ title, value: get(),
+      change: (/** @type {any[] | null} */ v) => { Cutaway.edits.change(w.kind, w.id, patchOf(full, v)); dirty = true; E.refresh(); },
+      changed: () => Cutaway.edits.changed(w.kind, w.id, full),
+      revert: () => { Cutaway.edits.revert(w.kind, w.id, full); E.refresh(); return get(); },
+      test: (/** @type {any[]} */ v) => { E.close(); Cutaway.script.run(v, { path: `edit.${full.join(".")}`, hotspot }); },
+      close: () => { open = null; E.refresh(); } });
+    open = { kind: w.kind, id: w.id, path: full, title, view };
+    E.refresh();
+  }
+
   async function save() {
-    const text = `// What the Cutaway editor changed in the game's data (Things tab): rooms, hotspots, props, light,\n` +
-      `// effects, music, items and actors. Loaded after the game's own data; objects merge, values replace.\n"use strict";\n\n` +
+    const text = `// What the Cutaway editor changed in the game's data (Things and Dialogue tabs): rooms, hotspots, props,\n` +
+      `// light, effects, music, items, actors, their scripts, and dialogues. Loaded after the game's own data;\n` +
+      `// objects merge, values (and scripts) replace, null removes, a dialogue is kept whole.\n"use strict";\n\n` +
       `Cutaway.edits(${E.fmt(Cutaway.edits.data())});\n`;
     E.setStatus(await E.saveFile(E.studio.layer("edits") || "game/edits.js", text));
     dirty = false;
@@ -103,23 +149,24 @@
     return el("input", { value: v ?? "", style: { ...st, width: "160px" }, onchange: (/** @type {any} */ e) => set(e.target.value || undefined) });
   }
 
-  /** The things to pick from: the room, what is in it, the actors and the items. */
+  /** The things to pick from: the room, what is in it, the actors and the items. @returns {ListItem[]} */
   function things() {
-    const r = room(), out = [["room", `room ${r?.id ?? ""}`]];
-    for (const id of Object.keys(r?.hotspots ?? {})) out.push([`hot:${id}`, `hotspot ${id}`]);
-    for (const p of r?.props ?? []) if (p.id) out.push([`prop:${p.id}`, `prop ${p.id}`]);
-    (r?.light?.lamps ?? []).forEach((l, i) => out.push([`lamp:${l.id ?? i}`, `lamp ${l.id ?? i}`]));
-    (r?.fx ?? []).forEach((f, i) => out.push([`fx:${f.id ?? i}`, `${f.kind} ${f.id ?? i}`]));
-    for (const a of Cutaway.actors.all()) out.push([`actor:${a.id}`, `actor ${a.id}${a.room === r?.id ? " (here)" : ""}`]);
-    for (const id of Cutaway.item.ids()) out.push([`item:${id}`, `item ${id}`]);
+    const r = room();
+    /** @type {ListItem[]} */
+    const out = [{ key: "room", label: `room ${r?.id ?? ""}` }];
+    for (const id of Object.keys(r?.hotspots ?? {})) out.push({ key: `hot:${id}`, label: id, group: "hotspots" });
+    for (const p of r?.props ?? []) if (p.id) out.push({ key: `prop:${p.id}`, label: p.id, group: "props" });
+    (r?.light?.lamps ?? []).forEach((l, i) => out.push({ key: `lamp:${l.id ?? i}`, label: String(l.id ?? i), group: "lamps" }));
+    (r?.fx ?? []).forEach((f, i) => out.push({ key: `fx:${f.id ?? i}`, label: `${f.kind} ${f.id ?? i}`, group: "effects" }));
+    for (const a of Cutaway.actors.all()) out.push({ key: `actor:${a.id}`, label: a.id + (a.room === r?.id ? "  (here)" : ""), group: "actors", dim: a.room !== r?.id });
+    for (const id of Cutaway.item.ids()) out.push({ key: `item:${id}`, label: id, group: "items" });
     return out;
   }
 
   function build(/** @type {HTMLElement} */ box) {
     const list = things();
-    if (!list.some(([k]) => k === sel)) sel = "room";
-    const pick = el("select", { size: 12, className: "cw-list",
-      onchange: (/** @type {any} */ e) => { sel = e.target.value; E.refresh(); } }, list.map(([k, label]) => el("option", { value: k, textContent: label, selected: k === sel })));
+    if (!list.some((t) => t.key === sel)) sel = "room";
+    const pick = E.list({ id: "things", items: list, selected: sel, filter: true, height: "220px", foldOver: 20, pick: (k) => { sel = k; E.refresh(); } });
     box.append(el("div", { style: { margin: "4px 0" } }, [button(`Save${dirty ? " *" : ""}`, () => { save().catch((e) => E.setStatus("save failed: " + e.message)); }, "write the edits layer"),
       el("span", { className: "cw-dim" }, [" click a thing on the picture (or in the list on the left)"])]), pick);
     const obj = target(), kind = sel.split(":")[0];
@@ -128,9 +175,30 @@
     for (const f of FIELDS[kind] ?? []) {
       form.append(el("div", { style: { margin: "3px 0" } }, [el("div", { className: "cw-dim" }, [f.path + (f.hint ? `  (${f.hint})` : "")]), input(f, obj)]));
     }
-    if (kind === "hot" || kind === "item" || kind === "room" || kind === "actor") form.append(el("div", { className: "cw-dim", style: { marginTop: "4px" } },
-      ["Its name and texts: the Texts tab. Its shape and walk-to point: the Room tab. What it does: the game's code."]));
     box.append(form);
+    const sc = scripts(), w = where(), S = E.modules.script;
+    if (sc && w && S && (sc.list.length || sc.verbs.length || sc.withKey)) {
+      const add = /** @type {HTMLSelectElement} */ (el("select", { onchange: () => {
+        const v = add.value;
+        if (!v) return;
+        if (v === "+with") {
+          const ids = Cutaway.item.ids();
+          const it = (prompt(`${sc.withKey} which item? (${ids.slice(0, 12).join(", ")}${ids.length > 12 ? ", ..." : ""})`) ?? "").trim();
+          if (it) openScript([sc.withKey, it], `${sc.withKey} ${it}`);
+        } else openScript([v], v);
+      } }, [el("option", { value: "", textContent: "+ script" }), ...sc.verbs.map((v) => el("option", { value: v, textContent: v })),
+        ...(sc.withKey ? [el("option", { value: "+with", textContent: `${sc.withKey} an item ...` })] : [])]));
+      box.append(el("div", { className: "cw-sec" }, [E.fold("things.scripts", "scripts", () => [
+        ...sc.list.map((x) => {
+          const full = [...w.base, ...x.path], on = !!open && open.kind === w.kind && open.id === w.id && open.path.join(".") === full.join(".");
+          return el("div", { style: { margin: "2px 0", cursor: "pointer", color: on ? "#ffe14a" : "" }, title: "open it in the centre", onclick: () => openScript(x.path, x.label) }, [
+            el("span", { style: { color: "#7ad8ff" } }, [x.label]), Cutaway.edits.changed(w.kind, w.id, full) ? el("span", { className: "cw-dirty" }, [" ● changed"]) : "",
+            el("div", { className: "cw-dim", style: { paddingLeft: "10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, [S.summary(x.value)])]);
+        }),
+        el("div", {}, [add]),
+        el("div", { className: "cw-dim" }, ["Its name and texts: the Texts tab. Its shape and walk-to point: the Room tab."]),
+      ], { note: String(sc.list.length) })]));
+    }
   }
 
   /** Click on the picture: the hotspot or actor there (else a prop's box). @param {{x: number, y: number}} p */
@@ -162,6 +230,9 @@
     ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h, w + 1, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w, y, 1, h);
   }
 
-  E.tab({ id: "things", label: "Things", build, pick, render, onRoom() { sel = "room"; }, save: () => save(), selectNone() { sel = "room"; E.refresh(); } });
-  E.modules.things = { get unsaved() { return dirty; }, save, target, get selected() { return sel; }, select(/** @type {string} */ key) { sel = key; E.refresh(); }, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
+  E.tab({ id: "things", label: "Things", build, pick, render, onRoom() { sel = "room"; open = null; }, save: () => save(),
+    selectNone() { if (open) open = null; else sel = "room"; E.refresh(); }, view: () => open?.view ?? null });
+  E.modules.things = { get unsaved() { return dirty; }, save, target, get selected() { return sel; }, openScript, get script() { return open; },
+    /** Another tab changed the edits layer (the Dialogue tab): it is saved with this one. */
+    touch() { dirty = true; }, select(/** @type {string} */ key) { sel = key; E.refresh(); }, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
 })();

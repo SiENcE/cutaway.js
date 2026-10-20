@@ -87,9 +87,35 @@
  * @property {(box: HTMLElement) => void} [browse]    its part of the left panel's browser (else the room's things)
  */
 
+/**
+ * A row of a list (Cutaway.editor.list).
+ * @typedef {object} ListItem
+ * @property {string} key
+ * @property {string} label
+ * @property {string} [group]     the group it is in (groups fold)
+ * @property {string} [title]     the tooltip (default: the key)
+ * @property {string} [color]
+ * @property {string} [mark]      a mark after the label ("●" not saved, "✓" done)
+ * @property {boolean} [dim]
+ */
+/**
+ * @typedef {object} ListOptions
+ * @property {string} id                    keeps its folds, cursor, filter and scroll (and the focus) across rebuilds
+ * @property {ListItem[]} items             in order; groups show where their first item is
+ * @property {string} [selected]
+ * @property {(key: string) => void} pick   a row picked (a click, or the cursor moved onto it with the keys)
+ * @property {(key: string) => void} [open] Enter or a double click (default: pick)
+ * @property {boolean | string} [filter]    a filter field above it (a string: its placeholder)
+ * @property {string} [height]              a scroll box this high at most (CSS); else it grows (the left panel scrolls)
+ * @property {number} [foldOver]            groups with more items start folded (all of them in a list five times as long)
+ * @property {string} [empty]               what shows when there is nothing
+ * @property {string} [title]
+ * @property {(e: KeyboardEvent) => boolean} [keys]  keys of its own, before the list's (true: handled)
+ */
+
 Cutaway.editor = (function () {
   const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170;
-  const MODULES = ["editor-texts.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-dialogue.js", "editor-state.js",
+  const MODULES = ["editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
     "editor-issues.js", "editor-checks.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
   let isOpen = false, showHud = false;
@@ -655,6 +681,8 @@ Cutaway.editor = (function () {
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
     if (["F9", "F11"].includes(e.code)) return;            // the debug overlay and fullscreen still work
     e.stopPropagation();
+    const lst = /** @type {any} */ (e.target)?.closest?.(".cw-lst"), ctl = lst ? listOf.get(lst) : null;
+    if (ctl?.key(e)) { e.preventDefault(); return; }       // a list has the keyboard: it moves, folds, opens
     if (mod && e.code === "KeyZ") { e.preventDefault(); route(e.shiftKey ? "redo" : "undo"); return; }
     if (mod && e.code === "KeyY") { e.preventDefault(); route("redo"); return; }
     const v = currentView(), t = activeTab();
@@ -767,6 +795,27 @@ Cutaway.editor = (function () {
 .cutaway-editor .cw-sw.t, .cutaway-editor .cw-big.t { background: repeating-conic-gradient(#555 0 25%, #888 0 50%) 0 0 / 8px 8px; }
 .cutaway-editor .cw-big { display: inline-block; width: 34px; height: 34px; border: 2px solid #4a4066; vertical-align: middle; margin-right: 4px; box-sizing: border-box; }
 .cutaway-editor .cw-pals { white-space: normal; line-height: 0; margin: 2px 0 4px; }
+.cw-lst { outline: none; user-select: none; white-space: nowrap; }
+.cw-lst.box { overflow: auto; background: #1c1729; border: 1px solid #3a3350; }
+.cw-lst:focus { box-shadow: inset 0 0 0 1px #6a5a9a; }
+.cw-lst .row { padding: 1px 8px 1px 14px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+.cw-lst .row.in { padding-left: 22px; }
+.cw-lst .row:hover { background: #221c30; color: #ffe14a; }
+.cw-lst .row.on { background: #2c2540; color: #ffe14a; border-left: 2px solid #ffe14a; padding-left: 12px; }
+.cw-lst .row.in.on { padding-left: 20px; }
+.cw-lst .row.dim { color: #6c6484; }
+.cw-lst:focus .cur { outline: 1px dotted #a89cc8; outline-offset: -1px; }
+.cw-lst .row .mk { color: #ff9a6a; margin-left: 6px; }
+.cw-lst .gh { padding: 2px 6px; color: #9a92b4; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+.cw-lst .gh:hover { color: #ffe14a; }
+.cw-lst .gh .n, .cw-fold .n { color: #5c5470; margin-left: 6px; }
+.cw-lsf { width: 100%; box-sizing: border-box; margin: 2px 0; }
+.cw-left .cw-lsw { padding: 0 6px 0 4px; }
+.cw-ed .cw-fold, .cutaway-editor .cw-fold { display: block; width: 100%; text-align: left; margin: 2px 0 0; padding: 2px 4px; background: none; border: none;
+  border-bottom: 1px solid #2a2340; border-radius: 0; color: #c8c0e0; }
+.cw-ed .cw-fold:hover, .cutaway-editor .cw-fold:hover, .cw-ed .cw-fold:focus, .cutaway-editor .cw-fold:focus { color: #ffe14a; outline: none; border-color: #4a4066; }
+.cw-left .cw-fold { color: #8a84a0; font-size: 11px; letter-spacing: 1px; padding: 8px 8px 2px; border: none; }
+.cw-foldb { padding-left: 6px; }
 `;
 
   /** @type {HTMLDivElement | null} */ let root = null;
@@ -1020,6 +1069,238 @@ Cutaway.editor = (function () {
     return true;
   }
 
+  // ------------------------------------------------------------------ lists and folds
+  // Every long list in the editor is one of these: keys move through it (arrows, Home, End, Page up and
+  // down, letters jump to a name, Enter opens, Left and Right fold a group, + and - all of them, / the
+  // filter), its groups fold (kept across sessions), and it keeps its place, its scroll and the focus
+  // when the panel is built again (which happens after every change).
+
+  /** @type {Map<string, {cursor: string, sel: string | undefined, filter: string, scroll: number, reveal: boolean, typed: string, typedAt: number}>} */
+  const lists = new Map();
+  /** @type {Record<string, Record<string, boolean>>} per list, its groups folded (true) or open (false); "~": the folds */
+  let folds = {};
+  try { folds = JSON.parse(localStorage.getItem("cutaway.editor.folds") ?? "{}"); } catch { /* none kept */ }
+  function keepFolds() { try { localStorage.setItem("cutaway.editor.folds", JSON.stringify(folds)); } catch { /* private mode */ } }
+  /** @type {WeakMap<Element, {key: (e: KeyboardEvent) => boolean, reveal: () => void, st: {scroll: number, reveal: boolean}}>} */
+  const listOf = new WeakMap();
+
+  /**
+   * A list to pick from: the left panel's browsers and the inspector's lists.
+   * @param {ListOptions} o
+   */
+  function list(o) {
+    const st = lists.get(o.id) ?? { cursor: o.selected ?? "", sel: o.selected, filter: "", scroll: 0, reveal: false, typed: "", typedAt: 0 };
+    lists.set(o.id, st);
+    if (o.selected !== st.sel) { st.sel = o.selected; if (o.selected) st.cursor = o.selected; }
+    /** @type {string[]} */
+    const order = [];
+    /** @type {Map<string, ListItem[]>} */
+    const byGroup = new Map();
+    for (const it of o.items) {
+      const g = it.group ?? "";
+      if (!byGroup.has(g)) { byGroup.set(g, []); order.push(g); }
+      /** @type {ListItem[]} */ (byGroup.get(g)).push(it);
+    }
+    const fl = (folds[o.id] ??= {});
+    /** @param {string} g */
+    const folded = (g) => g !== "" && (fl[g] ?? (o.foldOver !== undefined && ((byGroup.get(g)?.length ?? 0) > o.foldOver || o.items.length > 5 * o.foldOver)));
+    const box = el("div", { className: "cw-lst" + (o.height ? " box" : ""), tabIndex: 0, style: o.height ? { maxHeight: o.height } : {},
+      title: o.title ?? "", onscroll: () => { st.scroll = box.scrollTop; } });
+    box.dataset.id = o.id;
+    box.setAttribute("role", "listbox");
+    /** @type {string[]} the rows as shown: item keys, "g:" + group for headers */
+    let shown = [];
+    /** @param {ListItem} it */
+    const matches = (it) => { const q = st.filter.trim().toLowerCase(); return !q || `${it.label} ${it.key} ${it.group ?? ""}`.toLowerCase().includes(q); };
+
+    function render() {
+      const filtering = !!st.filter.trim();
+      /** @type {(Node)[]} */
+      const rows = [];
+      shown = [];
+      for (const g of order) {
+        const its = /** @type {ListItem[]} */ (byGroup.get(g)).filter(matches);
+        if (!its.length) continue;
+        const shut = !filtering && folded(g);
+        if (g) {
+          const k = "g:" + g;
+          shown.push(k);
+          const h = el("div", { className: "gh" + (k === st.cursor ? " cur" : ""), title: "fold or unfold (Left, Right; + and - fold all)",
+            onclick: () => { st.cursor = k; toggle(g); } }, [(shut ? "▸ " : "▾ ") + g, el("span", { className: "n", textContent: String(its.length) })]);
+          h.dataset.key = k;
+          rows.push(h);
+        }
+        if (shut) continue;
+        for (const it of its) {
+          shown.push(it.key);
+          const on = it.key === o.selected;
+          const r = el("div", { className: "row" + (g ? " in" : "") + (on ? " on" : "") + (it.key === st.cursor ? " cur" : "") + (it.dim ? " dim" : ""),
+            title: it.title ?? it.key, onclick: () => { st.cursor = it.key; choose(it.key); }, ondblclick: () => o.open?.(it.key) },
+          [it.label, ...(it.mark ? [el("span", { className: "mk", textContent: it.mark })] : [])]);
+          if (it.color && !on) r.style.color = it.color;
+          r.dataset.key = it.key;
+          r.setAttribute("role", "option");
+          r.setAttribute("aria-selected", String(on));
+          rows.push(r);
+        }
+      }
+      if (!shown.length) rows.push(el("div", { className: "cw-dim", style: { padding: "1px 8px" }, textContent: filtering ? "nothing matches" : o.empty ?? "(none)" }));
+      box.replaceChildren(...rows);
+    }
+    /** @param {string} k */
+    function choose(k) { st.sel = k; o.pick(k); render(); }
+    /** @param {string} g @param {boolean} [shut] */
+    function toggle(g, shut) { fl[g] = shut ?? !folded(g); keepFolds(); render(); }
+    function reveal() {
+      byData(box, "key", st.cursor)?.scrollIntoView({ block: "nearest" });
+    }
+    /** Move the cursor to a row (an item is picked as the cursor gets there). @param {number} j */
+    function go(j) {
+      if (!shown.length) return;
+      const k = shown[Cutaway.util.clamp(j, 0, shown.length - 1)];
+      st.cursor = k; st.reveal = true;
+      if (k.startsWith("g:")) render(); else choose(k);
+      reveal();
+    }
+    /** @param {KeyboardEvent} e @returns {boolean} handled */
+    function key(e) {
+      if (o.keys?.(e)) return true;
+      if (e.ctrlKey || e.metaKey) return false;
+      const i = shown.indexOf(st.cursor), head = st.cursor.startsWith("g:") ? st.cursor.slice(2) : null;
+      const page = Math.max(1, Math.floor((o.height ? box.clientHeight : 320) / 17) - 1);
+      switch (e.key) {
+        case "ArrowDown": go(i < 0 ? 0 : i + 1); return true;
+        case "ArrowUp": go(i < 0 ? 0 : i - 1); return true;
+        case "Home": go(0); return true;
+        case "End": go(shown.length - 1); return true;
+        case "PageDown": go(i + page); return true;
+        case "PageUp": go(i - page); return true;
+        case "ArrowLeft": {
+          if (head !== null) { if (!folded(head)) toggle(head, true); return true; }
+          const g = o.items.find((x) => x.key === st.cursor)?.group;
+          if (g) { st.cursor = "g:" + g; render(); reveal(); }
+          return true;
+        }
+        case "ArrowRight":
+          if (head !== null) { if (folded(head)) toggle(head, false); else go(i + 1); }
+          return true;
+        case "Enter":
+          if (head !== null) toggle(head);
+          else if (st.cursor) (o.open ?? choose)(st.cursor);
+          return true;
+        case "+": case "*": for (const g of order) if (g) fl[g] = false; keepFolds(); render(); return true;
+        case "-": for (const g of order) if (g) fl[g] = true; keepFolds(); if (!head) { const g = o.items.find((x) => x.key === st.cursor)?.group; if (g) st.cursor = "g:" + g; } render(); return true;
+        case "/": if (filterEl) { filterEl.focus(); filterEl.select(); return true; } return false;
+        case "Escape": if (st.filter) { st.filter = ""; if (filterEl) filterEl.value = ""; render(); return true; } return false;
+      }
+      if (e.key === " " && !st.typed) { if (head !== null) toggle(head); else if (st.cursor) choose(st.cursor); return true; }
+      if (e.key.length !== 1 || e.altKey) return false;
+      // type-ahead: the next name that starts with what was typed (folded groups open for it)
+      const now = Date.now();
+      st.typed = (now - st.typedAt < 800 ? st.typed : "") + e.key.toLowerCase(); st.typedAt = now;
+      const all = o.items.filter(matches), from = Math.max(0, all.findIndex((x) => x.key === st.cursor)) + (st.typed.length === 1 ? 1 : 0);
+      const turn = [...all.slice(from), ...all.slice(0, from)];
+      const hit = turn.find((x) => x.label.toLowerCase().startsWith(st.typed)) ?? turn.find((x) => x.label.toLowerCase().includes(st.typed));
+      if (hit) {
+        if (hit.group && folded(hit.group)) { fl[hit.group] = false; keepFolds(); }
+        st.cursor = hit.key; st.reveal = true; choose(hit.key); reveal();
+      }
+      return true;
+    }
+    /** @type {HTMLInputElement | null} */
+    let filterEl = null;
+    if (o.filter) {
+      const f = /** @type {HTMLInputElement} */ (el("input", { type: "search", className: "cw-lsf", placeholder: typeof o.filter === "string" ? o.filter : "filter  ( / )", value: st.filter,
+        oninput: () => { st.filter = f.value; render(); },
+        onkeydown: (/** @type {KeyboardEvent} */ e) => {
+          if (e.key === "ArrowDown" || e.key === "Enter") {
+            e.preventDefault();
+            const first = shown.find((k) => !k.startsWith("g:"));
+            if (e.key === "Enter" && first) { st.cursor = first; (o.open ?? choose)(first); return; }
+            box.focus();
+            if (!shown.includes(st.cursor) && shown.length) go(0);
+          } else if (e.key === "Escape" && f.value) { e.preventDefault(); e.stopPropagation(); f.value = st.filter = ""; render(); }
+        } }));
+      f.dataset.list = o.id;
+      filterEl = f;
+    }
+    render();
+    listOf.set(box, { key, reveal, st });
+    return el("div", { className: "cw-lsw" }, [...(filterEl ? [filterEl] : []), box]);
+  }
+
+  /**
+   * A heading that folds what is under it (kept across sessions); the content is only made while open.
+   * @param {string} id @param {string} title @param {(() => (Node | string)[]) | (Node | string)[]} content
+   * @param {{folded?: boolean, open?: boolean, note?: string, title?: string}} [o]  folded: how it starts; open: open now
+   *   whatever was kept (a search shows what it found); note: a count after the title
+   */
+  function fold(id, title, content, o = {}) {
+    const f = (folds["~"] ??= {});
+    let shut = o.open ? false : f[id] ?? !!o.folded;
+    const body = el("div", { className: "cw-foldb" });
+    const head = el("button", { className: "cw-fold", title: o.title ?? "fold or unfold", onclick: () => { shut = !shut; f[id] = shut; keepFolds(); show(); } });
+    head.dataset.fold = id;
+    // it opens and closes in place (in a view in the centre too, which isn't built again with the panels)
+    const show = () => {
+      head.replaceChildren((shut ? "▸ " : "▾ ") + title, ...(o.note ? [el("span", { className: "n", textContent: o.note })] : []));
+      body.replaceChildren(...(shut ? [] : typeof content === "function" ? content() : content));
+      body.style.display = shut ? "none" : "";
+    };
+    show();
+    return el("div", {}, [head, body]);
+  }
+
+  /**
+   * Group names by their first part (up to the first "_"): "robby_idle_r" in "robby"; a part only one
+   * name has goes to "other".
+   * @param {string[]} names @returns {(name: string) => string}
+   */
+  function prefixGroups(names) {
+    const part = (/** @type {string} */ n) => n.replace(/^_+/, "").split("_")[0] || n;
+    /** @type {Record<string, number>} */
+    const count = {};
+    for (const n of names) count[part(n)] = (count[part(n)] ?? 0) + 1;
+    return (n) => (count[part(n)] > 1 ? part(n) : "other");
+  }
+
+  /** The element under a root whose data-<name> is a value. @param {ParentNode} root @param {string} name @param {string} v */
+  function byData(root, name, v) {
+    return /** @type {HTMLElement[]} */ ([...root.querySelectorAll(`[data-${name}]`)]).find((e) => e.dataset[name] === v) ?? null;
+  }
+
+  /** The documents the editor's parts are in (the game's page, the inspector's own window). */
+  function docs() { return win && !win.closed ? [document, win.document] : [document]; }
+
+  /** Where the keyboard is, if in a list or its filter (to give it back after a rebuild). */
+  function focusedList() {
+    for (const doc of docs()) {
+      const a = /** @type {any} */ (doc.activeElement);
+      const l = a?.closest?.(".cw-lst");
+      if (l) return { id: String(l.dataset.id), filter: false };
+      if (a?.classList?.contains("cw-lsf")) return { id: String(a.dataset.list), filter: true };
+      if (a?.dataset?.fold) return { id: "fold:" + a.dataset.fold, filter: false };
+    }
+    return null;
+  }
+
+  /** After the panels were built again: lists get their scroll, the focus and the cursor in view back. @param {{id: string, filter: boolean} | null} f */
+  function afterBuild(f) {
+    for (const doc of docs()) {
+      for (const b of /** @type {NodeListOf<HTMLElement>} */ (doc.querySelectorAll(".cw-lst"))) {
+        const ctl = listOf.get(b);
+        if (!ctl) continue;
+        if (ctl.st.scroll) b.scrollTop = ctl.st.scroll;
+        if (f && f.id === b.dataset.id) {
+          const inp = /** @type {HTMLInputElement | null} */ (f.filter ? b.parentElement?.querySelector(".cw-lsf") ?? null : null);
+          if (inp) { inp.focus({ preventScroll: true }); inp.setSelectionRange(inp.value.length, inp.value.length); } else b.focus({ preventScroll: true });
+        }
+        if (ctl.st.reveal) { ctl.st.reveal = false; ctl.reveal(); }
+      }
+      if (f?.id.startsWith("fold:")) byData(doc, "fold", f.id.slice(5))?.focus({ preventScroll: true });
+    }
+  }
+
   // ------------------------------------------------------------------ the parts
 
   /** The menu bar: Cutaway, the menus; on the right the room, Play and the studio. */
@@ -1054,33 +1335,27 @@ Cutaway.editor = (function () {
     if (!leftEl) return;
     const box = leftEl, d = room(), mods = /** @type {Record<string, any>} */ (api.modules);
     const keep = box.scrollTop;
-    box.replaceChildren(el("div", { className: "hd", textContent: "WORKSPACES" }));
-    for (const t of tabs) {
-      const n = unsavedOf(t);
-      box.append(el("div", { className: "row ws" + (t.id === active ? " on" : ""), onclick: () => showTab(t.id), title: n ? "not saved" : "" },
-        [t.label, ...(n ? [el("span", { className: "dot", textContent: " ●" })] : [])]));
-    }
-    box.append(el("div", { className: "hd", textContent: "ROOMS" }));
-    for (const id of Cutaway.room.ids()) box.append(el("div", { className: "row" + (id === d?.id ? " on" : ""), textContent: id, onclick: () => { openRoom(id); } }));
+    box.replaceChildren(
+      fold("left.ws", "WORKSPACES", () => [list({ id: "workspaces", selected: active, pick: showTab,
+        items: tabs.map((t) => ({ key: t.id, label: t.label, mark: unsavedOf(t) ? "●" : "", title: unsavedOf(t) ? "not saved" : t.label })) })]),
+      fold("left.rooms", "ROOMS", () => [list({ id: "rooms", selected: d?.id, pick: (id) => { openRoom(id); }, filter: Cutaway.room.ids().length > 12,
+        height: Cutaway.room.ids().length > 12 ? "200px" : undefined,
+        items: Cutaway.room.ids().map((id) => ({ key: id, label: id })) })], { note: String(Cutaway.room.ids().length) }));
     const t = activeTab();
     if (t.browse) t.browse(box);
     else if (d) {
       const things = mods.things?.selected ?? "";
-      /** @param {string} title @param {[string, string][]} list */
-      const group = (title, list) => {
-        if (!list.length) return;
-        box.append(el("div", { className: "sub", textContent: title }));
-        for (const [key, label] of list) {
-          const on = active === "things" ? things === key : selKey === key;
-          box.append(el("div", { className: "row" + (on ? " on" : ""), textContent: label, title: key, onclick: () => selectThing(key) }));
-        }
-      };
-      box.append(el("div", { className: "hd", textContent: "IN " + d.id.toUpperCase() }));
-      group("hotspots", Object.keys(d.hotspots ?? {}).map((id) => [`hot:${id}`, id]));
-      group("props", (d.props ?? []).filter((p) => p.id).map((p) => [`prop:${p.id}`, /** @type {string} */ (p.id)]));
-      group("actors", Cutaway.actors.all().filter((a) => a.room === d.id).map((a) => [`actor:${a.id}`, a.id]));
-      group("lamps", (d.light?.lamps ?? []).map((l, i) => [`lamp:${l.id ?? i}`, String(l.id ?? i)]));
-      group("effects", (d.fx ?? []).map((f, i) => [`fx:${f.id ?? i}`, `${f.kind} ${f.id ?? i}`]));
+      /** @type {ListItem[]} */
+      const items = [];
+      /** @param {string} group @param {[string, string][]} rows */
+      const add = (group, rows) => { for (const [key, label] of rows) items.push({ key, label, group }); };
+      add("hotspots", Object.keys(d.hotspots ?? {}).map((id) => [`hot:${id}`, id]));
+      add("props", (d.props ?? []).filter((p) => p.id).map((p) => [`prop:${p.id}`, /** @type {string} */ (p.id)]));
+      add("actors", Cutaway.actors.all().filter((a) => a.room === d.id).map((a) => [`actor:${a.id}`, a.id]));
+      add("lamps", (d.light?.lamps ?? []).map((l, i) => [`lamp:${l.id ?? i}`, String(l.id ?? i)]));
+      add("effects", (d.fx ?? []).map((f, i) => [`fx:${f.id ?? i}`, `${f.kind} ${f.id ?? i}`]));
+      box.append(fold("left.things", "IN " + d.id.toUpperCase(), () => [list({ id: "things.left", items, filter: items.length > 15,
+        selected: active === "things" ? things : selKey ?? undefined, pick: selectThing })], { note: String(items.length) }));
     }
     box.scrollTop = keep;
   }
@@ -1129,7 +1404,9 @@ Cutaway.editor = (function () {
     }
     if (panelDirty) {
       panelDirty = false;
+      const f = focusedList();
       buildPanel(); buildLeft(); buildBarRight();
+      afterBuild(f);
     }
     if (outputDirty && outputEl) {
       outputDirty = false;
@@ -1160,12 +1437,9 @@ Cutaway.editor = (function () {
     );
     const sel = selKey ? find(selKey) : null;
     if (sel) panel.append(selectedBox(sel));
-    const list = el("div", { className: "cw-sec" });
-    for (const it of items()) {
-      list.append(el("div", { textContent: it.label, onclick: () => { selKey = it.key; selHandle = -1; panelDirty = true; },
-        style: { cursor: "pointer", padding: "1px 4px", color: it.key === selKey ? "#1a1426" : it.color, background: it.key === selKey ? it.color : "transparent" } }));
-    }
-    panel.append(list);
+    panel.append(el("div", { className: "cw-sec" }, [list({ id: "room.shapes", height: "260px", filter: true, selected: selKey ?? undefined,
+      pick: (k) => { selKey = k; selHandle = -1; panelDirty = true; },
+      items: items().map((it) => ({ key: it.key, label: it.label, group: it.group, color: it.color })) })]));
     const probs = problems();
     panel.append(el("div", { style: { marginTop: "6px", color: probs.length ? "#ff6a5a" : "#7a7" } }, [probs.length ? probs.join("\n") : "no problems"]));
     panel.append(el("pre", { className: "cw-dim", style: { whiteSpace: "pre-wrap", marginTop: "8px", font: "inherit" } }, [
@@ -1318,6 +1592,7 @@ Cutaway.editor = (function () {
 
   const api = {
     open, close, text, geometry, items, problems, save, openRoom, studio, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
+    list, fold, prefixGroups,
     /** What the tab modules share with each other and the tests. @type {Record<string, any>} */
     modules: {},
     get isOpen() { return isOpen; },

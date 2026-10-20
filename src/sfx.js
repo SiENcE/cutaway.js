@@ -273,6 +273,8 @@ Cutaway.sfx = (function () {
 
   return {
     define, play, ambience, render,
+    /** A recorded sample's bytes decoded for an audio context (once; voices use it too). */
+    decode: buffer,
     /**
      * Sounds from one of the editor's layer files (defined, and remembered so the editor can save the
      * file back with its changes). @param {Record<string, SfxDef>} list @param {string} [file]

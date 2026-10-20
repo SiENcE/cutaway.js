@@ -95,14 +95,19 @@ hand-written is overwritten). Its workspaces:
 
 - **Room** (walk areas, holes, hotspots, walk-to points, baselines, lamps, effect areas)
 - **Texts** (every text, live; CSV and JSON for translators)
-- **Things** (properties of rooms, hotspots, props, lamps, effects, actors, items)
+- **Things** (properties of rooms, hotspots, props, lamps, effects, actors, items, and their **scripts as
+  blocks**: one row per step, branches that fold, drag, copy and paste, undo, test)
 - **Art** (preview, PNG export and import as sprites or animations; a **pixel editor** for sprites,
   animations and backgrounds: tools, palette, frames, onion skin, undo; pxl sources edited and built)
 - **Sound** (synthesised sounds as data, WAV export, WAV/OGG/MP3 import, the music)
-- **Dialogue** (what is offered now, test it)
+- **Voices** (every spoken line: record it from the microphone or import it, cut and levelled; it
+  plays instead of the blips)
+- **Dialogue** (the structure: nodes, choices, gotos and their scripts; what is offered now, test it)
 - **State** (go anywhere, set flags, give items: the developer's menu)
 - **Issues** (the validator on the live data), **Checks** (the game's tasks)
 - **Help** (F1: the editor guide and this reference, with search)
+
+Every list goes by keys (arrows, letters, Enter, / to filter) and folds its groups.
 
 Without the studio, F10 opens it too and saves through the browser. The guide:
 **[docs/editor.md](docs/editor.md)**.

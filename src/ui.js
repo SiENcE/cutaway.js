@@ -92,16 +92,17 @@ Cutaway.ui = (function () {
    * Show a line above an actor until its time is up or the player clicks.
    * @param {InstanceType<typeof Cutaway.actor.Actor>} actor
    * @param {string} text
-   * @param {{id?: string, more?: boolean}} [o]  id = the line's id (voices use it); more = another line follows (its mark)
+   * @param {{id?: string, more?: boolean, source?: string, minMs?: number}} [o]  id = the line's id; more = another line follows
+   *   (its mark); source = the text in the game's data (recorded voices are kept by it); minMs = it shows at least this long
    * @returns {Promise<void>}
    */
   function say(actor, text, o = {}) {
     finishLine();
-    const ms = lineMs(text);
+    const ms = Math.max(lineMs(text), o.minMs ?? 0);
     return new Promise((done) => {
       line = { actor, lines: font().wrap(text, skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
       if (actor.state === "idle") actor.setState("talk");
-      Cutaway.events.emit("say", { actor: actor.id, text, id: o.id, ms });
+      Cutaway.events.emit("say", { actor: actor.id, text, id: o.id, ms, source: o.source ?? text });
     });
   }
 

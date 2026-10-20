@@ -13,7 +13,7 @@
   let bookId = "editor", at = "intro", query = "";
   /** @type {Record<string, string>} the tabs and their sections in the editor's guide */
   const FOR_TAB = { room: "room-shapes", texts: "texts", things: "things", art: "art", paint: "paint", sound: "sound", dialogue: "dialogue",
-    state: "state", issues: "issues", checks: "checks" };
+    state: "state", issues: "issues", checks: "checks", voices: "voices" };
 
   /** @param {string} s */
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

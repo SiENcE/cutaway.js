@@ -23,7 +23,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  let search = "", onlyRoom = true, sel = "", zoom = 3, newForm = false;
+  let onlyRoom = true, sel = "", zoom = 3, newForm = false;
   /** @type {"" | "paint" | "source"} what the Art workspace shows in the centre */
   let centre = "";
   /** @type {(ArtImport & {png: Uint8Array}) | null} a PNG read for import, not applied or saved yet */
@@ -288,13 +288,13 @@
 
   // ------------------------------------------------------------------ the lists
 
-  /** The asset names to list: the search, this room's own (and the cast's). */
+  /** The asset names to list: this room's own (and the cast's), or all. */
   function names() {
-    const room = Cutaway.scene.room?.id ?? "", q = search.toLowerCase();
+    const room = Cutaway.scene.room?.id ?? "";
     /** @param {string} n */
     const ofRoom = (n) => Cutaway.room.ids().find((r) => n.startsWith(r + "_")) ?? "";
     return Cutaway.assets.names().filter((n) => !n.endsWith("__import") && !/_atlas(_\d+)?$/.test(n)
-      && (!onlyRoom || ofRoom(n) === "" || ofRoom(n) === room) && (!q || n.toLowerCase().includes(q)));
+      && (!onlyRoom || ofRoom(n) === "" || ofRoom(n) === room));
   }
 
   /** @param {string} n */
@@ -303,26 +303,28 @@
     return (d?.dirty ? "* " : "") + n + (isImported(n) ? "  ● imported" : "");
   }
 
-  /** The left panel's list: the sprites (click: select, double-click: paint). @param {HTMLElement} box */
+  /** The sprites as list rows, grouped by their room (a name that starts with a room's id), else by their first part. */
+  function rows() {
+    const list = names(), part = E.prefixGroups(list), rooms = Cutaway.room.ids().slice().sort((a, b) => b.length - a.length);
+    return list.map((n) => ({ key: n, label: marks(n), group: rooms.find((r) => n.startsWith(r + "_")) ?? part(n), title: `${n}  (double-click or Enter: paint it)` }));
+  }
+  /** @param {string} n */
+  const paintIt = (n) => { sel = n; E.modules.paint?.open(n); };
+
+  /** The left panel's list: the sprites (click or the arrows: select; double-click or Enter: paint). @param {HTMLElement} box */
   function browse(box) {
-    box.append(el("div", { className: "hd", textContent: onlyRoom ? "SPRITES (THIS ROOM + CAST)" : "SPRITES" }));
-    for (const n of names()) {
-      box.append(el("div", { className: "row" + (n === sel ? " on" : ""), textContent: marks(n), title: "double-click: paint it",
-        onclick: () => { sel = n; E.refresh(); }, ondblclick: () => { sel = n; E.modules.paint?.open(n); } }));
-    }
+    const r = rows();
+    box.append(E.fold("left.sprites", onlyRoom ? "SPRITES (THIS ROOM + CAST)" : "SPRITES", () => [E.list({ id: "art.left", items: r, selected: sel, filter: true, foldOver: 12,
+      pick: (n) => { sel = n; E.refresh(); }, open: paintIt })], { note: String(r.length) }));
   }
 
   function build(/** @type {HTMLElement} */ box) {
     const paint = E.modules.paint;
     if (paint?.doc && centre === "paint") { paint.inspector(box); box.append(el("div", { className: "cw-sec cw-h", textContent: "all the art" })); }
     if (newForm) box.append(newSpriteForm());
-    const list = names();
-    const find = /** @type {HTMLInputElement} */ (el("input", { type: "search", value: search, placeholder: "search", style: { width: "130px" },
-      onchange: () => { search = find.value; E.refresh(); } }));
-    box.append(el("div", {}, [find, " ", el("label", {}, [el("input", { type: "checkbox", checked: onlyRoom, onchange: () => { onlyRoom = !onlyRoom; E.refresh(); } }), "this room (and the cast)"])]));
-    box.append(el("select", { size: 8, className: "cw-list", style: { marginTop: "4px" }, title: "double-click: paint it",
-      onchange: (/** @type {any} */ e) => { sel = e.target.value; E.refresh(); }, ondblclick: () => { if (sel) paint?.open(sel); } },
-      list.map((n) => el("option", { value: n, textContent: marks(n), selected: n === sel }))));
+    box.append(el("div", {}, [el("label", {}, [el("input", { type: "checkbox", checked: onlyRoom, onchange: () => { onlyRoom = !onlyRoom; E.refresh(); } }), "this room (and the cast)"])]));
+    box.append(E.list({ id: "art.inspector", items: rows(), selected: sel, filter: true, height: "190px", foldOver: 12,
+      pick: (n) => { sel = n; E.refresh(); }, open: paintIt }));
     preview = /** @type {HTMLCanvasElement} */ (el("canvas", { width: 340, height: 120, style: { background: "#3c9c94", imageRendering: "pixelated", marginTop: "4px", width: "340px", height: "120px" } }));
     box.append(preview);
     requestAnimationFrame(drawPreview);

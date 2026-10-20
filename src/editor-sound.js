@@ -7,7 +7,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  let search = "", sel = "", theme = "", section = "", intensity = 0.5;
+  let sel = "", theme = "", section = "", intensity = 0.5;
   /** @type {Set<string>} sounds changed or made here, not saved yet */
   const changed = new Set();
   /** @type {Record<string, SfxDef>} the recorded ones made here, kept for saving */
@@ -86,15 +86,15 @@
 
   function build(/** @type {HTMLElement} */ box) {
     const st = {};
-    const q = search.toLowerCase(), names = Cutaway.sfx.names().filter((n) => !n.startsWith("_") && (!q || n.includes(q))).sort();
-    const find = /** @type {HTMLInputElement} */ (el("input", { type: "search", value: search, placeholder: "search", style: { ...st, width: "130px" }, onchange: () => { search = find.value; E.refresh(); } }));
+    const names = Cutaway.sfx.names().filter((n) => !n.startsWith("_")).sort(), part = E.prefixGroups(names);
     const file = /** @type {HTMLInputElement} */ (el("input", { type: "file", accept: "audio/*,.wav,.ogg,.mp3", style: { display: "none" },
       onchange: () => { const f = file.files?.[0]; if (f) importAudio(f).catch((e) => E.setStatus("import failed: " + e.message)); } }));
-    box.append(el("div", {}, [find, " ", button(`Save${changed.size ? ` (${changed.size})` : ""}`, () => { save().catch((e) => E.setStatus("save failed: " + e.message)); }), file]));
-    box.append(el("select", { size: 9, className: "cw-list", style: { marginTop: "4px" },
-      onchange: (/** @type {any} */ e) => { sel = e.target.value; if (!Cutaway.sfx.get(sel)?.loop) Cutaway.sfx.play(sel); E.refresh(); } },
-      names.map((n) => { const d = Cutaway.sfx.get(n); return el("option", { value: n, selected: n === sel,
-        textContent: `${changed.has(n) ? "● " : ""}${n}${d?.loop ? "  (loop)" : ""}${d && isRecorded(d) ? "  (recorded)" : ""}` }); })));
+    box.append(el("div", {}, [button(`Save${changed.size ? ` (${changed.size})` : ""}`, () => { save().catch((e) => E.setStatus("save failed: " + e.message)); }), file]));
+    box.append(E.list({ id: "sound", filter: true, height: "200px", foldOver: 8, selected: sel, title: "the arrows play each sound as they get to it",
+      pick: (n) => { sel = n; if (!Cutaway.sfx.get(sel)?.loop) Cutaway.sfx.play(sel); E.refresh(); },
+      open: (n) => { const d = Cutaway.sfx.get(n); if (d?.loop) Cutaway.sfx.ambience([n]); else Cutaway.sfx.play(n); },
+      items: names.map((n) => { const d = Cutaway.sfx.get(n); return { key: n, group: part(n), mark: changed.has(n) ? "●" : "",
+        label: `${n}${d?.loop ? "  (loop)" : ""}${d && isRecorded(d) ? "  (recorded)" : ""}` }; }) }));
     const d = sel ? Cutaway.sfx.get(sel) : null;
     box.append(el("div", { style: { margin: "4px 0" } }, [
       button("Play", () => { if (!sel) return; if (d?.loop) Cutaway.sfx.ambience([sel]); else Cutaway.sfx.play(sel); }, "a loop plays as the ambience"),

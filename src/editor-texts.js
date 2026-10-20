@@ -7,7 +7,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  let lang = "", search = "", onlyRoom = true, shown = 200;
+  let lang = "", search = "", onlyRoom = true;
   /** @type {Record<string, Record<string, string>>} what changed per language, not saved yet */
   const changed = {};
 
@@ -180,7 +180,7 @@
     const langSel = /** @type {HTMLSelectElement} */ (el("select", { onchange: () => { lang = langSel.value; E.refresh(); } },
       languages().map((l) => el("option", { value: l, textContent: l + (l === source() ? " (source)" : ""), selected: l === lang }))));
     const find = /** @type {HTMLInputElement} */ (el("input", { type: "search", value: search, placeholder: "search", style: { width: "120px" },
-      onchange: () => { search = find.value; shown = 200; E.refresh(); } }));
+      onchange: () => { search = find.value; E.refresh(); } }));
     const file = /** @type {HTMLInputElement} */ (el("input", { type: "file", accept: ".csv,.json", style: { display: "none" },
       onchange: () => { const f = file.files?.[0]; if (f) importFile(f).catch((e) => E.setStatus("import failed: " + e.message)); } }));
     box.append(
@@ -189,22 +189,37 @@
         button("Export CSV", exportCsv), button("Export JSON", exportJson), button("Import", () => file.click(), "CSV or JSON from an export"), file]),
       el("div", { className: "cw-dim" }, [`${list.length} of ${all.length} texts`]),
     );
-    const rows = el("div", { style: { borderTop: "1px solid #3a3350" } });
-    for (const t of list.slice(0, shown)) {
+    /** @param {{where: string, room: string, text: string}} t */
+    const row = (t) => {
       const now = current(t.text, lang), differs = now !== t.text;
       const area = /** @type {HTMLTextAreaElement} */ (el("textarea", { value: now, rows: Math.min(4, 1 + Math.floor(now.length / 46)),
         style: { width: "100%", boxSizing: "border-box", color: lang === source() && !differs ? "#eee" : "#ffe9a0", borderColor: "#3a3350", resize: "vertical" },
         oninput: () => set(t.text, lang, area.value) }));
-      rows.append(el("div", { style: { padding: "4px 0", borderBottom: "1px solid #2a2340" } }, [
+      return el("div", { style: { padding: "4px 0", borderBottom: "1px solid #2a2340" } }, [
         el("div", { style: { color: "#8a84a0", fontSize: "11px" } }, [t.where]),
         ...(differs || lang !== source() ? [el("div", { style: { color: "#777", fontSize: "11px", whiteSpace: "pre-wrap" } }, [t.text])] : []),
-        area]));
-    }
-    if (list.length > shown) rows.append(button(`show ${Math.min(200, list.length - shown)} more`, () => { shown += 200; E.refresh(); }));
-    box.append(rows);
+        area]);
+    };
+    // grouped (this room: by hotspot; else by room, items, dialogues, acts, hints); a group's rows are made while it is open
+    /** @type {Map<string, {where: string, room: string, text: string}[]>} */
+    const groups = new Map();
+    for (const t of list) { const g = groupOf(t); groups.set(g, [...(groups.get(g) ?? []), t]); }
+    const many = list.length > 40;
+    for (const [g, ts] of groups) box.append(E.fold(`texts.${onlyRoom ? "room." : ""}${g}`, g, () => ts.map(row), { note: String(ts.length), folded: many, open: !!q && ts.length <= 60 }));
   }
 
-  E.tab({ id: "texts", label: "Texts", build, onRoom() { shown = 200; }, save: () => save() });
+  /** The group a text is listed in. @param {{where: string, room: string}} t */
+  function groupOf(t) {
+    const w = t.where;
+    if (onlyRoom && t.room) return w.slice(0, w.indexOf(":") >= 0 ? w.indexOf(":") : w.length);
+    if (w.startsWith("item ")) return "items";
+    if (w.startsWith("dialog ")) return w.slice(0, w.indexOf("/") >= 0 ? w.indexOf("/") : w.length);
+    if (w.startsWith("act ")) return "acts";
+    if (w.startsWith("hint ")) return "hints";
+    return t.room || "the cast";
+  }
+
+  E.tab({ id: "texts", label: "Texts", build, save: () => save() });
   Cutaway.editor.modules.texts = { collect, current, set, layerText, parseCsv, save,
     get unsaved() { return Object.values(changed).reduce((n, c) => n + Object.keys(c).length, 0); } };
 })();

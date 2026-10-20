@@ -10,8 +10,8 @@
   /** @param {string[]} opts @param {string} v @param {(v: string) => void} set @param {string} [none] */
   const select = (opts, v, set, none) => el("select", { style: st, onchange: (/** @type {any} */ e) => set(e.target.value) },
     [...(none !== undefined ? [none] : []), ...opts].map((o) => el("option", { value: o === none ? "" : o, textContent: o, selected: o === v })));
-  /** @param {string} title @param {(Node | string)[]} kids */
-  const section = (title, kids) => el("div", { className: "cw-sec" }, [el("div", { className: "cw-h" }, [title]), ...kids]);
+  /** A section that folds (kept). @param {string} id @param {string} title @param {(Node | string)[] | (() => (Node | string)[])} kids @param {string} [note] */
+  const section = (id, title, kids, note) => el("div", { className: "cw-sec" }, [E.fold("state." + id, title, kids, { note })]);
 
   /** Go to a room with the active actor, standing near where they stood (on that room's floor). @param {string} id */
   async function goTo(id) {
@@ -25,7 +25,7 @@
   function build(/** @type {HTMLElement} */ box) {
     const S = Cutaway.state, snap = S.snapshot(), a = Cutaway.scene.active, room = Cutaway.scene.room;
     // who and where
-    box.append(section("who and where", [
+    box.append(section("who", "who and where", [
       el("div", {}, ["playing ", select(Cutaway.party.members(), a?.id ?? "", (v) => { if (v) Cutaway.party.switchTo(v).then(() => E.refresh()); }),
         " in ", select(Cutaway.room.ids(), room?.id ?? "", (v) => { goTo(v).then(() => E.refresh()); })]),
       el("div", {}, Cutaway.party.members().map((m) => {
@@ -40,15 +40,22 @@
     const flags = Object.entries(snap.flags).sort(([x], [y]) => x.localeCompare(y));
     const name = /** @type {HTMLInputElement} */ (el("input", { placeholder: "flag", style: { ...st, width: "120px" } }));
     const val = /** @type {HTMLInputElement} */ (el("input", { placeholder: "true", style: { ...st, width: "60px" } }));
-    box.append(section(`flags (${flags.length})`, [
-      ...flags.map(([k, v]) => el("div", {}, [
-        el("input", { value: String(v), style: { ...st, width: "60px" }, onchange: (/** @type {any} */ e) => { const t = e.target.value; S.set(k, t === "true" ? true : t === "false" ? false : isNaN(Number(t)) || t === "" ? t : Number(t)); } }),
-        ` ${k} `, button("x", () => { S.unset(k); E.refresh(); }, "unset")])),
+    /** @param {[string, any]} f */
+    const flagRow = ([k, v]) => el("div", {}, [
+      el("input", { value: String(v), style: { ...st, width: "60px" }, onchange: (/** @type {any} */ e) => { const t = e.target.value; S.set(k, t === "true" ? true : t === "false" ? false : isNaN(Number(t)) || t === "" ? t : Number(t)); } }),
+      ` ${k} `, button("x", () => { S.unset(k); E.refresh(); }, "unset")]);
+    // many flags: grouped by their first part (dialogue choices used, "~dlg...", in one), each group folds
+    const part = E.prefixGroups(flags.map(([k]) => k.replace(/^~/, "")));
+    /** @type {Map<string, [string, any][]>} */
+    const groups = new Map();
+    for (const f of flags) { const g = f[0].startsWith("~") ? "~ (engine)" : part(f[0]); groups.set(g, [...(groups.get(g) ?? []), f]); }
+    box.append(section("flags", "flags", () => [
       el("div", {}, [name, " = ", val, " ", button("set", () => { if (name.value.trim()) { const t = val.value.trim(); S.set(name.value.trim(), t === "" || t === "true" ? true : isNaN(Number(t)) ? t : Number(t)); E.refresh(); } })]),
-    ]));
+      ...(flags.length <= 20 ? flags.map(flagRow) : [...groups].map(([g, fs]) => E.fold("state.flags." + g, g, () => fs.map(flagRow), { note: String(fs.length), folded: true }))),
+    ], String(flags.length)));
     // the backpack (the active actor's bag)
     const items = S.items();
-    box.append(section(`${a ? a.id + "'s" : "the"} bag`, [
+    box.append(section("bag", `${a ? a.id + "'s" : "the"} bag`, [
       ...items.map((i) => el("div", {}, [`${i} `, button("take away", () => { S.remove(i); E.refresh(); })])),
       el("div", {}, ["give ", select(Cutaway.item.ids().filter((i) => !items.includes(i)), "", (v) => { if (v) { S.give(v); E.refresh(); } }, "(an item)")]),
     ]));
@@ -56,16 +63,16 @@
     if (room) {
       const things = [...(room.props ?? []).filter((p) => p.id).map((p) => ({ id: /** @type {string} */ (p.id), hidden: !!p.hidden })),
         ...Object.entries(room.hotspots ?? {}).map(([id, h]) => ({ id, hidden: !!h.hidden }))].filter((t, i, l) => l.findIndex((u) => u.id === t.id) === i);
-      box.append(section(`${room.id}: shown, hidden, states`, things.map((t) => el("div", {}, [
+      box.append(section("things", `${room.id}: shown, hidden, states`, () => things.map((t) => el("div", {}, [
         el("input", { type: "checkbox", checked: !S.isHidden(t.id, t.hidden), onchange: (/** @type {any} */ e) => S.setHidden(t.id, !e.target.checked) }), ` ${t.id} `,
         el("input", { value: S.objState(t.id), placeholder: "state", style: { ...st, width: "70px" }, onchange: (/** @type {any} */ e) => S.setObjState(t.id, e.target.value) })]))));
     }
     // rooms visited, the hint, a save slot
-    box.append(section("visited", [el("div", {}, Cutaway.room.ids().map((r) => el("label", { style: { marginRight: "8px" } }, [
+    box.append(section("visited", "visited", () => [el("div", {}, Cutaway.room.ids().map((r) => el("label", { style: { marginRight: "8px" } }, [
       el("input", { type: "checkbox", checked: S.visited(r), onchange: (/** @type {any} */ e) => { const d = S.snapshot(); if (e.target.checked) d.visited[r] = true; else delete d.visited[r]; S.restore(d); } }), r])))]));
     const h = Cutaway.hints.current();
-    if (Cutaway.hints.any()) box.append(section("the hint for now", [h ? (Array.isArray(h.text) ? h.text : [h.text]).map((t) => Cutaway.i18n.t(t)).join("\n") : "(none holds)"]));
-    box.append(section("save slot \"dev\"", [el("div", {}, [button("Save here", () => { E.setStatus(Cutaway.save.write("dev") ? "saved in the slot \"dev\"" : "nothing to save"); }),
+    if (Cutaway.hints.any()) box.append(section("hint", "the hint for now", [h ? (Array.isArray(h.text) ? h.text : [h.text]).map((t) => Cutaway.i18n.t(t)).join("\n") : "(none holds)"]));
+    box.append(section("dev", "save slot \"dev\"", [el("div", {}, [button("Save here", () => { E.setStatus(Cutaway.save.write("dev") ? "saved in the slot \"dev\"" : "nothing to save"); }),
       button("Load it", async () => { if (await Cutaway.save.load("dev")) { await E.openRoom(Cutaway.scene.room?.id ?? ""); E.setStatus("loaded \"dev\""); } else E.setStatus("the slot \"dev\" is empty"); }),
       button("Refresh", () => E.refresh())])]));
   }

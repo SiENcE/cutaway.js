@@ -24,11 +24,12 @@ The editor docks around the game in its own page, like most editors:
 
 - **The menu bar** on top: File, Edit, View, Room, Art, Play, Tools, Help (below). On its right: the
   room to open, **▶ Play**, and whether the studio is connected.
-- **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Dialogue, State, Issues,
-  Checks, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what is in
-  the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
-  Things (its properties; actors always, and anything while Things is open). In the Art workspace the
-  list shows the sprites instead (click: select, double-click: paint).
+- **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
+  Issues, Checks, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what
+  is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
+  Things (its properties and scripts; actors always, and anything while Things is open). In the Art
+  workspace the list shows the sprites instead (click: select, double-click: paint), in Voices the
+  spoken lines. Each part folds at its heading.
 - **The centre**: the game picture, as large as fits in whole pixels. A workspace can put a view of its
   own there while it is active: the paint view, or a pxl source. Switch to another workspace and the
   game picture is back; come back and the view is too.
@@ -38,6 +39,26 @@ The editor docks around the game in its own page, like most editors:
   the output pane above it: every message, and the output of the tasks.
 
 The panels scroll on their own; View shows or hides each of them (kept for the next time).
+
+## Lists and the keyboard
+Every list (the workspaces, the rooms, the room's things, the sprites, the sounds, the things to pick
+in Things, the dialogues, the spoken lines, the Room tab's shapes) works the same way:
+
+- **Up / Down** move through it, and what the cursor gets to is picked (in Sound it plays: a quick way
+  to hear them all); **Home / End**, **Page Up / Page Down** jump; **Enter** opens (paints a sprite, plays
+  a loop, edits a dialogue, records a line).
+- **Letters** jump to the next name that starts with what you type (a folded group opens for it).
+- Long lists are **grouped** (sprites by room or first part of the name, sounds by first part, things by
+  kind, lines by speaker or place) and the groups **fold**: click a group's heading, or **Left / Right**
+  on it (Left on a row goes to its heading), **+** and **-** open or fold them all. What is folded is
+  kept for the next time; groups with many rows start folded.
+- **/** goes to the list's **filter** (above it): type to narrow the list down (groups with matches
+  open); Down goes back into the list, Enter opens the first match, Esc clears it.
+- The keyboard stays in the list when the panels are built again (after every change), and so does its
+  place and scroll.
+
+Sections in the inspector (State's flags, the Texts groups, Things' scripts, a dialogue's nodes) fold
+the same way at their headings (also with Enter or Space on the heading).
 
 ## Menus
 
@@ -69,7 +90,9 @@ Walk areas (green), holes (red), hotspots (orange), walk-to points (the yellow c
 Every text of the game with where it is used: lines, looks, names, dialogue choices, cards and hints.
 - Change one and the game shows it at once. **Save** writes the language's text layer
   (`strings/<lang>.texts.js`).
-- **this room** shows only the texts of the room you are in; **search** finds a text anywhere.
+- **this room** shows only the texts of the room you are in (grouped by hotspot); without it they are
+  grouped by room, items, dialogues, acts and hints. The groups fold (a long list starts folded);
+  **search** finds a text anywhere and opens the groups it is in.
 - **Export CSV / JSON** for translators: a row per text, a column per language. **Import** takes such a
   file back (only what differs). A new language also needs its texts file in the page and in the
   game's languages.
@@ -80,11 +103,43 @@ hotspots (`z`, hidden), props (image, position, anchor, flip, baseline, scroll, 
 flicker, glow), effects (colour, count, speed ...), actors (colour, speed, running speed, costume,
 voice, portraits) and items (icon).
 - Pick a thing in the list, in the left panel, or **click it on the picture**. **Save** writes the
-  edits layer (`edits.js`). A thing's texts are in Texts, its shape in Room, what it does in the game's
-  code.
+  edits layer (`edits.js`). A thing's texts are in Texts, its shape in Room.
+- **scripts**: what the thing does: a hotspot's look, use, talk, take and "with <item>" (an item used on
+  it), an item's look and "combine <item>", an actor's look, talk and "with <item>", a room's enter.
+  Each shows a summary; click one to edit it as blocks in the centre (next section). **+ script** adds
+  one it hasn't got. A ● marks a script the edits layer changed.
 - A prop's **depth** is its parallax against the camera (1 the room, 0 fixed on the screen, 0.5 far
   away, above 1 a foreground). The picture, its outline and its baseline show it where it is for the
   camera now, and a click there picks it.
+
+## Scripts
+A script is a list of steps, shown as rows of blocks in the centre. Each row has its kind (a menu) and
+its fields:
+
+| kind | fields |
+|---|---|
+| line, line by, narration | the text (a line by: who says it; nobody picked: the one playing) |
+| dialogue | which, and the node to start at |
+| walk, face, animation, go to room, place someone | who, where (x y), which way they face, run, in a straight line, "go on" (the script doesn't wait) |
+| give, take, remove item | the item, to or from whom (take: what it hides) |
+| set, unset, count up a flag; show, hide a thing; a thing's state | the flag (known flags are suggested) or the thing |
+| if, once | the condition (`flag`, `!flag`, `has:item`, `flag=3`, `at:actor=room`; `a, b` = all of them; JSON for `{ or: [...] }`) and their branches: then / else, the first time / after that. They fold |
+| wait, sound, stinger, music, fade, shake | how long, which, how loud ... |
+| other (JSON) | any action the blocks don't know (a game's own), as JSON |
+
+- A step's data the form doesn't show stays as it is (a **more** field, JSON).
+- Change a field (Enter or leaving it) or the kind, and the game does it from now on; **▶ Test**
+  closes the editor and runs the script. **Revert** goes back to the game's own script; **Remove**
+  leaves the thing without one (the default line). File > Save (Ctrl+S in Things) writes `edits.js`.
+- Keys on a row: **Up / Down** pick a row, **Alt+Up / Alt+Down** move the step, **Enter** edits its first
+  field (**Esc** back to the row), **Insert** or **+** adds a line after it, **Delete** removes it,
+  **Ctrl+D** doubles it, **Ctrl+C / Ctrl+X / Ctrl+V** copy, cut and paste steps, **Left / Right** fold an
+  if or once, Ctrl+Z / Ctrl+Y undo and redo. Rows drag by their grip (⠿): onto another row (before it)
+  or onto a list's **+ step** (at its end). **+ step** adds a step of any kind at the end of a list.
+- A line shows what it says now if the Texts layer words it differently. Changing a line's text here
+  changes the text in the game's data: its translations (Texts) then belong to the old text.
+- A script changed in the editor replaces the game's whole script; `once` steps count by their place in
+  the script, so moving them may let a "first time" happen again in a saved game.
 
 ## Art
 Every sprite and animation: preview (animated, zoom), **Export PNG** (the frames side by side, and a
@@ -152,18 +207,51 @@ colours, the palette, the size and **Apply / Save / Revert / Close**.
   game after Apply; a prop or an item shows it once its data names it (Things).
 
 ## Sound
-Every sound: click one to hear it. A synthesised sound is data: change it, **Apply and play**, or keep it
-**As a new sound**. **Export WAV** renders one.
+Every sound: click one to hear it (or go through the list with the arrows: each plays as you get to it).
+A synthesised sound is data: change it, **Apply and play**, or keep it **As a new sound**. **Export WAV**
+renders one.
 - **Import** a WAV, OGG or MP3 over the selected sound or as a new one (a loop stays a loop: room
   ambience). Recorded sounds are embedded, so the game still runs from a file.
 - **Save** writes `sounds.edit.js` (synthesised) and `assets/audio.js` (recorded).
 - **Music**: play a theme (and section) at an intensity, go back to the room's music, or open the
   **music lab** (every score, its layers and stingers, WAV export).
 
+## Voices
+Recorded voices, line by line, like a voice-over session. The left panel lists every spoken line (lines
+in scripts, a dialogue's choices, the acts' and sequences' lines) **by speaker** or **by place**, with a
+✓ where it is recorded in the language picked; its heading counts them.
+
+- Pick a line and **● Record** (**R**; R again stops) from the microphone, or **Import** an audio file
+  for it. **▶ Play** (**P**) plays it as the game does. **N** goes to the next line without a recording,
+  **Delete** removes one.
+- **cut and level** (on): a recording is cut to the voice (the silence before and after goes, a little
+  kept) and brought to a good loudness. **start**, **length** and **gain** change that by hand; the
+  waveform shows what plays (green). **then the next** goes on to the next line without a recording
+  after each one; **only lines without one** hides the done ones.
+- A line someone in particular says (a `say` with their name, or a line under `if: "is:<them>"`) is kept
+  for them. A line of whoever is playing is kept for anyone, unless **recording for** names one of the
+  party: then that one has their own (and the one for anyone plays for the others).
+- It plays in the game at once (the line stays on screen as long as it plays); lines without a
+  recording blip as before. **Save** writes `assets/voices.<lang>.js` (embedded, so the game runs from a
+  file); the game's page loads it once (`<script src="assets/voices.de.js">`).
+- Recordings are WebM/Opus where the browser can (about 6 KB a second). A text changed later is a new
+  line: its old recording no longer plays.
+
 ## Dialogue
-Each dialogue's nodes and choices: the text, when it shows (`if`), where it leads, once only, silent.
-**▸** marks what the game would offer right now. **Test in game** (also Play > Test dialogue) closes
-the editor and starts it.
+The inspector lists the dialogues (and who talks each one) and the nodes of the one picked: ★ the start,
+in orange the nodes nothing leads to. **Edit** (or Enter, a double click) opens it in the centre:
+
+- Each **node**: its name (rename it: the gotos follow), ★ to make it the start, ↑ ↓ to move it, ▶ to
+  test from it, ✕ to remove it; where it is reached from; its **on entering** script (blocks, as in
+  Scripts).
+- Each **choice**: the text, **if** (when it shows), **once**, **silent** (not said, just done), where it
+  leads (stay, a node, end), and **then** (what it does: blocks). **▸** marks what the game would offer
+  right now, **·** what it wouldn't. **+ choice**, **+ Node** add them.
+- Keys on a choice: **Up / Down** pick, **Alt+Up / Alt+Down** move, **Insert** adds one after it,
+  **Delete** removes it, **Ctrl+D** doubles it, **Enter** edits its text; Ctrl+Z / Ctrl+Y undo and redo.
+- **▶ Test** (also Play > Test dialogue) closes the editor and starts it. **Revert** gives back the
+  game's own dialogue. **New dialogue** makes one (an actor's talk script starts it: a "dialogue" step).
+- A changed dialogue is kept whole in `edits.js` (File > Save; the same file as Things).
 
 ## State
 The game in progress, to test from anywhere: who is played and where, **go to** any room, lock and
@@ -188,9 +276,10 @@ loads only the art.
 |---|---|---|
 | room | `game/rooms/<id>.geo.js` | shapes: walk areas, holes, hotspot outlines, walk-to points, baselines, lamps, effect areas |
 | texts | `game/strings/<lang>.texts.js` | the texts as changed, per language |
-| edits | `game/edits.js` | properties of rooms, hotspots, props, lamps, effects, actors and items |
+| edits | `game/edits.js` | properties of rooms, hotspots, props, lamps, effects, actors and items; their scripts; dialogues (whole) |
 | sounds | `game/sounds.edit.js` | synthesised sounds made or changed |
 | audio | `assets/audio.js` | recorded sounds (embedded) |
+| voices | `assets/voices.<lang>.js` | recorded voices per line (embedded), one file per language |
 | art | `art/import/`, packed into `assets/imported.js` (`artAtlas`) | imported and painted pictures and animations |
 
 The page must load each layer after the game's own data (the game's `index.html`). The studio writes
@@ -210,17 +299,23 @@ The page must load each layer after the game's own data (the game's `index.html`
 | key | |
 |---|---|
 | F10 | close the editor and play (and open it again) |
+| Up Down Home End PgUp PgDn | move through a list (what the cursor gets to is picked) |
+| letters, /, Enter | jump to a name, the list's filter, open (a list) |
+| Left Right, + - | fold or open a group, all groups (a list); fold an if or once (blocks) |
+| Alt+Up / Alt+Down | move a step (blocks) or a choice (Dialogue) |
+| Insert, Ctrl+D | a new line or choice after the picked one, double it |
+| R P N | record or stop, play, next line without a recording (Voices) |
 | F1 | this help (at the section of the workspace; again: back) |
 | Ctrl+S | save what the workspace has (Room: its shapes; Art: the painting or the pxl source) |
 | Ctrl+Shift+S | save all |
 | Ctrl+Z / Ctrl+Y | undo / redo (Room, the paint view); also Ctrl+Shift+Z |
-| Delete | remove the selected corner or shape (Room), clear the selection (Paint) |
+| Delete | remove the selected corner or shape (Room), clear the selection (Paint), remove a step, a choice or a recording |
 | Esc | close a menu, cancel drawing, clear the selection |
 | arrows, Shift | nudge 1 or 10 px (Room); move a floating selection (Paint) |
 | B E G L R I M | the paint tools: pencil, eraser, fill, line, rectangle, picker, select |
 | X, Shift+M, Shift+H, Shift+V | swap the colours, mirror, flip H, flip V (Paint) |
 | wheel, + -, 0, Space | zoom, fit, pan (Paint) |
 | , . O | frame before, after, onion skin (Paint) |
-| Ctrl+C / X / V / A | copy, cut, paste, select all (Paint) |
+| Ctrl+C / X / V / A | copy, cut, paste, select all (Paint); copy, cut, paste steps (blocks) |
 | F9 | the debug overlay |
 | F11 | fullscreen |

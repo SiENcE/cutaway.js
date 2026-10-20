@@ -3,8 +3,11 @@
 //   Cutaway.actor("pip", { voice: { pitch: 72, range: 5, wave: "square", syllable: 70, speed: 1.1, gain: 0.25 } })
 // Per line: one syllable per vowel group, pauses at commas and full stops, rising pitch at "?",
 // louder at "!". A line always sounds the same: the random choices are seeded by the line's id.
-// Recorded voices come later as another provider (Cutaway.voice.use(provider)); lines it can't play
-// fall back to blips.
+// Recorded voices: a language's voices file (made in the editor's Voices tab) holds clips by the line's
+// text as the game's data has it (its source, before translation), or "actor|text" for one speaker:
+//   Cutaway.voice.layer("de", { "Hallo!": { sample: "data:audio/webm;base64,...", ms: 840, from: 60, gain: 1 } })
+// from trims the clip's start (ms), ms is how long it plays (the line stays at least that long). A line
+// with a clip in the language played plays it; the others blip. Other providers (Cutaway.voice.use) come first.
 "use strict";
 
 /**
@@ -19,8 +22,17 @@
  */
 /**
  * A voice provider speaks a line and returns a way to stop it, or null if it can't.
- * `at` = when to start on the audio clock (default: now; offline renders set it).
- * @typedef {(line: {actor: string, text: string, id: string, ms: number, profile: VoiceProfile, at?: number}) => ({stop: () => void} | null)} VoiceProvider
+ * `at` = when to start on the audio clock (default: now; offline renders set it); `source` = the text in
+ * the game's data (before translation).
+ * @typedef {(line: {actor: string, text: string, source: string, id: string, ms: number, profile: VoiceProfile, at?: number}) => ({stop: () => void} | null)} VoiceProvider
+ */
+/**
+ * A recorded line.
+ * @typedef {object} VoiceClip
+ * @property {string} sample   data URI (or "~" + scrambled base64 in a release)
+ * @property {number} ms       how long it plays (after the trim)
+ * @property {number} [from]   ms cut from the start
+ * @property {number} [gain]
  */
 
 Cutaway.voice = (function () {
@@ -31,6 +43,8 @@ Cutaway.voice = (function () {
   });
   /** @type {VoiceProvider[]} */
   const providers = [];
+  /** @type {Record<string, Record<string, VoiceClip>>} recorded lines: language -> key -> clip */
+  const recorded = {};
   /** @type {{stop: () => void} | null} */
   let current = null;
   let enabled = true;
@@ -109,18 +123,81 @@ Cutaway.voice = (function () {
     };
   };
 
-  /** @param {{actor: string, text: string, id?: string, ms: number}} e */
+  /** The clip of a line in the language played: the speaker's own, else the line's. @param {string} actor @param {string} source */
+  function clipOf(actor, source) {
+    const r = recorded[Cutaway.i18n.language];
+    return r ? r[`${actor}|${source}`] ?? r[source] ?? null : null;
+  }
+
+  /**
+   * Play a clip on the voice bus (the editor plays them too). Its decoding may take a moment; stopped
+   * before, it never starts.
+   * @param {VoiceClip} clip @param {number} [at]  when, on the audio clock
+   * @returns {{stop: () => void} | null}
+   */
+  function playClip(clip, at) {
+    const c = Cutaway.audio.ctx, b = Cutaway.audio.buses;
+    if (!c || !b) return null;
+    const out = c.createGain();
+    out.gain.value = clip.gain ?? 1;
+    out.connect(b.voice);
+    let stopped = false;
+    /** @type {AudioBufferSourceNode | null} */
+    let src = null;
+    Cutaway.sfx.decode(c, clip.sample).then((buf) => {
+      if (stopped) return;
+      src = c.createBufferSource();
+      src.buffer = buf;
+      src.connect(out);
+      src.start(Math.max(at ?? 0, c.currentTime), (clip.from ?? 0) / 1000, clip.ms / 1000);
+    }).catch((e) => console.warn("Cutaway: a voice didn't decode", e));
+    return {
+      stop() {
+        stopped = true;
+        const now = c.currentTime;
+        out.gain.cancelScheduledValues(now);
+        out.gain.setTargetAtTime(0, now, 0.02);
+        setTimeout(() => { try { src?.stop(); } catch { /* not started */ } out.disconnect(); }, 200);
+      },
+    };
+  }
+
+  /** @type {VoiceProvider} */
+  const recordedVoice = (line) => {
+    const clip = clipOf(line.actor, line.source);
+    return clip ? playClip(clip, line.at) : null;
+  };
+
+  /** @param {{actor: string, text: string, source?: string, id?: string, ms: number}} e */
   function speak(e) {
     current?.stop();
     current = null;
     if (!enabled) return;
     const a = Cutaway.actors.get(e.actor), profile = /** @type {VoiceProfile} */ (a?.def.voice ?? {});
-    const line = { actor: e.actor, text: e.text, id: e.id ?? e.text, ms: e.ms, profile };
-    for (const p of [...providers, blips]) { const h = p(line); if (h) { current = h; return; } }
+    const line = { actor: e.actor, text: e.text, source: e.source ?? e.text, id: e.id ?? e.text, ms: e.ms, profile };
+    for (const p of [...providers, recordedVoice, blips]) { const h = p(line); if (h) { current = h; return; } }
   }
 
   return {
-    syllables, blips,
+    syllables, blips, playClip,
+    /**
+     * A language's recorded lines (the voices file calls this; the editor too): key -> clip, null removes one.
+     * @param {string} lang @param {Record<string, VoiceClip | null>} clips
+     */
+    layer(lang, clips) {
+      const r = (recorded[lang] ??= {});
+      // a release build scrambles the texts (the keys) as it does the game's; the samples are revealed when decoded
+      const plain = (/** @type {string} */ k) => (k.charCodeAt(0) === 31 ? Cutaway.assets.reveal(k) : k);
+      for (const [k, v] of Object.entries(clips)) { if (v) r[plain(k)] = v; else delete r[plain(k)]; }
+    },
+    /** The recorded lines of a language (a copy). @param {string} lang */
+    layerOf(lang) { return { ...(recorded[lang] ?? {}) }; },
+    /** The languages with recorded lines. */
+    languages() { return Object.keys(recorded); },
+    /** The clip a line would play now (the speaker's own, else the line's), or null. @param {string} actor @param {string} source */
+    clip: clipOf,
+    /** How long a line's clip holds it (0: none; the clip and a moment more). @param {string} actor @param {string} source */
+    clipMs(actor, source) { const c = enabled ? clipOf(actor, source) : null; return c ? c.ms + 250 : 0; },
     /** Add a provider that is tried before the blips (e.g. recorded voices). @param {VoiceProvider} p */
     use(p) { providers.unshift(p); },
     /** @param {boolean} on */

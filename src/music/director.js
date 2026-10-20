@@ -134,7 +134,7 @@ Cutaway.music = (function () {
         if (s.say) {
           const [actor, text] = s.say, a = Cutaway.actors?.get(actor);
           const ms = Math.max(1400, text.length * 55), b = Cutaway.audio.buses;
-          Cutaway.voice?.blips({ actor, text, id: text, ms, profile: a?.def.voice ?? {}, at: s.at });
+          Cutaway.voice?.blips({ actor, text, source: text, id: text, ms, profile: a?.def.voice ?? {}, at: s.at });
           if (b) {                                      // duck the music under the line
             const v = Cutaway.audio.volume.music;
             b.music.gain.setTargetAtTime(v * 0.6, s.at, 0.05);

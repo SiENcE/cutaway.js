@@ -113,7 +113,8 @@ Cutaway.script = (function () {
     const who = "text" in s ? s.say : undefined, text = "text" in s ? s.text : s.say;
     const a = actorOf(who);
     if (fast) return;
-    return Cutaway.ui.say(a, Cutaway.i18n.t(text), { id: s.id ?? ctx.path, more: !!ctx.after?.() });
+    // source: the text in the game's data (recorded voices are kept by it); a recording holds the line as long as it plays
+    return Cutaway.ui.say(a, Cutaway.i18n.t(text), { id: s.id ?? ctx.path, more: !!ctx.after?.(), source: text, minMs: Cutaway.voice?.clipMs(a.id, text) ?? 0 });
   }
 
   /** @param {any} v @returns {[number, number]} */

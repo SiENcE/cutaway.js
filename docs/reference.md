@@ -344,6 +344,11 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 ## Voices and texts
 
 - Lines are spoken in blips: an actor's `voice: { pitch, range, wave, syllable, speed, gain, formant }`.
+- Recorded voices (the editor's Voices tab) replace the blips line by line: a language's voices file
+  `Cutaway.voice.layer("de", { "Hallo!": { sample, ms, from, gain }, "robby|Hallo!": { ... } })` keeps
+  clips by the line's text in the game's data (before translation), or by `"actor|text"` for one
+  speaker (that one wins). `sample` is a data URI, `from` trims the start (ms), `ms` is how long it plays:
+  the line stays on screen at least that long. Lines without a clip in the language played blip.
 - Texts are written in the game's first language, inline. Other languages are tables:
   `Cutaway.i18n.table("en", { "Hallo.": "Hello." })`; `"@key"` texts look a key up instead.
 - The editor's Texts tab exports every text as CSV or JSON for translators and imports them back.
@@ -354,8 +359,9 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 |---|---|
 | `Cutaway.room.geometry(id, {...})` | shapes (Room tab) |
 | `Cutaway.i18n.layer(lang, {...})` | texts as changed (Texts tab) |
-| `Cutaway.edits({ rooms, items, actors })` | properties (Things tab): objects merge, lists of things by id |
+| `Cutaway.edits({ rooms, items, actors, dialogs })` | properties and scripts (Things tab), dialogues (Dialogue tab): objects merge, lists of things by id, values and scripts replace, `null` removes; a dialogue is kept whole (it replaces the game's tree) |
 | `Cutaway.sfx.layer(defs, file)` | sounds made or changed, recorded sounds (Sound tab) |
+| `Cutaway.voice.layer(lang, {...})` | recorded voices per line (Voices tab), `assets/voices.<lang>.js` |
 | `Cutaway.assets.pack(...)` | imported and painted art (Art tab, the paint view; `art/import/` packed by `tools/build-atlas.mjs`): a name there replaces the game's own picture |
 
 The page loads each layer file after the game's own data.
