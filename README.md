@@ -1,5 +1,7 @@
 # Cutaway.js
 
+![The editor's pixel editor painting a game's background](docs/screenshots/editor-paint-game-bg.png)
+
 A point-and-click adventure engine for the browser, in the tradition of the LucasArts classics, with a
 modern verb-less interface: left click does the sensible thing, right click looks.
 
@@ -34,6 +36,12 @@ Open `demo/index.html` in a browser: Pip and Bolt want to switch on the lamp in 
 On a phone: tap to act (double tap to run), hold to look; the bulb, eye and menu buttons sit next to
 the satchel. `?act=act1` skips the title screen, `?nointro` the intro. `demo/testcard.html` checks the display and the
 font; `tools/music-lab.html` plays the demo's music.
+
+| | | |
+|---|---|---|
+| <a href="docs/screenshots/editor-layout-menu.png"><img src="docs/screenshots/editor-layout-menu.png" alt="Room"></a><br>Room: Room shapes: walk areas, holes, hotspots, lamps, effects | <a href="docs/screenshots/editor-layout-artmenu.png"><img src="docs/screenshots/editor-layout-artmenu.png" alt="Art"></a><br>Art: Sprites, PNG import and export, pxl sources | <a href="docs/screenshots/editor-paint-bg.png"><img src="docs/screenshots/editor-paint-bg.png" alt="Paint"></a><br>Paint: A background in the pixel editor |
+| <a href="docs/screenshots/editor-paint-sprite.png"><img src="docs/screenshots/editor-paint-sprite.png" alt="Paint"></a><br>Paint: An animated sprite, frame by frame | <a href="docs/screenshots/editor-pxl-source.png"><img src="docs/screenshots/editor-pxl-source.png" alt="pxl source"></a><br>pxl source: Art as code, edited, built and reloaded | <a href="docs/screenshots/vo.png"><img src="docs/screenshots/vo.png" alt="Voices"></a><br>Voices: Record or import every spoken line |
+| <a href="docs/screenshots/dl.png"><img src="docs/screenshots/dl.png" alt="Dialogue"></a><br>Dialogue: Nodes, choices and their scripts | <a href="docs/screenshots/g3.png"><img src="docs/screenshots/g3.png" alt="Things"></a><br>Things: A script as blocks | <a href="docs/screenshots/g4.png"><img src="docs/screenshots/g4.png" alt="Dialogue"></a><br>Dialogue: Conditions and branches in a dialogue |
 
 ## What's in it
 
