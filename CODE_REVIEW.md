@@ -41,7 +41,17 @@ Findings marked **(reproduced)** were confirmed by running code: a Node script a
 | [E17](#e17) | Low | ui / scene | Hotspot polygons are rebuilt several times every frame, and up to ~220 times for one tap |
 | [T1](#t1) | Medium | tests | The browser tests can't find Chrome on Linux or Playwright installs and can't run as root (no `--no-sandbox`) |
 
-<!-- EDITOR_TABLE -->
+| [D1](#d1) | High | editor: blocks | Dragging a step into a later step's branch throws half-way and loses the step, or puts it in the wrong place |
+| [D2](#d2) | High | editor: blocks | Changing a step's kind or its "more" JSON reads a stale step object and undoes the field edits just made |
+| [D3](#d3) | High | editor: saving | Cancelling the save-file picker marks Texts, Things, Voices, Sound, Paint and Art as saved |
+| [D4](#d4) | High | editor: Art | Every panel rebuild starts one more `requestAnimationFrame` loop that is never stopped |
+| [D5](#d5) | Medium | studio | No `Host` check: DNS rebinding can read any file under the root, `.git/` and dotfiles included |
+| [D6](#d6) | Medium | editor: Room | Undo doesn't take back a prop's first baseline, and undo/redo don't mark the room unsaved |
+| [D7](#d7) | Medium | editor | A prop's `at` and `baseline` are saved to two layer files (edits and geometry); the file loaded last wins |
+| [D8](#d8) | Medium | editor | Rebuilding the panels (on `setStatus`, `refresh`, a room change) throws away a field being typed in |
+| [D9](#d9) | Medium | editor: Things | Removing a key from a JSON field does nothing: the patch is deep-merged |
+| [D10](#d10) | Medium | editor: Dialogue | Renaming a node doesn't update `{ dialog, node }` steps; reachability is found by regex |
+| [D11](#d11) | Medium | editor: perf | The Voices tab is O(lines × clips) per rebuild with an unbounded decode cache; a Room drag rebuilds the walk map on every mouse move |
 
 ---
 
@@ -217,4 +227,100 @@ There are good tests of the walk geometry, sequences, acts, the party, layers an
 
 Each of these fits in a few lines with the `tests/load.mjs` harness, and the repro scripts used for this review can be turned into tests directly.
 
-<!-- EDITOR_SECTION -->
+---
+
+## Editor and studio
+
+The editor builds its DOM with `textContent` throughout, so there is no practical XSS. Its one `innerHTML` renders the bundled, escaped docs. The edit layers are a good design: changes go into separate files that load after the game's own data, and the engine keeps the data as it was before, so changes can be reverted. The weak spots are structural. Each tab has its own dirty flag, undo stack and save routine. Any change rebuilds the whole inspector. Event handlers hold on to objects that later edits replace. Findings D1 to D4 and D6 to D11 all come from these three things.
+
+### <a id="d1"></a>D1. Drag-and-drop can delete a step (High)
+
+`src/editor-script.js:448-459`
+
+`dropAt` removes the dragged step first and works out the target afterwards. It only corrects the target's index when source and target are in the same list. When the source list *contains* the target and the source comes before it, every index after the source is off by one. With `[A, { if, then: [X] }]`, dragging A onto X (target `1.then.0`) throws in `listAt` once the splice has run. A is already gone from the model, so the next edit writes the script back without it. With two `if` steps after A, nothing throws: A silently lands in the wrong branch.
+**Fix:** find the target list before the splice, or do the move on a copy and keep it only if it succeeds.
+
+### <a id="d2"></a>D2. Edits reverted by a stale step object (High)
+
+`src/editor-script.js:311`, `336-337`, `370-378`
+
+Field edits call `edit(..., false)`, which doesn't rebuild the rows. `replace()` swaps in a new step object, but the row's kind menu (`convert(s, ...)`) and its "more" JSON field (`Object.entries(s)`) still hold the *old* object. Edit a line's text and then change its kind, and the old text comes back. The same happens when you edit the "more" JSON next.
+**Fix:** read the current step with `listAt(parse(path))` in these handlers.
+
+### <a id="d3"></a>D3. A cancelled save counts as saved (High)
+
+`src/editor.js:261`, `src/editor-texts.js:117-119`, `src/editor-things.js:128-129`, `src/editor-voices.js:237-238`, `src/editor-sound.js:79-83`, `src/editor-paint.js:590-591`, `src/editor-art.js:135-140`
+
+`saveFile` returns the string `"not saved"` when the user cancels the file picker. Only the Room tab checks for it (`editor.js:544`). Every other tab clears its dirty state anyway, so the ● marker and the `beforeunload` warning disappear, and a reload loses the work. This only affects editing without the studio (saving through the browser).
+**Fix:** return `{ ok, msg }` and use one shared "save a layer, then clear dirty" helper in place of the six copies.
+
+### <a id="d4"></a>D4. Animation loops pile up in the Art tab (High)
+
+`src/editor-art.js:328-330`, `441-443`
+
+Each `build()` makes a new preview canvas and calls `requestAnimationFrame(drawPreview)`. Each loop checks the module-level `preview` variable, which always points at the newest canvas, so the older loops never stop. Arrowing through 200 sprites leaves about 200 loops redrawing every frame, and every paint stroke (`E.refresh()`) adds one more. They only end when you leave the tab.
+**Fix:** keep a single loop (`if (!raf) raf = requestAnimationFrame(...)`), or give each loop its own canvas and stop it when that canvas is disconnected.
+
+### <a id="d5"></a>D5. The studio can be read by DNS rebinding (Medium)
+
+`tools/studio.mjs:133-140`, `57-61`
+
+The server binds to `127.0.0.1` and checks a token on every API call, which is good. But static `GET`s need no token, the `Host` header is never checked, and `inside()` allows dotfiles. A web page that rebinds its domain to `127.0.0.1:<port>` can read `.git/config`, `.env`, `studio.json` and all the source under the root. With `--root .` that is the whole repository. Writes stay safe.
+**Fix:** reject any request whose `Host` isn't `127.0.0.1:<port>` or `localhost:<port>`, and refuse paths with a segment that starts with a dot. Minor hardening on top: cap the request body size, check `isDirectory()` for `list?dir=` (a file returns a 500 that shows the absolute path), and call `realpath` before `inside()` so symlinks can't lead outside.
+
+### <a id="d6"></a>D6. Room undo is incomplete and doesn't mark the room unsaved (Medium)
+
+`src/editor.js:402-403`, `505-531`
+
+- **Baselines:** the snapshot leaves out `baseline` when it is undefined, and `restore()` uses `Object.assign`, which never deletes a key. So undoing the first baseline drag on a prop doesn't take it back.
+- **New hotspots:** undoing "+ Hotspot" leaves a hotspot with no shape behind.
+- **Unsaved marker:** `undoRedo` never adds the room to `dirtyRooms`. If you drag, save, then undo, the room shows nothing unsaved, **Save all** skips it, and a reload brings the undone shape back.
+
+**Fix:** have `restore` delete the keys the snapshot doesn't have, and mark the room dirty in `undoRedo`.
+
+### <a id="d7"></a>D7. One field, two owners (Medium)
+
+`src/editor-things.js:32-33` vs `src/editor.js:343-347`
+
+Things writes a prop's `at` and `baseline` into `edits.js`. Room writes the same fields into `rooms/<id>.geo.js`. After a reload, whichever file loads last silently wins.
+**Fix:** let geometry own these fields and drop them from the Things prop fields, or have Things send them through Room's shape edits.
+
+### <a id="d8"></a>D8. Rebuilds throw away what is being typed (Medium)
+
+`src/editor.js:1109-1113`, `1483-1492`, `1613-1618`
+
+`setStatus`, `E.refresh()` and `room.entered` each rebuild the inspector and the left panel. Afterwards only the focus on lists and folds is restored. If a Checks task finishes while you type into a Things field, the text and the focus are gone. The Help tab's 30 ms refocus (`editor-guide.js:156`) works around the same problem. Ctrl+S from a focused field has a related bug: it saves before the field's `change` fires (`editor.js:827`).
+**Fix:** `setStatus` should update only the status bar. Skip a rebuild, or commit the field first, while an input has focus. Call `blur()` on the focused field before saving.
+
+### <a id="d9"></a>D9. JSON fields can't remove keys (Medium)
+
+`src/editor-things.js:160-163`, `src/layers.js:301-313`
+
+A whole-value JSON field (`costume`, `voice`, `glow`, `scale`) is sent as a patch and deep-merged into the existing value. Deleting `"reach"` from a costume does nothing, in the live data or in the saved layer.
+**Fix:** a "replace" flag on `edits.change`, or send `null` before the new value. This is the same root cause as [E8](#e8).
+
+### <a id="d10"></a>D10. Renaming dialogue nodes (Medium)
+
+`src/editor-dialogue.js:30`, `46`, `84-96`
+
+`reorder()` renames the `goto`s of choices but not the `{ dialog, node }` steps in `enter`, `then` or actors' scripts, so those now point nowhere. `links()` finds references with a regex over `JSON.stringify`. That only matches when `node` comes right after `dialog`, and it ignores which dialogue is meant. So the warnings that no choice leads to a node are unreliable. Moving a choice also shifts the index keys of once-only choices ([E6](#e6)).
+**Fix:** one shared structural walk over the game's data, used here, in Texts, in Voices and in the blocks. It is written four times today.
+
+### <a id="d11"></a>D11. Editor performance (Medium)
+
+- **Voices** (`src/editor-voices.js:93-123`, `265-276`): `clip()` calls `voice.layerOf()`, which copies the whole clip map, up to five times per line on every rebuild, and every arrow key causes a rebuild. The `decoded` cache keeps every AudioBuffer, keyed by its whole data URI, and never lets go.
+- **Room drags** (`src/editor.js:533`, `758-762`): `changed()` on every mouse move rebuilds the walk map ([E7](#e7)), even when you drag a lamp or a prop, and the panels with it.
+- **Grouping:** `[...(map.get(g) ?? []), x]` is O(n²) for big groups (`editor-texts.js:215`, `editor-state.js:51`, `editor-voices.js:274`).
+
+**Fix:** read the clip layer once per rebuild and bound the cache. Rebuild the walk map only for walk-area and hole edits, on pointer-up. Use `push` to build groups.
+
+### Editor: lower-severity
+
+- Paint: redo after undoing a moved selection loses the moved pixels, leaving a transparent hole (`src/editor-paint.js:303-308`).
+- Paint: Space-to-pan can get stuck after a key release in the popup or a lost focus (`src/editor-paint.js:877`, `889`). Clear it on `blur`.
+- Room: a drag goes on after the button is released outside the window (`src/editor.js:742-769`). Check `e.buttons`, or use pointer capture as Paint does.
+- Texts: CSV import always splits on `;` as well as `,` (`src/editor-texts.js:151`). Detect the delimiter from the header.
+- Studio client: `studio.exists()` downloads the whole file just to see whether it exists (`src/editor.js:229`).
+- Structure: `editor.js` (1,870 lines, one IIFE) holds the studio client, the shape tool, the list widget and the shell. Splitting those out would make the problems above easier to fix and to test.
+
+<!-- TOOLS_SECTION -->
