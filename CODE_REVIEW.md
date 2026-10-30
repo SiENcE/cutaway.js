@@ -51,6 +51,16 @@ Findings marked **(reproduced)** were confirmed by running code: a Node script a
 | [D8](#d8) | Medium | editor | Rebuilding the panels (on `setStatus`, `refresh`, a room change) throws away a field being typed in |
 | [D9](#d9) | Medium | editor: Things | Removing a key from a JSON field does nothing: the patch is deep-merged |
 | [D10](#d10) | Medium | editor: Dialogue | Renaming a node doesn't update `{ dialog, node }` steps; reachability is found by regex |
+| [S1](#s1) | High | solver | Each packed state keeps a whole 16 KiB zlib buffer: about 80× the memory and worker traffic it needs **(reproduced)** |
+| [S2](#s2) | High | solver | A second dialogue in the same run overwrites `need` and `seen`, so choices go unexplored (false UNSOLVABLE, soft-locks missed) |
+| [S3](#s3) | Medium | solver | The state key leaves out `act`, so an `{ act: "next" }` that starts in the same room looks like a self-loop |
+| [S4](#s4) | Medium | solver | A worker that crashes after start-up leaves `solve.mjs` hanging forever |
+| [S5](#s5) | Medium | tools | build-atlas: an image taller than `--max` makes an empty 0×0 page and a page that is too tall; PNG tRNS is ignored for grey and RGB images |
+| [S6](#s6) | Medium | tools | chrome.mjs: no handling when Chrome exits or the socket closes, a random port it may not own, temp profiles left behind |
+| [A1](#a1) | Medium | music | Transition segments are cut after their first bar; going back to the current theme mid-transition loops the segment forever |
+| [A2](#a2) | Medium | music | A new intensity during a layer fade snaps and clicks (`cancelScheduledValues` at a future time) |
+| [A3](#a3) | Medium | music | `render()` swaps the global player, context and buses during an `await`: live music stops, then the missed notes come in a burst |
+| [A4](#a4) | Medium | sfx | Exporting a WAV of a sound with `inst` parts fails, or leaves the notes out (synth always uses the live context) |
 | [D11](#d11) | Medium | editor: perf | The Voices tab is O(lines × clips) per rebuild with an unbounded decode cache; a Room drag rebuilds the walk map on every mouse move |
 
 ---
@@ -323,4 +333,129 @@ A whole-value JSON field (`costume`, `voice`, `glow`, `scale`) is sent as a patc
 - Studio client: `studio.exists()` downloads the whole file just to see whether it exists (`src/editor.js:229`).
 - Structure: `editor.js` (1,870 lines, one IIFE) holds the studio client, the shape tool, the list widget and the shell. Splitting those out would make the problems above easier to fix and to test.
 
-<!-- TOOLS_SECTION -->
+---
+
+## Solver and Node tools
+
+The tools are a real strength. The solver, the validator and the playthrough all run the *real* engine in a `vm`, so there is no second model of the game to drift out of step. The search order is fixed, the canonical SHA-1 keys handle inventories and flags in any order, worker results are merged in a fixed order, and the backward pass that finds soft-locks is sound. The weak spots are whether the state key covers everything, the bookkeeping for dialogue branches, and resources at process boundaries.
+
+### <a id="s1"></a>S1. Packed states keep 16 KiB each (High, reproduced)
+
+`tools/lib/solver.mjs:18` (and the same `pack` in `solver-worker.mjs`)
+
+`deflateRawSync` returns a small `Buffer` that is a *view* into zlib's 16 KiB output chunk. A demo state packs to 207 bytes but keeps all 16,384 alive. I checked this separately: a 21-byte result has a backing buffer of `byteLength` 16384. Sending a state to a worker copies the full 16 KiB as well. With `--full --max 100000` that is about 1.6 GB where about 20 MB would do.
+**Fix:** `export const pack = (snap) => Buffer.from(deflateRawSync(JSON.stringify(snap)));`
+
+### <a id="s2"></a>S2. A second dialogue overwrites the branching bookkeeping (High)
+
+`tools/lib/solver.mjs:137-158`
+
+When a run reaches a dialogue choice that hasn't been planned, the chooser records `need = texts.length`, adds the point to `seen` and returns -1. That ends the *dialogue*, but the outer script goes on. If the script then reaches another dialogue, for example `talk: [{ dialog: "guard" }, { dialog: "guard2" }]` or a `goto` into a room whose `enter` opens one, the chooser runs again. It overwrites `need` with the second dialogue's count and pollutes `seen`. Guard's other options are never tried. The solver can then report a solvable game as unsolvable, or miss a soft-lock, and the polluted `seen` can drop later runs as duplicates.
+**Fix:** record only the first unplanned choice point (`if (!need && !dup)`), or stop the run there.
+
+### <a id="s3"></a>S3. The state key leaves out the act (Medium)
+
+`tools/lib/solver.mjs:74-78`
+
+`key()` hashes the room, the active actor, the actors' rooms, the party and the state, but not `snap.act`. Hints (`h.act === acts.current`) and `{ act: "next" }` both depend on the act. An act that isn't `fresh`, has no `start` steps and begins in the same room gets the same key as the act before it. The solver takes it as a self-loop and never explores the act.
+**Fix:** add `snap.act` to the tuple.
+
+### <a id="s4"></a>S4. A crashed worker hangs the solver (Medium)
+
+`tools/lib/solver.mjs:219-228`
+
+`w.on("error", reject)` only covers start-up, and there is no `exit` handler. An uncaught throw from a game timer inside the worker's vm, or running out of memory, leaves its job unsettled, so `Promise.all` never resolves and `solve.mjs` waits forever with no output.
+**Fix:** on `error` or `exit`, reject every pending job and end the pool.
+
+### <a id="s5"></a>S5. build-atlas and png.mjs (Medium)
+
+- `tools/build-atlas.mjs:149`, `159-162`: only the width is checked against `--max`. An image taller than the maximum is sorted first and pushes the still-empty `{ w: 0, h: 0 }` page. The result is a 0×0 PNG that won't load, plus a page that is too tall. **Fix:** check the height too, and never write an empty page.
+- `tools/lib/png.mjs:49`: tRNS is applied only to palette images. Greyscale and RGB images with a colour key (a common oxipng or pngcrush result for sprites with 1-bit alpha) come out opaque with a coloured box. **Fix:** apply the key for colour types 0 and 2.
+- `tools/build-atlas.mjs:136`: frame dedup uses the pixel bytes only, so a 2×4 and a 4×2 frame with identical bytes (typically fully transparent) are merged. Animations with the same name silently overwrite each other. **Fix:** put `w×h` in the key, and make a duplicate name an error.
+
+### <a id="s6"></a>S6. Chrome lifecycle (Medium)
+
+`tools/lib/chrome.mjs:25-39`, `53-55`, `99-104`. This adds to [T1](#t1).
+
+- **Port:** it is random in 9300-9799, and nothing checks that the Chrome just started owns it. A stale or concurrent Chrome on that port gets driven instead.
+- **Failures:**
+  - There is no `proc.on("exit")` handler and no error handler on the WebSocket, and pending `send`s are never rejected.
+  - A Chrome crash hangs the tool, or ends with "did not start" only after 10 s.
+- **Clean-up:**
+  - "Did not start" leaves the profile directory behind.
+  - `close()` sends SIGTERM, sleeps a fixed 300 ms, then removes the profile with errors ignored. On Windows this often fails with EBUSY and leaves a `cutaway-chrome-*` folder every run.
+
+**Fix:** `--remote-debugging-port=0` and read `DevToolsActivePort` from the profile; reject everything pending on exit or close; await the `exit` event, then `rmSync(..., { maxRetries: 5 })`.
+
+### Tools: lower-severity
+
+- `tools/lib/solver.mjs:357-363`: the hint check follows only *one* shortest path, so a hint that is about an equally short other path is reported as no longer needed (a false failure).
+- `tools/lib/game.mjs:43`: the script-tag regex needs `src` to be the first attribute, in double quotes. `<script defer src="rooms2.js">` is silently skipped, so the validator checks only part of the game. It should at least warn about `<script>` tags it doesn't match.
+- `tools/play.mjs:17`: `--workers` is missing from the flags that take a value, so `play.mjs --workers 4 demo/index.html` takes "4" as the page.
+- `tools/build-editor-help.mjs:306`: the "am I the main module" check fails behind a symlink (macOS `/tmp`), and the tool then does nothing and exits 0. Compare the `realpathSync` of both sides.
+- `tools/check_pixels.py:9`: a screenshot smaller than the buffer compares 0 pixels and passes.
+
+---
+
+## Audio and music
+
+The design is clean: buses into a compressor, instruments defined as data, a sequencer whose timing logic is unit-tested apart from WebAudio, scheduling with lookahead, and seeded noise. The problems are the usual ones in hand-written WebAudio code.
+
+### <a id="a1"></a>A1. Transition segments (Medium)
+
+`src/music/sequencer.js:128`, `173-174`
+
+- **Cut short:** after `enter(theme, via.shift())`, `pending` stays set. The segment's default `exits: "bar"` then counts its own first bar line as a jump point, so a 2-bar outro plays one bar. The demo's segments are one bar long, so it doesn't show this.
+- **Looping forever:** while `to_yard` (a section of the hall theme) is playing, `request("hall")` sees `theme === "hall"` and clears `pending`. Transition segments have no `next`, so the snare roll then loops forever. This is the demo's own case when the player leaves the hall and steps straight back in.
+
+**Fix:** jump only at the end of a segment that is part of a transition, and remember the section to go back to.
+
+### <a id="a2"></a>A2. Layer fades click when the intensity changes again (Medium)
+
+`src/music/director.js:54-57`
+
+`cancelScheduledValues(time)` with `time` on the next beat removes a ramp that is still running, so the gain snaps back to the ramp's start now. It then jumps to the value read on the main thread at `time`. Two `{ music: { intensity } }` steps less than a bar apart, or dragging the music lab's slider, make layers drop out with a click.
+**Fix:** use `cancelAndHoldAtTime` where the browser has it. Otherwise keep each ramp's start, end and values in JS and compute the value at `time`.
+
+### <a id="a3"></a>A3. `render()` swaps globals across an `await` (Medium)
+
+`src/music/director.js:85`, `154-190`
+
+While `startRendering()` runs, `player`, `layers`, `fader`, `wanted` and `Cutaway.audio.ctx` and `buses` all point at the offline render. The live `setInterval` pumps the render player, so live music stops, and live `say`, `sfx` and `music` events go into the offline graph. When the globals are restored, `pump()` has no guard against falling behind and plays every missed step at once. A stall on the main thread longer than `LOOKAHEAD` (150 ms) also causes such a burst. Rendering also ignores `stop` and `fade`, so a render differs from live play.
+**Fix:** render with a separate Player and its own buses, and in `pump`, skip steps whose time has passed instead of playing them.
+
+### <a id="a4"></a>A4. Sound export with `inst` parts (Medium)
+
+`src/sfx.js:147-151`, `src/music/synth.js:250-252`
+
+`sfx.render` uses an `OfflineAudioContext`, but `synth.play` always uses `Cutaway.audio.ctx`. If live audio is unlocked, `connect` throws `InvalidAccessError` and the export fails. If it isn't, the `inst` notes are silently left out.
+**Fix:** pass the context and its buses into `synth.play` (from `o.out.context`).
+
+### Audio: lower-severity
+
+- **Gated reverb** (`src/music/synth.js:76-82`, `233-241`): there is one gate per context, always wired to `buses.music`. So it ignores the layer and fader levels and the `stop` fade, and the gated drums of sound effects come out on the music bus.
+- **Clicks at note ends:**
+  - the drum noise buffer runs out when `decay` is above about 0.56 s (`synth.js:214`);
+  - pluck notes stop abruptly after about 2.8 s (`synth.js:175`, `197`);
+  - long tones in `sfx` are cut at about 4% of their level (`sfx.js:81`, `133`).
+
+  End notes with a short linear ramp to 0 before `stop`.
+- **iOS** (`src/audio.js:126-131`): `wake()` resumes only from `"suspended"`, so after a phone call or Siri (`"interrupted"`) the game stays silent. `resume()` rejections are also left unhandled.
+- **Volume** (`src/audio.js:117-123`): `applyVolumes` sets `.gain.value` directly, so sliders click, and changing the music volume while speech is ducking it removes the duck.
+
+---
+
+## Recommendations, in order
+
+1. **Give running scripts an owner.**
+   - Add cancel tokens for every `script.run` and a `script.cancelAll()` that the load and title-screen paths call ([E1](#e1)).
+   - Defer saves until no script is running ([E2](#e2)).
+   - Have actor operations always settle, both on screen and off it ([E3](#e3), [E4](#e4), [E13](#e13)).
+
+   This removes the soft-locks and save corruption, and is the most valuable change.
+2. **Make script data unambiguous and stable:** one action per step, resolved by declared arguments and checked by the validator ([E5](#e5)), and stable ids for once-only flags ([E6](#e6), [D10](#d10)).
+3. **Fix the solver's completeness bugs** ([S1](#s1)-[S3](#s3)). The solver is what proves a game can be finished, so it must not miss branches.
+4. **Lock down the studio** with a `Host` check and no dotfiles ([D5](#d5)), and **make the tests run anywhere** ([T1](#t1), [S6](#s6)).
+5. **Editor: one change-and-save service** (unsaved state, save results, one owner per field) and targeted re-renders in place of rebuilding everything. That deals with [D3](#d3), [D4](#d4) and [D6](#d6)-[D11](#d11) structurally. [D1](#d1) and [D2](#d2) need only small, local fixes.
+6. **Performance:** an exact visibility test in the walk map ([E7](#e7)), and a cached hotspot list ([E17](#e17)).
+7. Add tests for each of the High findings. The repro scripts used for this review fit straight into `tests/load.mjs` and the Chromium harness.
