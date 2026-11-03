@@ -345,7 +345,7 @@ Cutaway.ui = (function () {
 
   /** The buttons left of the satchel: the hint (if the game has hints), then for touch the eye and the menu. */
   function buttonBoxes() {
-    const bag = Cutaway.inventory.bagCentre(), y = 5;
+    const bag = Cutaway.inventory.bagCentre(), y = Cutaway.inventory.corner === "bottom" ? Cutaway.display.height - 16 : 5;
     /** @type {{k: "hint" | "hotspots" | "menu", x: number, y: number, w: number, h: number, sprite: string | undefined}[]} */
     const out = [];
     if (!Cutaway.scene.active || Cutaway.script.busy || Cutaway.inventory.openness > 0 || Cutaway.menu.isOpen) return out;

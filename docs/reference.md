@@ -485,7 +485,8 @@ The page loads each layer file after the game's own data.
   `frame` colours the menu's frame: `{ light, face, dark }` (the bevel), `fill` (inside), `plate` (the
   heading's), `rivet`, `rivetLight`, `rivetDark` (the corner fittings), `hover` (the chosen row's band).
   `Cutaway.menu.frame(ctx, x, y, w, h, { small, fill })` draws one for a game's own pages,
-  `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)`.
+  `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)`, `Cutaway.inventory.setCorner("bottom")`
+  (the satchel in the bottom right, its bar sliding up from the bottom edge; the hint button beside it).
 - Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`,
   `"sequence.start"`, `"sequence.shot"`, `"sequence.end"`, ...
 

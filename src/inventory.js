@@ -38,16 +38,22 @@ Cutaway.inventory = (function () {
   let open = 0, wantOpen = false, byHover = false;
   /** @type {string | null} sprite name of the satchel icon */
   let satchelSprite = null;
+  /** where the satchel sits (right) and where its bar slides in from: "top" (the default) or "bottom" */
+  let corner = "top";
 
   function W() { return Cutaway.display.width; }
+  function H() { return Cutaway.display.height; }
   function bagBox() {
     const f = satchelSprite ? Cutaway.assets.get(satchelSprite)?.frames[0] : null;
-    return f ? { x: W() - f.w - 4, y: 4, w: f.w, h: f.h } : { x: W() - 20, y: 3, w: 16, h: 14 };
+    const w = f ? f.w : 16, h = f ? f.h : 14;
+    return { x: W() - w - 4, y: corner === "bottom" ? H() - h - 4 : f ? 4 : 3, w, h };
   }
   function items() { return Cutaway.state.items(); }
   /** @param {number} i */
   function cellX(i) { return 6 + i * CELL; }
-  function barY() { return Math.round(-BAR_H + BAR_H * open); }
+  function barY() { return corner === "bottom" ? Math.round(H() - BAR_H * open) : Math.round(-BAR_H + BAR_H * open); }
+  /** Is a point outside the bar (it is open)? @param {number} y */
+  function offBar(y) { return y < barY() || y >= barY() + BAR_H; }
   function shown() { return !!Cutaway.scene.active && !Cutaway.script.busy; }
 
   /** @param {number} x @param {number} y @returns {number} item index under the point, or -1 */
@@ -83,7 +89,7 @@ Cutaway.inventory = (function () {
       if (!shown()) return false;
       if (onBag(p.x, p.y) && open < 1) { wantOpen = true; byHover = false; return true; }
       if (onBag(p.x, p.y)) { wantOpen = false; Cutaway.ui.hold(null); return true; }
-      if (open < 1 || p.y >= barY() + BAR_H) return false;
+      if (open < 1 || offBar(p.y)) return false;
       const i = itemAt(p.x, p.y), id = i >= 0 ? items()[i] : null, held = Cutaway.ui.held;
       if (!id) { Cutaway.ui.hold(null); return true; }          // empty part of the bar
       if (p.button === 2) { Cutaway.ui.hold(null); look(id); return true; }
@@ -94,7 +100,7 @@ Cutaway.inventory = (function () {
     hover(x, y) {
       if (!shown()) return undefined;
       if (onBag(x, y)) return Cutaway.i18n.t("@cutaway.satchel");
-      if (open < 1 || y >= barY() + BAR_H) return undefined;
+      if (open < 1 || offBar(y)) return undefined;
       const i = itemAt(x, y);
       if (i < 0) return null;
       const id = items()[i], name = Cutaway.i18n.t(Cutaway.item.get(id)?.name ?? id), held = Cutaway.ui.held;
@@ -107,8 +113,8 @@ Cutaway.inventory = (function () {
     update(dt) {
       const y = Cutaway.input.y;
       if (!shown()) wantOpen = false;
-      else if (Cutaway.input.inside && y <= 1 && !wantOpen) { wantOpen = true; byHover = true; }
-      else if (wantOpen && Cutaway.input.inside && y > BAR_H + 10 && (byHover || Cutaway.ui.held)) wantOpen = false;
+      else if (Cutaway.input.inside && (corner === "bottom" ? y >= H() - 2 : y <= 1) && !wantOpen) { wantOpen = true; byHover = true; }
+      else if (wantOpen && Cutaway.input.inside && (corner === "bottom" ? y < H() - BAR_H - 10 : y > BAR_H + 10) && (byHover || Cutaway.ui.held)) wantOpen = false;
       open = Cutaway.util.clamp(open + (wantOpen ? 1 : -1) * dt / SLIDE_MS, 0, 1);
     },
     render(ctx) {
@@ -152,6 +158,11 @@ Cutaway.inventory = (function () {
     get openness() { return open; },
     /** Use a sprite for the satchel icon (drawn at the top right, 4 px from the edges). @param {string | null} name */
     setSprite(name) { satchelSprite = name; },
+    /** Put the satchel in the top right (default) or the bottom right; its bar slides in from that edge. @param {"top" | "bottom"} c */
+    setCorner(c) { corner = c === "bottom" ? "bottom" : "top"; },
+    get corner() { return corner; },
+    /** The satchel's box on the screen. */
+    bagBox,
     /** Screen centre of an item's cell (for tools and tests). @param {string} id */
     cellOf(id) { const i = items().indexOf(id); return i < 0 ? null : { x: cellX(i) + 12, y: barY() + 12 }; },
     bagCentre() { const b = bagBox(); return { x: b.x + Math.floor(b.w / 2), y: b.y + Math.floor(b.h / 2) }; },
