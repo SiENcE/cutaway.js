@@ -327,6 +327,11 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   takes the skin's `labelColor`. `menu: { x, y, w, dim }` places the title's menu (and its load and
   settings pages): `x` its left, or below 0 its right edge from the screen's right (`x: -6`), `y` its top
   or below 0 its bottom (default `y: -18`, centred), `w` its width (default 136).
+  `splash: { room, view, prompt, music }` puts a screen before the title on start-up: its room as a
+  backdrop (the game's key art, its people), a blinking prompt at the bottom ("Click to start", or
+  `prompt`), until a click or a key; then the title screen comes in. Left out where the intro is
+  (`?nointro`, `?act=`, `?edit`) and on the way back from the game. `Cutaway.acts.splashing` says whether
+  it shows.
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"
   card (a button that opens `link`, one back to the title).
 - `prologue: "id"`: a sequence that tells the story so far, played when the act is begun as a new game

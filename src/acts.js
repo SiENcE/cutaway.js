@@ -24,6 +24,9 @@
 // sets its own ({ music: { theme, fade } } fades a theme in from the silence).
 // The title screen's entrance: the logo and the small print fade in, then the menu rises from below
 // the screen; a click or a key finishes it at once.
+// A splash before it (title.splash: { room, view, prompt, music }): on start-up only, a screen of its own
+// (the game's key art, its people) with a blinking prompt, until a click or a key; then the title screen.
+// Left out where the intro is (?nointro, ?act=, ?edit) and on the way back from the game.
 "use strict";
 
 /**
@@ -49,6 +52,8 @@
  * @property {string} [tagline]            the heading of the title's menu
  * @property {string} [footer]             small print at the bottom right (version, licence)
  * @property {any} [music]                 music state (default: the room's)
+ * @property {{room: string, view?: [number, number], prompt?: string, music?: any}} [splash]  a screen before the
+ *                                         title on start-up (key art), with a blinking prompt (default "@cutaway.title.press")
  * @property {{x?: number, y?: number, w?: number, dim?: number}} [menu]  where the menu goes: `x` its left (below 0: its right edge,
  *                                         counted from the screen's), `y` its top (below 0: its bottom), `w` its width, `dim`
  */
@@ -140,6 +145,7 @@ Cutaway.acts = (function () {
    * @param {{fresh?: boolean, card?: boolean, prologue?: boolean}} [o]
    */
   async function begin(id, o = {}) {
+    splashing = false;
     const a = Cutaway.act.get(id);
     if (!a) throw new Error(`Cutaway: no act "${id}"`);
     titleOpen = false;
@@ -253,8 +259,13 @@ Cutaway.acts = (function () {
   }
 
   /** Show the title screen (at start, after the end, or from the pause menu). */
-  function showTitle() {
+  /**
+   * The title screen; with `splash` (start-up), the title's splash comes first, if it has one.
+   * @param {{splash?: boolean}} [o]
+   */
+  function showTitle(o = {}) {
     if (!title) return;
+    if (o.splash && title.splash) { showSplash(); return; }
     reset();
     titleOpen = true;
     // after an intro that ends on the title's room, it stays as it is (its clock, its rain)
@@ -264,6 +275,25 @@ Cutaway.acts = (function () {
     entrance = 0;
     Cutaway.tween.to({ key: "title.entrance", ms: RISE[1], ease: "linear", step: (k) => { entrance = k; } });
     titlePage();
+  }
+
+  let splashing = false, splashSince = 0;
+  /** The splash: its room as a backdrop, its prompt blinking, until a click or a key. */
+  function showSplash() {
+    const sp = /** @type {NonNullable<TitleOptions["splash"]>} */ (title?.splash);
+    reset();
+    splashing = true; splashSince = Cutaway.clock.time;
+    Cutaway.scene.load(sp.room, { backdrop: sp.view ?? [0, 0], keep: true });
+    const music = sp.music ?? title?.music;
+    if (music) Cutaway.events.emit("music", music);
+    Cutaway.fx.transition("in");
+  }
+  /** From the splash on to the title screen. */
+  async function endSplash() {
+    if (!splashing || Cutaway.clock.time - splashSince < 250) return;    // not the click that started the game
+    splashing = false;
+    await Cutaway.fx.transition("out", { from: title?.splash?.room, to: title?.room ?? "" });
+    showTitle();
   }
 
   /** Leave the game for the title screen (the game so far is in the autosave of the last room change). */
@@ -292,10 +322,20 @@ Cutaway.acts = (function () {
   const layer = {
     z: 101, modal: true,
     click() {
+      if (splashing) { endSplash(); return true; }
       if (titleOpen && Cutaway.tween.has("title.entrance")) Cutaway.tween.finish("title.entrance");
       return false;
     },
+    hover() { return splashing ? null : undefined; },
     render(ctx) {
+      if (splashing && title?.splash) {                     // the prompt, blinking, at the bottom
+        const ms = Cutaway.clock.time - splashSince;
+        if (ms < 900 || Math.floor(ms / 650) % 2) return;
+        const f = Cutaway.ui.font(), s = Cutaway.ui.style, W = Cutaway.display.width, H = Cutaway.display.height;
+        const txt = Cutaway.i18n.t(title.splash.prompt ?? "@cutaway.title.press");
+        f.draw(ctx, txt, Math.floor((W - f.measure(txt)) / 2), H - 16, { color: s.labelColor, outline: s.outline });
+        return;
+      }
       if (!titleOpen || !title || Cutaway.menu.card) return;
       const W = Cutaway.display.width, H = Cutaway.display.height, f = Cutaway.ui.font(), s = Cutaway.ui.style;
       const alpha = part(LOGO);
@@ -320,6 +360,8 @@ Cutaway.acts = (function () {
     get titleOpen() { return titleOpen; },
     /** Has the game a title screen? */
     get hasTitle() { return !!title; },
+    /** Is the title's splash showing (before the title screen)? */
+    get splashing() { return splashing; },
     /** The title screen's options (room, view, logo, name, tagline, footer), or null: for the editor. */
     get title() { return title; },
     /** The act to begin a new game with. */
@@ -337,7 +379,10 @@ Cutaway.acts = (function () {
     restore(id) { current = id ?? null; titleOpen = false; },
     init() {
       Cutaway.ui.addLayer(layer);
-      Cutaway.events.on("key", () => { if (titleOpen && Cutaway.tween.has("title.entrance")) Cutaway.tween.finish("title.entrance"); });
+      Cutaway.events.on("key", (k) => {
+        if (splashing) { if (!k?.event?.repeat) endSplash(); return; }
+        if (titleOpen && Cutaway.tween.has("title.entrance")) Cutaway.tween.finish("title.entrance");
+      });
       Cutaway.script.action("act", (s, ctx) => {
         const ids = Cutaway.act.ids();
         const next = s.act === "next" ? ids[ids.indexOf(current ?? "") + 1] : s.act;

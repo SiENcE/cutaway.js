@@ -33,6 +33,23 @@ export default async function (t) {
     t.ok("prologue: not when an act goes on", !C.state.flag("~pro_seen"));
   }
   {
+    // a splash before the title screen: its own room and a prompt, until a key; then the title
+    const { C } = await demo();
+    C.acts.configure({ title: { room: "yard", tagline: "T", splash: { room: "hall" } } });
+    C.acts.showTitle({ splash: true });
+    const on = C.acts.splashing && C.scene.room.id === "hall" && !C.acts.titleOpen;
+    C.events.emit("key", { code: "Space", event: {} });                 // too soon: the click that started it
+    const early = C.acts.splashing;
+    C.clock.advance(400);
+    C.events.emit("key", { code: "Space", event: {} });
+    await new Promise((r) => setTimeout(r, 0));
+    t.ok("title: a splash first (its room), a key goes on to the title screen", on && early && !C.acts.splashing && C.acts.titleOpen && C.scene.room.id === "yard",
+      JSON.stringify({ on, early, splashing: C.acts.splashing, open: C.acts.titleOpen, room: C.scene.room.id }));
+    C.acts.showTitle();
+    t.ok("title: on the way back from the game, no splash", !C.acts.splashing && C.acts.titleOpen);
+    C.acts.configure({ title: undefined });
+  }
+  {
     const { C } = await demo();
     t.ok("acts: the demo begins its act", C.acts.current === "act1" && C.scene.room.id === "hall" && C.scene.active.id === "pip");
     C.state.set("got_key");

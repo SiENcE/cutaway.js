@@ -139,7 +139,7 @@ Cutaway.start = async function (o = {}) {
   // these run in the background (the opening, the first room's enter script, the title screen)
   const act = (dev && params.get("act")) || o.act;
   const begin = () => {
-    if (Cutaway.acts.first() && o.title) Cutaway.acts.showTitle();
+    if (Cutaway.acts.first() && o.title) Cutaway.acts.showTitle({ splash: !params.has("nointro") && !(dev && params.has("edit")) });
     else if (Cutaway.acts.first()) Cutaway.acts.begin(/** @type {string} */ (Cutaway.acts.first()), { fresh: true });
     else if (o.room) Cutaway.scene.load(o.room);
   };
