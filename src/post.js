@@ -35,26 +35,47 @@ Cutaway.post = (function () {
   /** Does the picture move (noise, the band)? The player may have switched motion off. */
   function moving() { return Cutaway.settings?.values?.motion !== false; }
 
+  /** Grain frames (eight, repeating), made once per size and strength. @type {Map<string, Int16Array[]>} */
+  const grains = new Map();
   passes.set("noise", (px, o, t) => {
-    const k = Number(o.noise) || 0, f = moving() ? Math.floor(t / 100) : 0, d = px.data;
-    for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
-      const i = (y * px.w + x) * 4, n = (hash(x, y, f) - 0.5) * 2 * k * 255;
-      d[i] += n; d[i + 1] += n; d[i + 2] += n;
+    const k = Number(o.noise) || 0, key = `${px.w}x${px.h}/${k}`;
+    let frames = grains.get(key);
+    if (!frames) {
+      frames = [];
+      for (let f = 0; f < 8; f++) {
+        const g = new Int16Array(px.w * px.h);
+        for (let i = 0; i < g.length; i++) g[i] = Math.round((hash(i % px.w, Math.floor(i / px.w), f) - 0.5) * 2 * k * 255);
+        frames.push(g);
+      }
+      grains.set(key, frames);
     }
+    const g = frames[moving() ? Math.floor(t / 100) % 8 : 0], d = px.data;
+    for (let i = 0, j = 0; i < g.length; i++, j += 4) { const n = g[i]; d[j] += n; d[j + 1] += n; d[j + 2] += n; }
   });
 
-  /** @type {WeakMap<object, number[][]>} */
+  /** A palette's lookup: for each of the 16 Bayer steps and 256 brightness levels, the colour's index. @type {WeakMap<object, {pal: number[][], lut: Uint8Array}>} */
   const ramps = new WeakMap();
   passes.set("palette", (px, o) => {
-    const pal = ramps.get(o) ?? /** @type {number[][]} */ ((o.palette ?? []).map(rgb));
-    ramps.set(o, pal);
-    if (!pal.length) return;
-    const d = px.data, n = pal.length - 1, dither = o.dither === undefined ? 0 : o.dither === true ? 1 : Number(o.dither);
-    for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
-      const i = (y * px.w + x) * 4, lum = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
-      const b = dither ? ((BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5) * dither : 0;
-      const k = Math.max(0, Math.min(n, Math.round(lum * n + b))), c = pal[k];
-      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2];
+    let r = ramps.get(o);
+    if (!r) {
+      const pal = /** @type {number[][]} */ ((o.palette ?? []).map(rgb)), n = pal.length - 1;
+      const dither = o.dither === undefined ? 0 : o.dither === true ? 1 : Number(o.dither), lut = new Uint8Array(16 * 256);
+      for (let b = 0; b < 16; b++) for (let l = 0; l < 256; l++) {
+        const off = dither ? ((BAYER[b] + 0.5) / 16 - 0.5) * dither : 0;
+        lut[b * 256 + l] = Math.max(0, Math.min(n, Math.round((l / 255) * n + off)));
+      }
+      r = { pal, lut };
+      ramps.set(o, r);
+    }
+    if (r.pal.length < 2) return;
+    const d = px.data, { pal, lut } = r;
+    for (let y = 0; y < px.h; y++) {
+      const row = (y & 3) * 4;
+      for (let x = 0; x < px.w; x++) {
+        const i = (y * px.w + x) * 4, lum = (77 * d[i] + 150 * d[i + 1] + 29 * d[i + 2]) >> 8;
+        const c = pal[lut[(row + (x & 3)) * 256 + (lum > 255 ? 255 : lum)]];
+        d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2];
+      }
     }
   });
 
@@ -75,13 +96,22 @@ Cutaway.post = (function () {
     }
   });
 
+  /** @type {Map<string, Float32Array>} */
+  const vignettes = new Map();
   passes.set("vignette", (px, o) => {
-    const amt = Number(o.vignette) || 0, cx = (px.w - 1) / 2, cy = (px.h - 1) / 2, d = px.data;
-    for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
-      const dx = (x - cx) / cx, dy = (y - cy) / cy, k = 1 - amt * Math.min(1, (dx * dx + dy * dy) / 2);
-      const i = (y * px.w + x) * 4;
-      d[i] *= k; d[i + 1] *= k; d[i + 2] *= k;
+    const amt = Number(o.vignette) || 0, key = `${px.w}x${px.h}/${amt}`;
+    let f = vignettes.get(key);
+    if (!f) {
+      f = new Float32Array(px.w * px.h);
+      const cx = (px.w - 1) / 2, cy = (px.h - 1) / 2;
+      for (let y = 0; y < px.h; y++) for (let x = 0; x < px.w; x++) {
+        const dx = (x - cx) / cx, dy = (y - cy) / cy;
+        f[y * px.w + x] = 1 - amt * Math.min(1, (dx * dx + dy * dy) / 2);
+      }
+      vignettes.set(key, f);
     }
+    const d = px.data;
+    for (let i = 0, j = 0; i < f.length; i++, j += 4) { const k = f[i]; if (k < 1) { d[j] *= k; d[j + 1] *= k; d[j + 2] *= k; } }
   });
 
   passes.set("tint", (px, o) => {

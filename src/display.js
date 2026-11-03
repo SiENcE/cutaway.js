@@ -43,7 +43,9 @@ Cutaway.display = (function () {
     border = o.border ?? "#000"; maxScale = o.maxScale ?? Infinity; fixedScale = o.scale ?? 0;
     buffer = document.createElement("canvas");
     buffer.width = width; buffer.height = height;
-    ctx = /** @type {CanvasRenderingContext2D} */ (buffer.getContext("2d"));
+    // post-effects (post.js) read the picture back every frame: then keep it in memory (willReadFrequently),
+    // or every read stalls the GPU (the mouse lags). Games without post.js keep the default canvas.
+    ctx = /** @type {CanvasRenderingContext2D} */ (buffer.getContext("2d", Cutaway.post ? { willReadFrequently: true } : undefined));
     ctx.imageSmoothingEnabled = false;
 
     screen = document.createElement("canvas");
