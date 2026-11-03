@@ -32,6 +32,10 @@ Cutaway.start({
   after the title screen if there is one.
 - Other options: `border` (colour around the picture), `scale` (force one), `transition`
   (`{ out, in }` fade lengths in ms), `settings` (the player's defaults, any of the keys below), `manualClock`.
+- A game's own room changes: `Cutaway.fx.setTransition({ out, in, draw(ctx, t), ms({ from, to }) })`.
+  `draw` replaces the plain fade of a room change (script fades stay plain): `t` has `level` (0..1, how
+  covered the picture is), `dir` ("out", then "in"), `from`, `to` (the rooms) and `ms` (since this half
+  began). `ms` returns other lengths for some changes (`{ out: 400, in: 500 }` into a camera), or nothing.
 - The editor holds the game while it is open (`Cutaway.clock.held`: the logic stands, drawing goes on,
   `Cutaway.clock.advance` still steps; `Cutaway.audio.hold(true)` suspends the sound). The menus'
   own pause is `Cutaway.clock.paused`.

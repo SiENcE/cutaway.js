@@ -11,7 +11,8 @@
 // Any effect may have `if: cond` (shown while it holds) and `lamp: "id"` (follows that lamp's flicker
 // and switches off with it). Effects draw over the lit room, under the interface.
 // Screen fades: { fade: "out", ms: 400, color: "#000" } and { fade: "in" } (`wait: false` goes on meanwhile); room changes fade by
-// themselves (Cutaway.fx.transition, or `transition: false` on a goto). A dissolve ({ dissolve: ms },
+// themselves (Cutaway.fx.transition, or `transition: false` on a goto); a game may draw those itself
+// (Cutaway.fx.setTransition({ draw, ms }): told the level, the direction and the rooms). A dissolve ({ dissolve: ms },
 // or `transition: "dissolve"` on a goto) keeps the picture as it is now and lets whatever comes next
 // show through it pixel by pixel, in the order of a 4x4 Bayer pattern (16 steps, no blended colours).
 // A worn tape ({ tape: 1, ms: 400 }, 0 = a clean picture): the picture as a played-back video tape, its
@@ -41,11 +42,23 @@
  * @property {Cond} [if]
  */
 
+/**
+ * A room change as a game draws it: `level` 0..1 (how covered the picture is; it rises going out and
+ * falls coming in), `dir`, the rooms (`from` may be undefined at the start), `ms` since this half began.
+ * @typedef {{level: number, dir: "out" | "in", from: string | undefined, to: string, ms: number}} TransitionInfo
+ */
+
 Cutaway.fx = (function () {
   /** @type {{from: number, to: number, start: number, ms: number, color: string}} */
   let fadeState = { from: 0, to: 0, start: 0, ms: 0, color: "#000" };
   let active = false;
   const transitionMs = { out: 220, in: 260 };
+  /** @type {((ctx: CanvasRenderingContext2D, t: TransitionInfo) => void) | null} a game's own room change */
+  let transitionDraw = null;
+  /** @type {((t: {from: string | undefined, to: string}) => {out?: number, in?: number} | null | undefined) | null} its lengths per change */
+  let transitionLengths = null;
+  /** @type {{dir: "out" | "in", from: string | undefined, to: string, start: number} | null} the room change under way */
+  let changing = null;
   // the order in which a dissolve lets the new picture through, per pixel of each 4x4 block
   const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
   /** @type {{old: HTMLCanvasElement, temp: HTMLCanvasElement, start: number, ms: number} | null} */
@@ -343,7 +356,10 @@ Cutaway.fx = (function () {
   function renderFade(ctx) {
     renderDissolve(ctx);
     const a = level();
-    if (a > 0) {
+    if (changing && changing.dir === "in" && a <= 0) changing = null;
+    if (changing && transitionDraw) {
+      if (a > 0) transitionDraw(ctx, { level: a, dir: changing.dir, from: changing.from, to: changing.to, ms: Cutaway.clock.time - changing.start });
+    } else if (a > 0) {
       ctx.fillStyle = rgba(fadeState.color, a);
       ctx.fillRect(0, 0, Cutaway.display.width, Cutaway.display.height);
     }
@@ -361,18 +377,35 @@ Cutaway.fx = (function () {
     /** Is the screen on (fades and transitions run)? Off in the Node tools. */
     get active() { return active; },
     /**
-     * Fade out before a room change ("out") or back in after it ("in").
+     * Fade out before a room change ("out") or back in after it ("in"); `rooms` says which (a game's
+     * own transition is told them).
      * @param {"out" | "in"} dir
+     * @param {{from?: string, to: string}} [rooms]
      */
-    transition(dir) {
+    transition(dir, rooms) {
       if (!active) return Promise.resolve();
-      return dir === "out" ? fade(1, transitionMs.out) : fade(0, transitionMs.in);
+      changing = rooms ? { dir, from: rooms.from, to: rooms.to, start: Cutaway.clock.time } : null;
+      const own = rooms && transitionLengths ? transitionLengths({ from: rooms.from, to: rooms.to }) ?? {} : {};
+      return dir === "out" ? fade(1, own.out ?? transitionMs.out) : fade(0, own.in ?? transitionMs.in);
     },
-    /** Lengths of the room-change fades in ms (0 = cut). @param {{out?: number, in?: number}} o */
-    setTransition(o) { Object.assign(transitionMs, o); },
+    /**
+     * The room changes: their lengths in ms (`out`, `in`; 0 = cut), and a game's own look: `draw(ctx, t)`
+     * instead of the plain fade (t: TransitionInfo), `ms({ from, to })` other lengths for some changes.
+     * @param {{out?: number, in?: number, draw?: ((ctx: CanvasRenderingContext2D, t: TransitionInfo) => void) | null,
+     *   ms?: ((t: {from: string | undefined, to: string}) => {out?: number, in?: number} | null | undefined) | null}} o
+     */
+    setTransition(o) {
+      if (o.out !== undefined) transitionMs.out = o.out;
+      if (o.in !== undefined) transitionMs.in = o.in;
+      if (o.draw !== undefined) transitionDraw = o.draw;
+      if (o.ms !== undefined) transitionLengths = o.ms;
+    },
+    /** The room change under way, if any (for tools and tests). */
+    get changing() { return changing ? { ...changing } : null; },
     init() {
       active = true;
       Cutaway.script.action("fade", (s) => {
+        changing = null;                                    // a script's own fade is a plain one
         const v = s.fade, to = v === "in" ? 0 : v === "out" ? 1 : Number(v);
         const done = fade(Number.isFinite(to) ? to : 1, Cutaway.script.fast ? 0 : s.ms ?? 400, s.color);
         return s.wait === false ? undefined : done;

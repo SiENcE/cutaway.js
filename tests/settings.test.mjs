@@ -116,6 +116,20 @@ export default async function (t) {
       return JSON.stringify({ i, texts: c?.texts, line: c?.line, box: c && c.y + c.h === Cutaway.display.height && c.textY > c.y });
     })()`).then((s) => JSON.parse(s));
     t.ok("skin: a game draws the dialogue's choices itself; picking still works", chose.i === 1 && chose.texts?.length === 2 && chose.line === 10 && chose.box, JSON.stringify(chose));
+    // a game's own room change (fx.setTransition draw and ms): told the level, the direction and the rooms
+    const changed = await chrome.ev(`(async () => {
+      const seen = [], from = Cutaway.scene.room.id, to = from === "hall" ? "yard" : "hall";
+      Cutaway.fx.setTransition({ draw: (ctx, t) => seen.push(t), ms: (t) => t.to === to ? { out: 300, in: 300 } : null });
+      let arrived = false;
+      Cutaway.scene.go(to).then(() => { arrived = true; });
+      for (let i = 0; i < 60 && !(arrived && Cutaway.fx.level() === 0); i++) { Cutaway.clock.advance(50); await new Promise((r) => setTimeout(r, 20)); }
+      Cutaway.fx.setTransition({ draw: null, ms: null });
+      const outs = seen.filter((t) => t.dir === "out"), ins = seen.filter((t) => t.dir === "in");
+      return JSON.stringify({ outs: outs.length, ins: ins.length, rooms: seen.every((t) => t.from === from && t.to === to),
+        rises: outs.length > 1 && outs[outs.length - 1].level >= outs[0].level, long: Math.max(...outs.map((t) => t.ms)) >= 250,
+        arrived, over: Cutaway.fx.changing === null });
+    })()`).then((s) => JSON.parse(s));
+    t.ok("fx: a game draws the room change itself, told the rooms, its own lengths", changed.outs > 1 && changed.ins > 1 && changed.rooms && changed.rises && changed.long && changed.over, JSON.stringify(changed));
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

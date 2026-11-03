@@ -323,7 +323,7 @@ Cutaway.scene = (function () {
     const reveal = fade || (o.transition !== false && !dissolve && !fast && Cutaway.fx.level() > 0);
     Cutaway.events.emit("room.leave", { id: from, to: id });
     if (dissolve && !fast) Cutaway.fx.dissolve(o.dissolve ?? 800);
-    if (fade) await Cutaway.fx.transition("out");
+    if (fade) await Cutaway.fx.transition("out", { from, to: id });
     if (a) {
       a.place(id, at ? at[0] : a.x, at ? at[1] : a.y, face);
       if (o.follow !== false && id !== from) {
@@ -336,7 +336,7 @@ Cutaway.scene = (function () {
       }
     }
     const loaded = load(id, { shot: filming });
-    if (reveal) Cutaway.fx.transition("in");
+    if (reveal) Cutaway.fx.transition("in", { from, to: id });
     await loaded;
   }
 
