@@ -503,6 +503,9 @@ The page loads each layer file after the game's own data.
   `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)` (a sprite or an animation, like the skin's
   `cursor`, `cursorHot` and `buttons`: they play on the game clock), `Cutaway.inventory.setCorner("bottom")`
   (the satchel in the bottom right, its bar sliding up from the bottom edge; the hint button beside it).
+- Drawing over the room in screen space: `Cutaway.events.on("frame.screen", (ctx) => ...)` for what belongs
+  to the picture (a computer's screen, a camera's display: room changes and fades cover it),
+  `"frame.ui"` for what lies over the fade (under the subtitles, labels and cursor).
 - Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`,
   `"sequence.start"`, `"sequence.shot"`, `"sequence.end"`, ...
 

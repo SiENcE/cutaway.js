@@ -5,8 +5,10 @@
 // Before that, the opening: the audio gate (`gate`, where sound needs a click first) and the intro
 // (`intro`: a sequence, the first time only, or on every start with `introAlways`); ?act=, ?nointro and
 // ?edit leave the intro out.
-// Each frame: the room (props, actors, light, effects), the screen fade, "frame.ui" listeners (screen
-// space), the interface (subtitles, labels, cursor), the debug text, then the buffer goes to the screen.
+// Each frame: the room (props, actors, light, effects), its post-effects, "frame.screen" listeners (screen
+// space, part of the picture: a computer's screen, a camera's display; the fade covers them), the screen
+// fade, "frame.ui" listeners (screen space, over the fade), the interface (subtitles, labels, cursor), the
+// debug text, then the buffer goes to the screen.
 "use strict";
 
 /**
@@ -113,6 +115,7 @@ Cutaway.start = async function (o = {}) {
     Cutaway.scene.render(ctx);
     if (shaking) ctx.restore();
     Cutaway.post?.render(ctx);                       // the room's post-effects (post.js, if the game loads it)
+    Cutaway.events.emit("frame.screen", ctx);        // a game's screens drawn over the room: under the fade
     Cutaway.fx.renderFade(ctx);
     Cutaway.events.emit("frame.ui", ctx);
     Cutaway.ui.render(ctx);

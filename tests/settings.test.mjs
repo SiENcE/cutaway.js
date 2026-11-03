@@ -130,6 +130,17 @@ export default async function (t) {
         arrived, over: Cutaway.fx.changing === null });
     })()`).then((s) => JSON.parse(s));
     t.ok("fx: a game draws the room change itself, told the rooms, its own lengths", changed.outs > 1 && changed.ins > 1 && changed.rooms && changed.rises && changed.long && changed.over, JSON.stringify(changed));
+    // the frame's order: the game's screens under the fade, its interface over it
+    const order = await chrome.ev(`(async () => {
+      const seen = [];
+      const a = (ctx) => seen.push(["screen", Cutaway.fx.level()]), b = () => seen.push(["ui"]);
+      Cutaway.events.on("frame.screen", a); Cutaway.events.on("frame.ui", b);
+      Cutaway.clock.advance(20);
+      await new Promise((r) => setTimeout(r, 80));
+      Cutaway.events.off?.("frame.screen", a); Cutaway.events.off?.("frame.ui", b);
+      return JSON.stringify(seen.slice(0, 2).map((x) => x[0]));
+    })()`);
+    t.ok("frame: frame.screen comes before frame.ui", order === '["screen","ui"]', order);
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();
