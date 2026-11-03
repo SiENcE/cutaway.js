@@ -37,7 +37,8 @@ Cutaway.dialog = (function () {
 })();
 
 Cutaway.dialogs = (function () {
-  const LINE = 10;
+  /** Distance between the choices' lines: 10, more for a taller font. */
+  const line = () => Math.max(10, Cutaway.ui.font().lineHeight + 1);
   /** @type {{texts: string[], hover: number, pick: (i: number) => void} | null} */
   let menu = null;
   /** @type {((texts: string[], at: {dialog: string, node: string}) => number | Promise<number>) | null} */
@@ -45,14 +46,14 @@ Cutaway.dialogs = (function () {
 
   /** @returns {{x: number, y: number, h: number}} */
   function geometry() {
-    const n = menu ? menu.texts.length : 0, h = n * LINE + 6;
+    const n = menu ? menu.texts.length : 0, h = n * line() + 6;
     return { x: 8, y: Cutaway.display.height - h, h };
   }
 
   /** @param {number} x @param {number} y */
   function indexAt(x, y) {
     if (!menu) return -1;
-    const g = geometry(), i = Math.floor((y - g.y - 3) / LINE);
+    const g = geometry(), i = Math.floor((y - g.y - 3) / line());
     return y >= g.y && i >= 0 && i < menu.texts.length ? i : -1;
   }
 
@@ -118,10 +119,14 @@ Cutaway.dialogs = (function () {
     render(ctx) {
       if (!menu) return;
       const g = geometry(), f = Cutaway.ui.font(), s = Cutaway.ui.style, color = Cutaway.scene.active?.color ?? "#c8c8ff";
+      if (s.choices?.draw) {
+        s.choices.draw(ctx, { texts: menu.texts, hover: menu.hover, x: g.x, y: g.y, w: Cutaway.display.width, h: g.h, textY: g.y + 3, line: line(), color });
+        return;
+      }
       ctx.fillStyle = s.panel;
       ctx.fillRect(0, g.y, Cutaway.display.width, g.h);
       menu.texts.forEach((t, i) => {
-        f.draw(ctx, t, g.x, g.y + 3 + i * LINE, { color: i === menu?.hover ? "#ffffff" : color, outline: s.outline });
+        f.draw(ctx, t, g.x, g.y + 3 + i * line(), { color: i === menu?.hover ? "#ffffff" : color, outline: s.outline });
       });
     },
   };
@@ -131,7 +136,7 @@ Cutaway.dialogs = (function () {
     /** The open choices, if any (for tools and tests). */
     get choices() { return menu ? menu.texts.slice() : null; },
     /** Screen point of a choice line (for tools). @param {number} i */
-    choicePoint(i) { const g = geometry(); return { x: g.x + 10, y: g.y + 3 + i * LINE + 3 }; },
+    choicePoint(i) { const g = geometry(); return { x: g.x + 10, y: g.y + 3 + i * line() + 3 }; },
     /** Pick a choice by index (for tools and tests). @param {number} i */
     pick(i) { menu?.pick(i); },
     /**

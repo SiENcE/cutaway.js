@@ -41,6 +41,10 @@
  *   draw?: (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, o: FrameLook) => void}} [frame]
  *   the menu's frame: its bevel (light, face, dark), the fill inside, the heading's plate, the fittings at the corners
  *   (rivet), the band under the chosen row; `draw`: the game draws every frame itself (pages, plates, cards, buttons)
+ * @property {{font?: string, format?: (text: string) => string}} [label]  the hover labels (and a finger's): their own
+ *   font, and how a name is shown (upper case, in brackets)
+ * @property {{draw: (ctx: CanvasRenderingContext2D, c: ChoicesLook) => void}} [choices]  the game draws the dialogue's
+ *   choices itself (the panel and the lines); the dialogue still places them and takes the clicks
  * @property {{draw: (ctx: CanvasRenderingContext2D, c: CardLook) => void}} [card]  the game draws the full-screen cards
  *   itself (act titles, the end); the menu still places the buttons and takes the clicks
  */
@@ -58,6 +62,13 @@
  *   textY: number, buttonsY: number, buttonRow: number}} CardLook
  */
 /**
+ * The dialogue's choices to draw: their texts, the one under the pointer (-1: none), the panel's box (full
+ * width, at the bottom), where the first line's text starts (`x`, `textY`) and the distance between lines
+ * (`line`); the speaker's colour (`color`). Clicks count by line, as placed.
+ * @typedef {{texts: string[], hover: number, x: number, y: number, w: number, h: number, textY: number, line: number,
+ *   color: string}} ChoicesLook
+ */
+/**
  * A part of the interface drawn over the room.
  * @typedef {object} UiLayer
  * @property {number} z               higher layers get clicks first and draw last
@@ -70,7 +81,7 @@
 /** @typedef {{id: string, def: HotspotDef, poly: {x: number, y: number}[], actor?: string}} Hotspot */
 
 Cutaway.ui = (function () {
-  /** @type {Required<Omit<Skin, "cursor" | "cursorHot" | "cursorAnchor" | "font" | "buttons" | "frame" | "card">> & Skin} */
+  /** @type {Required<Omit<Skin, "cursor" | "cursorHot" | "cursorAnchor" | "font" | "buttons" | "frame" | "card" | "label" | "choices">> & Skin} */
   const skin = { labelColor: "#ffffff", outline: "#1a1426", accent: "#ffe14a", panel: "rgba(20, 16, 32, 0.78)",
     lineWidth: 200, msPerChar: 55, minLineMs: 1400, touchReach: 7 };
 
@@ -107,6 +118,10 @@ Cutaway.ui = (function () {
   const iconCache = {};
 
   function font() { return Cutaway.font.get(skin.font); }
+  /** The hover labels' font (the skin's `label.font`, else the text's). */
+  function labelFont() { return skin.label?.font ? Cutaway.font.get(skin.label.font) : font(); }
+  /** A hover label as shown (the skin's `label.format`: "[ DECK ]"). @param {string} t */
+  function labelText(t) { return skin.label?.format ? skin.label.format(t) : t; }
 
   /**
    * Show a line above an actor until its time is up or the player clicks.
@@ -446,9 +461,9 @@ Cutaway.ui = (function () {
     if (hud) for (const l of layers.slice().sort((a, b) => a.z - b.z)) if (!cutscene || l.modal) l.render?.(ctx);
     if (cutscene) return;
     if (touchLabel && pointerType !== "mouse" && Cutaway.clock.time < touchLabel.until && !line) {
-      const lw = f.measure(touchLabel.text);           // above the finger, where it can be seen
+      const lf = labelFont(), text = labelText(touchLabel.text), lw = lf.measure(text);   // above the finger, where it can be seen
       const lx = Cutaway.util.clamp(touchLabel.x - Math.floor(lw / 2), 2, W - lw - 2), ly = Cutaway.util.clamp(touchLabel.y - 22, 2, Cutaway.display.height - 10);
-      f.draw(ctx, touchLabel.text, lx, ly, { color: skin.labelColor, outline: skin.outline });
+      lf.draw(ctx, text, lx, ly, { color: skin.labelColor, outline: skin.outline });
     }
     if (!visible || !Cutaway.input.inside || pointerType !== "mouse") return;
     const mx = Cutaway.input.x, my = Cutaway.input.y;
@@ -456,11 +471,11 @@ Cutaway.ui = (function () {
     if (held && hover) label = Cutaway.i18n.t("@cutaway.useWith").replace("{item}", itemName(held)).replace("{target}", label ?? "");
     else if (held && !layerLabel) label = itemName(held);
     if (label && !(line && !held)) {
-      const lw = f.measure(label);
+      const lf = labelFont(), text = labelText(label), lw = lf.measure(text);
       let lx = mx + 10, ly = my - 3;
       if (lx + lw > W - 2) lx = mx - 4 - lw;
       ly = Cutaway.util.clamp(ly, 2, Cutaway.display.height - 10);
-      f.draw(ctx, label, lx, ly, { color: skin.labelColor, outline: skin.outline });
+      lf.draw(ctx, text, lx, ly, { color: skin.labelColor, outline: skin.outline });
     }
     if (held) {
       const icon = Cutaway.item.get(held)?.icon;

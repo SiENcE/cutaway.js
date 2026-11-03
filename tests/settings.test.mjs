@@ -102,6 +102,20 @@ export default async function (t) {
     })()`).then((s) => JSON.parse(s));
     t.ok("skin: a game draws the menu's frames (page, plate) and the cards itself", JSON.stringify(drawn.kinds) === '["page","plate"]' && drawn.title === "A title"
       && drawn.lines[0] === "A text." && drawn.buttons.length === 2 && drawn.ms >= 490 && drawn.layout, JSON.stringify(drawn));
+    // a game's own choice panel (the skin's choices.draw): told the texts, the box and the line distance; clicks still pick
+    const chose = await chrome.ev(`(async () => {
+      const seen = [];
+      Cutaway.ui.skin({ choices: { draw: (ctx, c) => seen.push(c) } });
+      const picked = Cutaway.dialogs.choose(["First.", "Second."]);
+      Cutaway.clock.advance(50);
+      await new Promise((r) => setTimeout(r, 120));
+      Cutaway.dialogs.pick(1);
+      const i = await picked;
+      Cutaway.ui.skin({ choices: undefined });
+      const c = seen[seen.length - 1];
+      return JSON.stringify({ i, texts: c?.texts, line: c?.line, box: c && c.y + c.h === Cutaway.display.height && c.textY > c.y });
+    })()`).then((s) => JSON.parse(s));
+    t.ok("skin: a game draws the dialogue's choices itself; picking still works", chose.i === 1 && chose.texts?.length === 2 && chose.line === 10 && chose.box, JSON.stringify(chose));
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

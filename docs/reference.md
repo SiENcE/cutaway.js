@@ -481,7 +481,7 @@ The page loads each layer file after the game's own data.
   `"setting:violence=bars"`. `Cutaway.settings.get(key)`.
 - `Cutaway.scene.boxes()`: what can be clicked now, as boxes on the screen (`{ id, actor, name, box: [x,
   y, w, h] }`), for a game's own overlay layer (brackets round people and things).
-- The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons, frame, card })`;
+- The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons, frame, card, label, choices })`;
   `frame` colours the menu's frame: `{ light, face, dark }` (the bevel), `fill` (inside), `plate` (the
   heading's), `rivet`, `rivetLight`, `rivetDark` (the corner fittings), `hover` (the chosen row's band).
   A game with a look of its own gives `frame.draw(ctx, x, y, w, h, o)` and draws every frame itself;
@@ -490,6 +490,11 @@ The page loads each layer file after the game's own data.
   the full-screen cards (act titles, the end) instead of the built-in look: `c` has `title`, `lines`
   (wrapped), `buttons`, `hover`, `ms` (how long it has shown, game time: for typing it on), `titleY`,
   `textY`, `buttonsY` and `buttonRow` (where the menu takes the clicks: buttons centred, one per row).
+  `label: { font, format }` gives the hover labels (and a finger's) a font of their own and a way to show a
+  name (`format: (t) => "[ " + t.toUpperCase() + " ]"`). `choices: { draw(ctx, c) }` draws the dialogue's
+  choices: `c` has `texts`, `hover`, the panel's box (`x`, `y`, `w`, `h`: full width, at the bottom),
+  `textY` (the first line's top), `line` (the distance between lines: 10, or the font's line height + 1
+  if that is more) and `color` (the speaker's); clicks and the keys 1–9 still pick by line.
   `Cutaway.menu.frame(ctx, x, y, w, h, { small, fill })` draws one for a game's own pages,
   `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)` (a sprite or an animation, like the skin's
   `cursor`, `cursorHot` and `buttons`: they play on the game clock), `Cutaway.inventory.setCorner("bottom")`
