@@ -57,6 +57,10 @@ export default async function (t) {
   t.ok("19:00: Bolt comes into the camera's view", T.now.text === "19:00" && C.actors.get("visitor").room === "cam");
   const bx = C.scene.boxes(), v = bx.find((b) => b.actor === "visitor");
   t.ok("boxes: the visitor and the monitor's off switch, on the screen, named", !!v && v.box[2] > 0 && v.name === "Visitor" && bx.some((b) => b.id === "off" && b.name === "monitor off"), JSON.stringify(bx));
+  const vis = C.actors.get("visitor");
+  C.time.routines.get("visitor"); vis.state = "idle";
+  C.clock.advance?.(0);
+  t.ok("a scripted walk clears the background mark", (vis.walkTo(120, 150), vis.ambient === false));
   t.ok("the moment plays while its room is watched", S.test("seen:visit") && S.test("moment:visit") && S.flag("saw_visit") === true);
   await run([{ time: "next" }]);
   t.ok("20:00: Bolt has gone (no entry: no room)", C.actors.get("visitor").room === null);

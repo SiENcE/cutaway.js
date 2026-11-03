@@ -93,7 +93,7 @@ Cutaway.debug = (function () {
   async function settle(maxMs = 120000) {
     const start = Cutaway.clock.time;
     const idle = () => !Cutaway.script.busy && !Cutaway.ui.line && !Cutaway.tween.count &&
-      Cutaway.scene.actorsHere().every((a) => a.state !== "walk" && !a.onceDone);
+      Cutaway.scene.actorsHere().every((a) => (a.state !== "walk" || a.ambient) && !a.onceDone);   // routines' walks are background
     for (let quiet = 0; quiet < 3 && Cutaway.clock.time - start < maxMs;) {
       Cutaway.clock.advance(100);
       if (Cutaway.ui.line?.waiting) Cutaway.ui.skip();     // the player's setting: lines wait for a click

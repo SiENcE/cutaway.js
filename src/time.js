@@ -11,7 +11,8 @@
 // Routines put actors where they are at a time: Cutaway.routine("kessler", [{ day: 1, from: "22:00",
 // to: "22:30", room: "cam03", at: [120, 140], face: "se", path: [[120, 140], [160, 120]] }, ...]);
 // outside every entry the actor is in no room. An entry may have an `if`. A `path` is walked round and
-// round while the actor is in the room shown (only for the look: positions aren't part of the state).
+// round while the actor is in the room shown (only for the look: positions aren't part of the state);
+// it pauses while a script runs, and nobody waits for it (Cutaway.debug.settle).
 //
 // Moments are scenes in a room within a window of time: Cutaway.moment("ring", { room: "cam04", day: 1,
 // from: "22:30", to: "22:45", play: [...], unseen: [...] }). Once the time is in the window, the moment
@@ -170,7 +171,8 @@ Cutaway.time = (function () {
   function update(dt) {
     void dt;
     const room = Cutaway.scene.room?.id;
-    if (!room || Cutaway.script.fast) return;
+    // a running script has the scene: nobody starts a new leg (a scripted walk must arrive)
+    if (!room || Cutaway.script.fast || Cutaway.script.busy) return;
     for (const [id, list] of routines) {
       const a = Cutaway.actors.get(id), e = list[slotOf(list)];
       if (!a || a.room !== room || !e?.path?.length || a.state === "walk") continue;
@@ -178,6 +180,7 @@ Cutaway.time = (function () {
       const i = ((legs.get(id) ?? 0) + 1) % e.path.length, [x, y] = e.path[i];
       legs.set(id, i);
       a.walkTo(x, y, false, true);
+      a.ambient = true;                             // background life: settle() and the tools don't wait for it
     }
   }
   Cutaway.clock.onUpdate(update);

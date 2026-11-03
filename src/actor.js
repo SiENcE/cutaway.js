@@ -78,6 +78,8 @@ Cutaway.actor = (function () {
       this.y = def.at?.[1] ?? 0;
       /** @type {Facing} */
       this.facing = def.facing ?? "right";
+      /** walking round a routine's path (time.js): background life, nobody waits for it */
+      this.ambient = false;
       /** @type {string} "idle", "walk", "talk" or any other costume key played with playOnce */
       this.state = "idle";
       /** @type {(() => void) | null} */
@@ -139,6 +141,7 @@ Cutaway.actor = (function () {
      */
     walkTo(x, y, run = false, free = false) {
       this.running = run;
+      this.ambient = false;                          // a walk of its own (a script's, a click's); time.js marks its routines' walks
       const map = !free && this.room === Cutaway.scene.room?.id ? Cutaway.scene.walkMap : null;
       this.path = map ? map.path({ x: this.x, y: this.y }, { x, y }) : [{ x, y }];
       for (const done of this.arrived.splice(0)) done();      // a new walk ends the previous one
