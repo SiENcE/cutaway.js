@@ -103,7 +103,9 @@ Cutaway.ui = (function () {
     finishLine();
     const ms = Math.max(lineMs(text), o.minMs ?? 0);
     return new Promise((done) => {
-      line = { actor, lines: font().wrap(text, skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
+      // a room with `label: true` puts the speaker's name before the line ("Kessler: ...")
+      const shown = Cutaway.scene.room?.label && actor.name ? `${Cutaway.i18n.t(actor.name)}: ${text}` : text;
+      line = { actor, lines: font().wrap(shown, skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
       if (actor.state === "idle") actor.setState("talk");
       Cutaway.events.emit("say", { actor: actor.id, text, id: o.id, ms, source: o.source ?? text });
     });
@@ -148,6 +150,7 @@ Cutaway.ui = (function () {
   async function approach(h) {
     const a = Cutaway.scene.active, seq = ++clickSeq;
     if (!a) return false;
+    if (Cutaway.scene.room?.observe) return true;     // a watched room: nobody walks there
     let [x, y] = h.def.walkTo ?? [0, 0];
     if (!h.def.walkTo) {                               // the walkable point nearest to its bottom middle
       const xs = h.poly.map((p) => p.x), bottom = Math.max(...h.poly.map((p) => p.y));
@@ -258,7 +261,7 @@ Cutaway.ui = (function () {
     }
     if (h) { interact(h.id, p.button === 2 ? "look" : "act"); return; }
     const a = Cutaway.scene.active;
-    if (a && p.button === 0) { clickSeq++; a.walkTo(w.x, w.y, running); }
+    if (a && p.button === 0 && !Cutaway.scene.room?.observe) { clickSeq++; a.walkTo(w.x, w.y, running); }
   }
 
   /** @param {number} dt */
@@ -393,7 +396,9 @@ Cutaway.ui = (function () {
     if (line) {
       const lh = f.lineHeight, n = line.lines.length;
       let x = W / 2, y = 6;
-      if (line.actor && line.actor.room === Cutaway.scene.room?.id) {   // a voice from another room: at the top
+      const at = Cutaway.scene.room?.lines;          // a room may show its lines in a bar ("top", "bottom") instead of over heads
+      if (at === "bottom") y = Cutaway.display.height - n * lh - 6;
+      else if (at !== "top" && line.actor && line.actor.room === Cutaway.scene.room?.id) {   // a voice from another room: at the top
         const s = Cutaway.scene.toScreen(line.actor.x, line.actor.y);
         x = s.x; y = s.y - line.actor.height() - 4 - n * lh;
       }

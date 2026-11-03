@@ -1,7 +1,8 @@
 // The solver: a breadth-first search over game states, driven by the engine's own interaction code
 // in Node (instant speech and walking). A state is a save snapshot; a move is one player action:
 //   act (default action on a hotspot or actor), look, with (item on a hotspot or actor),
-//   combine (item on item), ilook (look at an item), switch (to another party member).
+//   combine (item on item), ilook (look at an item), switch (to another party member), wait (game
+//   time, time.js: on to the next change).
 // Dialogue choices branch: a move that opens choices is replayed once per choice (choice points
 // already seen with the same state and node are skipped, so dialogue loops end).
 // With `full`, the game's hints (Cutaway.hints) are checked in every state that can still be won: one
@@ -51,6 +52,7 @@ export function describe(m) {
   if (m.kind === "combine") return `combine ${m.a} + ${m.b}${c}`;
   if (m.kind === "ilook") return `look at ${m.item}${c}`;
   if (m.kind === "switch") return `switch to ${m.id}`;
+  if (m.kind === "wait") return "wait";
   return `${m.kind} ${m.id}${c}`;
 }
 
@@ -108,6 +110,8 @@ export async function makeSolver(g, opts = {}) {
       }
     }
     for (const p of C.party.playable()) if (p !== snap.active) out.push({ kind: "switch", id: p });
+    // game time (time.js): waiting goes on to the next change (a routine's or a moment's start or end)
+    if (C.time?.used && C.time.next() !== null) out.push({ kind: "wait" });
     return out;
   }
 
@@ -119,6 +123,7 @@ export async function makeSolver(g, opts = {}) {
     if (m.kind === "combine") return C.inventory.combine(m.a, m.b);
     if (m.kind === "ilook") return C.inventory.look(m.item);
     if (m.kind === "switch") return C.party.switchTo(m.id);
+    if (m.kind === "wait") return C.script.run([{ time: "next" }], { path: "wait" });
     throw new Error("unknown move " + m.kind);
   }
 

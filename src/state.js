@@ -2,8 +2,8 @@
 // conditions that scripts test. Everything here is plain JSON, so saves are a snapshot of it.
 //
 // Conditions (strings, or arrays of them meaning "all of"):
-//   "flag"  "!flag"  "flag=3"  "has:item"  "visited:room"  "state:obj=value"  "is:actor"
-//   "at:actor=room"  "hidden:obj"     and objects { and: [...] }, { or: [...] }, { not: cond }
+//   "flag"  "!flag"  "flag=3"  "n>=80"  "n<3"  "n>0"  "n<=2"  "n!=a"  "time>=22:00"  "has:item"  "visited:room"  "state:obj=value"  "is:actor"
+//   "at:actor=room"  "hidden:obj"  "moment:id"  "seen:id"  "setting:key=value"     and objects { and: [...] }, { or: [...] }, { not: cond }
 // Object ids are "room/id"; a bare id means the current room.
 // Inventories are per actor, or one shared bag for a group (Cutaway.state.share(["a", "b"]): the
 // party's backpack); "has:item" then asks the bag of whoever is playing. A member of the group can carry
@@ -52,6 +52,21 @@ Cutaway.state = (function () {
     }
     const str = c.trim();
     if (str.startsWith("!")) return !test(str.slice(1));
+    const cmp = compare(str);
+    if (cmp) {
+      // a flag against a number (names never hold a colon, so "state:door=open" isn't one)
+      const v = number(cmp.value);
+      // the game time's own flags read as the time module has them (day 1 and the day's start before they are set)
+      const n = cmp.name === "time" && Cutaway.time ? Cutaway.time.now.minutes : cmp.name === "day" && Cutaway.time ? Cutaway.time.now.day : Number(s.flags[cmp.name]) || 0;
+      switch (cmp.op) {
+        case "=": return n === v;
+        case ">=": return n >= v;
+        case "<=": return n <= v;
+        case ">": return n > v;
+        case "<": return n < v;
+        case "!=": return String(s.flags[cmp.name] ?? "") !== cmp.value;
+      }
+    }
     const colon = str.indexOf(":");
     if (colon < 0) {
       const eq = str.indexOf("=");
@@ -66,8 +81,30 @@ Cutaway.state = (function () {
       case "hidden": return isHidden(arg);
       case "state": { const [id, v] = arg.split("="); return objState(id) === v; }
       case "at": { const [who, room] = arg.split("="); return Cutaway.actors.get(who)?.room === room; }
+      case "setting": { const [k, v] = arg.split("="); return String(Cutaway.settings?.get(k) ?? "") === v; }
+      case "moment": return !!s.flags[`~moment.${arg}`];
+      case "seen": return s.flags[`~moment.${arg}`] === "seen";
     }
     throw new Error(`Cutaway: unknown condition "${str}"`);
+  }
+
+  /**
+   * A flag compared with a number: "chits>=80", "day<3", "tries>2", "n<=0"; "x!=a" compares as text,
+   * like "=". Plain "flag=3" isn't matched here (it keeps comparing as text). Spaces round the operator
+   * are allowed.
+   * @param {string} str @returns {{name: string, op: string, value: string} | null}
+   */
+  function compare(str) {
+    const m = /^([^<>!=\s:]+)\s*(>=|<=|!=|>|<|=)\s*(.*)$/.exec(str);
+    if (!m) return null;
+    const value = m[3].trim();
+    // a plain "=" is a number comparison only against a clock time ("time=22:00") or for "day"; else it stays text
+    if (m[2] === "=" && !/^\d{1,2}:\d{2}$/.test(value) && m[1] !== "day" && m[1] !== "time") return null;
+    return { name: m[1], op: m[2], value };
+  }
+  /** A comparison's value as a number: a clock time ("22:00") as minutes on the game day. @param {string} v */
+  function number(v) {
+    return /^\d{1,2}:\d{2}$/.test(v) ? (Cutaway.time ? Cutaway.time.parse(v) : Number(v.slice(0, v.indexOf(":"))) * 60 + Number(v.slice(v.indexOf(":") + 1))) : Number(v);
   }
 
   /** @param {string} id */

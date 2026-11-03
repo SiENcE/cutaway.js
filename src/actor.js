@@ -2,6 +2,9 @@
 // A costume names one animation per state. A plain name is a side view facing right; the engine
 // mirrors it for left. Per-direction animations ({ right, left, up, down }) are used when present:
 // with `up` and `down` walks, an actor going mostly up or down the screen shows its back or front.
+// Isometric rooms use the four diagonals instead ({ se, ne, sw, nw }: a front three-quarter view
+// walking down-right, a back three-quarter view walking up-right, each mirrored for the other side):
+// a costume whose walk has any of them turns the actor to the diagonal of every step.
 // Actors walk along the room's walk map at a per-axis speed (slower up and down the screen, which
 // reads as depth), keep their walk cycle running between waypoints and are drawn on whole pixels.
 // An actor without a costume is only a voice (someone on the phone, a megaphone far away): it speaks
@@ -9,9 +12,9 @@
 "use strict";
 
 /**
- * @typedef {string | {right?: string, left?: string, up?: string, down?: string}} CostumeEntry
+ * @typedef {string | {right?: string, left?: string, up?: string, down?: string, se?: string, ne?: string, sw?: string, nw?: string}} CostumeEntry
  * @typedef {{idle: CostumeEntry, walk?: CostumeEntry, talk?: CostumeEntry, [key: string]: CostumeEntry | undefined}} Costume
- * @typedef {"right" | "left" | "up" | "down"} Facing
+ * @typedef {"right" | "left" | "up" | "down" | "se" | "ne" | "sw" | "nw"} Facing
  */
 /**
  * @typedef {object} ActorDef
@@ -33,6 +36,30 @@
  * @property {({if: Cond} & Partial<Costume>)[]} [poses]  costume entries that apply while a condition holds
  *                                 (the first match wins), e.g. { if: "on_sofa", idle: "cody_sit_r" }
  */
+
+/** Does a costume entry have diagonal (isometric) views? @param {CostumeEntry | undefined} e */
+function diagonal(e) { return !!e && typeof e === "object" && !!(e.se || e.ne || e.sw || e.nw); }
+/** A facing as one of the diagonals (left and right face down the screen, up and down to the right). @param {Facing} f @returns {"se" | "ne" | "sw" | "nw"} */
+function toDiagonal(f) {
+  switch (f) { case "left": return "sw"; case "up": return "ne"; case "right": case "down": return "se"; default: return f; }
+}
+/** A diagonal facing as the side view's facing (for costumes without diagonal views). @param {Facing} f */
+function fromDiagonal(f) { return f === "se" || f === "ne" ? "right" : f === "sw" || f === "nw" ? "left" : f; }
+/**
+ * The view for a diagonal facing: its own animation, else the mirrored one of the other side (se and
+ * sw, ne and nw), else the other row's (a costume with only a front view uses it walking away too).
+ * @param {Exclude<CostumeEntry, string>} e @param {"se" | "ne" | "sw" | "nw"} f
+ */
+function lookDiagonal(e, f) {
+  const mirror = /** @type {"se" | "ne" | "sw" | "nw"} */ ((f[0]) + (f[1] === "e" ? "w" : "e"));
+  const other = /** @type {"se" | "ne" | "sw" | "nw"} */ ((f[0] === "s" ? "n" : "s") + f[1]);
+  const otherMirror = /** @type {"se" | "ne" | "sw" | "nw"} */ ((f[0] === "s" ? "n" : "s") + (f[1] === "e" ? "w" : "e"));
+  for (const [k, flip] of /** @type {[typeof f, boolean][]} */ ([[f, false], [mirror, true], [other, false], [otherMirror, true]])) {
+    const a = e[k];
+    if (a) return { anim: a, flip };
+  }
+  return { anim: "", flip: false };
+}
 
 /** Define an actor: `Cutaway.actor("mikey", { costume: { idle: "mikey_idle_r", walk: "mikey_walk_r" } })`. */
 Cutaway.actor = (function () {
@@ -137,6 +164,14 @@ Cutaway.actor = (function () {
      */
     heading(dx, dy) {
       const w = this.costume.walk, v = dy < 0 ? "up" : "down";
+      if (diagonal(w)) {
+        // an isometric costume: the diagonal of the step (a flat step keeps the side it faced)
+        if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return this.facing;
+        const was = toDiagonal(this.facing);
+        const ns = Math.abs(dy) < 1e-6 ? was[0] : dy < 0 ? "n" : "s";
+        const ew = Math.abs(dx) < 1e-6 ? was[1] : dx > 0 ? "e" : "w";
+        return /** @type {Facing} */ (ns + ew);
+      }
       if (Math.abs(dy) > Math.abs(dx) && w && typeof w === "object" && w[v]) return v;
       return Math.abs(dx) >= 1 ? (dx > 0 ? "right" : "left") : this.facing;
     }
@@ -176,8 +211,9 @@ Cutaway.actor = (function () {
     look() {
       const pose = this.def.poses?.find((p) => p[this.state] !== undefined && Cutaway.state.test(p.if));
       const entry = pose?.[this.state] ?? this.costume[this.state] ?? this.costume.idle;
-      if (typeof entry === "string") return { anim: entry, flip: this.facing === "left" };
-      const f = this.facing;
+      if (typeof entry === "string") return { anim: entry, flip: this.facing === "left" || this.facing === "sw" || this.facing === "nw" };
+      if (diagonal(entry)) return lookDiagonal(entry, toDiagonal(this.facing));
+      const f = /** @type {"right" | "left" | "up" | "down"} */ (fromDiagonal(this.facing));
       if (entry[f]) return { anim: /** @type {string} */ (entry[f]), flip: false };
       if (f === "left" && entry.right) return { anim: entry.right, flip: true };
       if (f === "right" && entry.left) return { anim: entry.left, flip: true };

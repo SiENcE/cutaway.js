@@ -190,19 +190,29 @@ Cutaway.menu = (function () {
       get: () => S.values[k], pick: (/** @type {any} */ v) => S.set({ [k]: v }) });
     /** @param {keyof Settings} k @param {string} label */
     const onOff = (k, label) => opt(k, label, [[false, "off"], [true, "on"]]);
+    // the game's own settings (Cutaway.settings.define): on the page they name, or on pages of their own
+    const T = (/** @type {string} */ s) => Cutaway.i18n.t(s);
+    const mine = (/** @type {string} */ page) => S.defined.filter((d) => d.page === page).map((d) => /** @type {Entry} */ ({
+      label: T(d.label), options: d.options.map(([v, l]) => /** @type {[any, string]} */ ([v, T(l)])),
+      get: () => S.get(d.key), pick: (/** @type {any} */ v) => S.set(/** @type {any} */ ({ [d.key]: v })) }));
+    const own = [...new Set(S.defined.map((d) => d.page))].filter((p) => !["sound", "text", "picture", "controls"].includes(p)).map((p) => {
+      const heading = T(S.defined.find((d) => d.page === p)?.pageLabel ?? p);
+      return /** @type {Entry} */ ({ label: heading, more: true, run: () => show(heading, [...mine(p), back(here)], here, o) });
+    });
     show(t("settings"), [
       sub("sound", [vol("master", "volume"), vol("music", "music"), vol("sfx", "sfx"), vol("voice", "voice"),
-        onOff("voices", "voices"), onOff("muteUnfocused", "muteUnfocused")]),
+        onOff("voices", "voices"), onOff("muteUnfocused", "muteUnfocused"), ...mine("sound")]),
       sub("text", [opt("textSpeed", "textSpeed", [[2, "verySlow"], [1.5, "slow"], [1, "normal"], [0.7, "fast"]]),
-        opt("advance", "advance", [["auto", "auto"], ["click", "onClick"]]), onOff("textBox", "textBox")]),
+        opt("advance", "advance", [["auto", "auto"], ["click", "onClick"]]), onOff("textBox", "textBox"), ...mine("text")]),
       sub("picture", [
         { label: t("fullscreen"), text: () => t(typeof document !== "undefined" && document.fullscreenElement ? "on" : "off"), run: () => Cutaway.display.toggleFullscreen() },
         opt("fit", "fit", [["sharp", "sharp"], ["fill", "fill"]]),
         opt("crt", "crt", [["off", "off"], ["scanlines", "scanlines"], ["crt", "tube"]]),
-        onOff("motion", "motion")]),
+        onOff("motion", "motion"), ...mine("picture")]),
       sub("controls", [opt("swapButtons", "swap", [[false, "normal"], [true, "swapped"]]), onOff("alwaysRun", "alwaysRun"),
         opt("holdMs", "hold", [[300, "short"], [450, "normal"], [700, "long"]]),
-        opt("buttons", "buttons", [[false, "auto"], [true, "always"]]), onOff("hintButton", "hintButton")]),
+        opt("buttons", "buttons", [[false, "auto"], [true, "always"]]), onOff("hintButton", "hintButton"), ...mine("controls")]),
+      ...own,
       { label: t("defaults"), run: () => S.reset() },
       back(from),
     ], from, o);

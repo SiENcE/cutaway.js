@@ -58,6 +58,23 @@ Cutaway.room("hall", {
 - `foreground`: images drawn over everything (`[{ image, at, depth }]`). `color`: a fill under the background.
 - A `size` taller than the screen lets the camera move up and down too (a tilt in a sequence).
 - `scale`: actors scale with depth, from `far: [y, scale]` to `near: [y, scale]`.
+- `post: [...]`: post-effects over the room's picture (load `post.js` after `fx.js`), in order, before
+  fades and the interface: `{ noise: 0.06 }` (grain, new every 100 ms), `{ palette: ["#030a0a", ...],
+  dither: true }` (every pixel by its brightness onto a ramp; `dither` 0..1 an ordered 4x4 pattern),
+  `{ scanlines: 2, amount: 0.18 }`, `{ roll: { speed: 30, height: 10, amount: 0.12 } }` (a band of
+  light rolling down), `{ vignette: 0.35 }`, `{ tint: "#40ff80", amount: 0.2 }`. Pure functions of the
+  clock (screenshots repeat); with the setting "motion" off the grain and the band stand still. A game's
+  own: `Cutaway.post.add("name", (px, opts, t) => { ... })` (`px`: `{ data, w, h }`, RGBA, changed in place).
+- `mic: { at: [x, y], clear: 40, lost: 160, noise: 0 }`: lines heard through a microphone. An actor of
+  the room further than `clear` from it loses words (runs of them show as "…"), all of them at `lost`;
+  `noise` loses more everywhere. Which words go is fixed per line. Lines from outside (the one played,
+  watching) come through whole.
+- `lines: "top"` or `"bottom"`: every line shows in a bar there instead of over the speaker; `label:
+  true` puts the speaker's name before it ("Kessler: ...").
+- `observe: true`: a watched room (a camera's view, a window seen from afar). The one played isn't in
+  it: going there (a `goto` or an exit) leaves them where they are, and clicks never walk. Hotspots and
+  the actors in it are clicked as usual; the played actor's lines come from off-screen (at the top).
+  Leave it with an exit or a `goto` back. It needs no walk area.
 - The shapes (walk areas, holes, hotspot outlines, walk-to points, baselines, lamps, effect areas) are
   best drawn in the editor's Room tab: it writes `rooms/<id>.geo.js` (`Cutaway.room.geometry`), loaded
   after the room.
@@ -91,6 +108,7 @@ in front).
 | `id`, `image` | the sprite or animation |
 | `at`, `anchor` | where it stands; the anchor inside the sprite (default bottom centre; `[0, 0]`: top left) |
 | `baseline` | the sorting y (default `at[1]`; 0: always behind) |
+| `front: [x1, y1, x2, y2, ...]` | isometric rooms: the front edge of the prop's footprint, a line of room points (a box seen from above: its two front edges, a V). An actor draws in front of the prop when its feet are below the line where they stand (beyond the line's ends, the end's y), so it walks behind a cart and in front of it along the slope. The `baseline` still orders the props among themselves. In room coordinates (a moved prop's line stays). F9 draws it |
 | `states: { open: "box_open" }` | an image per object state (`{ state: "box", value: "open" }`) |
 | `flip`, `hidden` | |
 | `scroll: -40` | px per second along x (negative: to the left); the image repeats across the room, so scenery passes by (a ride, clouds). Layers at different speeds give parallax. The scene's clock starts when the room loads, so a scrolling layer stands where it is drawn at first |
@@ -117,6 +135,11 @@ Cutaway.actor("pip", {
 - A costume entry is a side view facing right (mirrored for left), or per direction:
   `{ right, left, up, down }`. With `up` and `down` walks, an actor walking mostly up or down the
   screen shows its back or front.
+- Isometric rooms use the diagonals: `{ se, ne }` (a front three-quarter view walking down-right, a
+  back three-quarter view walking up-right), mirrored for `sw` and `nw` (or give those too). A costume
+  whose `walk` has a diagonal turns the actor to the diagonal of every step (a level step keeps the
+  row it faced); `facing` and `{ face }` take `se ne sw nw` (and `left right up down`, shown as
+  `sw se ne se`). A view missing for one row uses the other's.
 - Extra costume keys are one-shot animations: `{ anim: "pip:reach" }`.
 - An actor without a `costume` is a voice only (someone on the phone, a megaphone far away): it can
   `say` lines but is never drawn, so don't place it in a room.
@@ -228,12 +251,52 @@ Positions may be fractional while moving; drawing is always in whole pixels.
 | condition | true when |
 |---|---|
 | `"flag"`, `"!flag"`, `"count=3"` | a flag is set (not set, has that value) |
+| `"chits>=80"`, `"day<3"`, `"tries>2"`, `"n<=0"`, `"mood!=sad"` | a flag compared with a number (an unset flag is 0; `!=` compares as text, like `=`) |
+| `"time>=22:00"`, `"moment:ring"`, `"seen:ring"` | game time ("Game time, routines and moments") |
+| `"setting:violence=bars"` | a player's setting (a game's own, `Cutaway.settings.define`, or the engine's) |
 | `"has:key"` | the played actor's bag holds it |
 | `"visited:yard"` | the room was entered |
 | `"is:bolt"` | bolt is the one played |
 | `"at:bolt=yard"` | bolt is in that room |
 | `"state:box=open"`, `"hidden:box"` | an object's state, or hidden |
 | `["a", "b"]`, `{ and: [...] }`, `{ or: [...] }`, `{ not: c }` | combinations |
+
+## Game time, routines and moments
+
+A day and a time of day, separate from the frame clock, saved with the game (the flags `day` and `time`,
+in minutes). Load `time.js` (after `script.js`). It only moves when a script moves it:
+
+```js
+Cutaway.time.configure({ start: "18:00", end: "04:00" });   // a game day from 18:00; `next` stops at its end
+// steps: { time: "+15" } on by 15 minutes; { time: "22:00" } on to 22:00 (never back);
+//        { time: "next" } on to the next change; { time: "18:00", day: "+1" } the next day; { time: "21:30", day: 1 } set both
+Cutaway.routine("kessler", [                                // where an actor is when (outside every entry: in no room)
+  { day: 1, from: "22:00", to: "22:15", room: "cam03", at: [120, 140], face: "se", path: [[120, 140], [160, 120]] },
+  { day: 1, from: "22:30", to: "22:50", room: "cam04", at: [90, 150], if: "!kessler_warned" },
+]);
+Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   // a scene in a room within a window
+  play: [{ say: "kessler", text: "Here. All of it." }, { set: "ring_given" }],  // when it is watched
+  unseen: [{ set: "ring_given" }] });                                          // when the window passes unwatched
+```
+
+- A game day runs 24 hours from `start`: a clock time earlier than the start is the next morning, so
+  with `start: "18:00"` the time `"01:00"` comes after `"23:00"`. Give the time at an act's start
+  (`{ time: "21:30", day: 1 }`); before that it is day 1 at the start.
+- Conditions: `"time>=22:00"`, `"time<23:30"`, `"time=22:00"`, `"day=2"`, `"day>1"`; `"moment:ring"`
+  (it happened, watched or not), `"seen:ring"` (it was watched).
+- **Routines:** when the time changes, every actor with a routine is put where its first entry that
+  holds says (`day`: a number or a list, default every day; `from` up to `to`; `if`). An entry's `path`
+  is walked round and round while its room is shown (the look only: positions aren't saved state).
+- **Moments** happen once. Once the time is in the window, a moment plays its `play` script as soon as
+  its room is the one shown (it waits for a watcher, within its window); if the window passes and nobody
+  watched, it happens unseen and runs `unseen` (what it leaves behind). `next` stops at every
+  routine's and moment's start and end, and at `Cutaway.time.mark("23:00")`.
+- `Cutaway.time.now` (`{ day, minutes, text }`), `Cutaway.time.next()` (minutes, or null), and the
+  event `"time.changed"`. `configure({ waitPoint: () => ({ x, y }) })` tells `play.mjs` where the
+  game's own button for waiting is; without it, it runs the step.
+- The solver waits as a move of its own ("wait": on to the next change), so a game that needs the
+  player to be watching at the right time is checked like any other; waiting past a moment the end
+  needs shows up as a soft-lock.
 
 ## Acts, the title screen, the demo
 
@@ -410,6 +473,13 @@ The page loads each layer file after the game's own data.
   room the left button looks, `alwaysRun`, `holdMs` 300 / 450 / 700, `buttons`: the eye and menu
   buttons for the mouse too, `hintButton`), and "Reset to defaults". `Cutaway.start({ settings })` sets
   a game's defaults; `Cutaway.settings.set({...})` and `.values` in code.
+- A game's own settings: `Cutaway.settings.define("violence", { page: "content", pageLabel: "Inhalt",
+  label: "Gewalt", options: [["bars", "Balken"], ["shown", "gezeigt"]], default: "bars" })` before
+  `Cutaway.start`: a row on one of the pages (`"sound"`, `"text"`, `"picture"`, `"controls"`) or on a page
+  of its own, kept with the others, back to its default with "Reset to defaults". Conditions:
+  `"setting:violence=bars"`. `Cutaway.settings.get(key)`.
+- `Cutaway.scene.boxes()`: what can be clicked now, as boxes on the screen (`{ id, actor, name, box: [x,
+  y, w, h] }`), for a game's own overlay layer (brackets round people and things).
 - The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons, frame })`;
   `frame` colours the menu's frame: `{ light, face, dark }` (the bevel), `fill` (inside), `plate` (the
   heading's), `rivet`, `rivetLight`, `rivetDark` (the corner fittings), `hover` (the chosen row's band).

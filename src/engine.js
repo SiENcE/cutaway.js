@@ -112,6 +112,7 @@ Cutaway.start = async function (o = {}) {
     if (shaking) { ctx.save(); ctx.translate(Math.round(Math.sin(t * 0.09) * 2), Math.round(Math.cos(t * 0.13))); }
     Cutaway.scene.render(ctx);
     if (shaking) ctx.restore();
+    Cutaway.post?.render(ctx);                       // the room's post-effects (post.js, if the game loads it)
     Cutaway.fx.renderFade(ctx);
     Cutaway.events.emit("frame.ui", ctx);
     Cutaway.ui.render(ctx);

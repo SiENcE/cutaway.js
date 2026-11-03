@@ -122,7 +122,33 @@ Cutaway.script = (function () {
     const a = actorOf(who);
     if (fast) return;
     // source: the text in the game's data (recorded voices are kept by it); a recording holds the line as long as it plays
-    return Cutaway.ui.say(a, Cutaway.i18n.t(text), { id: s.id ?? ctx.path, more: !!ctx.after?.(), source: text, minMs: Cutaway.voice?.clipMs(a.id, text) ?? 0 });
+    const shown = overheard(a, Cutaway.i18n.t(text), String(s.id ?? ctx.path));
+    return Cutaway.ui.say(a, shown, { id: s.id ?? ctx.path, more: !!ctx.after?.(), source: text, minMs: Cutaway.voice?.clipMs(a.id, text) ?? 0 });
+  }
+
+  /**
+   * A line heard through the room's microphone (`mic: { at: [x, y], clear: 40, lost: 160, noise: 0 }`): an actor
+   * of this room further than `clear` from it loses words, all of them at `lost`, and `noise` loses more
+   * everywhere. Which words go is fixed for each line (the same every time), and runs of lost words show
+   * as one "…". Lines from outside the room (the one played, watching) come through as they are.
+   * @param {{room: string | null, x: number, y: number}} a @param {string} text @param {string} id
+   */
+  function overheard(a, text, id) {
+    const mic = Cutaway.scene.room?.mic;
+    if (!mic || a.room !== Cutaway.scene.room?.id) return text;
+    const [mx, my] = mic.at, clear = mic.clear ?? 40, lostAt = Math.max(clear + 1, mic.lost ?? 160);
+    const loss = Math.min(1, Math.max(0, (Math.hypot(a.x - mx, a.y - my) - clear) / (lostAt - clear)) + (mic.noise ?? 0));
+    if (loss <= 0) return text;
+    let seed = 0;
+    for (const ch of id + text) seed = (seed * 31 + ch.charCodeAt(0)) | 0;
+    const words = text.split(/\s+/), out = /** @type {string[]} */ ([]);
+    words.forEach((w, i) => {
+      let h = (seed + i * 2654435761) | 0;
+      h = (h ^ (h >>> 15)) * 2246822519; h ^= h >>> 13;
+      const keep = ((h >>> 0) / 4294967296) >= loss;
+      if (keep) out.push(w); else if (out[out.length - 1] !== "…") out.push("…");
+    });
+    return out.join(" ");
   }
 
   /** @param {any} v @returns {[number, number]} */

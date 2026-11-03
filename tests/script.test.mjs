@@ -15,6 +15,9 @@ export default async function (t) {
   S.set("lamp"); S.set("count", 3); S.give("key");
   t.ok("flag", S.test("lamp") && !S.test("!lamp") && !S.test("nope"));
   t.ok("flag value", S.test("count=3") && !S.test("count=4"));
+  t.ok("numbers compared", S.test("count>=3") && S.test("count>2") && S.test("count<=3") && S.test("count<4") && !S.test("count>3") && !S.test("count<3"));
+  t.ok("numbers: an unset flag is 0, spaces allowed", S.test("chits<1") && S.test("chits >= 0") && !S.test("chits>0") && S.test("!chits>0"));
+  t.ok("!= compares as text, like =", S.test("count!=4") && !S.test("count!=3") && S.test("mood!=sad"));
   t.ok("has", S.test("has:key") && !S.test("has:map"));
   t.ok("and (array)", S.test(["lamp", "has:key"]) && !S.test(["lamp", "has:map"]));
   t.ok("or / not", S.test({ or: ["nope", "lamp"] }) && S.test({ not: "nope" }));
@@ -61,6 +64,25 @@ export default async function (t) {
   said.length = 0;
   await C.script.run({ beep: 3 });
   t.ok("custom action", said.join() === "beep 3");
+
+  // lines heard through a room's microphone (mic): far voices lose words, the same ones every time
+  C.i18n.setLanguage("en");
+  const voice = { id: "kessler", room: "hall", x: 0, y: 0 };
+  const getActor = C.actors.get;
+  C.actors = { get: (id) => (id === "kessler" ? voice : getActor(id)) };
+  C.scene.room.mic = { at: [0, 0], clear: 40, lost: 160 };
+  voice.room = C.scene.room.id;
+  const line = "Ja ich bring es mit alles halb elf bei Yuens Imbiss heute";
+  const hear = async () => { said.length = 0; await C.script.run({ say: "kessler", text: line, id: "k1" }); return said[0].slice("kessler: ".length); };
+  t.ok("mic: close to it, every word", (await hear()) === line);
+  voice.x = 100;
+  const half = await hear(), again = await hear();
+  t.ok("mic: halfway out, some words lost as one … each", half !== line && half.includes("…") && !half.includes("… …"), half);
+  t.ok("mic: the same words lost every time", half === again);
+  voice.x = 400;
+  t.ok("mic: beyond `lost`, nothing but …", (await hear()) === "…");
+  t.ok("mic: the one played, outside the room, comes through as they are", (await (async () => { said.length = 0; actor.room = "flat"; const was = actor.room; await C.script.run(["Ich hör nichts."]); actor.room = was; return said[0]; })()) === "pip: Ich hör nichts.");
+  delete C.scene.room.mic;
 
   const snap = S.snapshot(); S.reset();
   t.ok("reset clears", !S.has("map"));

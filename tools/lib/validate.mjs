@@ -4,7 +4,7 @@
 // rooms they show, the props they move) and the intro and gate start options.
 /** @typedef {{level: "error" | "warning", where: string, msg: string}} Issue */
 
-const FACINGS = new Set(["left", "right", "up", "down"]);
+const FACINGS = new Set(["left", "right", "up", "down", "se", "ne", "sw", "nw"]);
 const EASES = new Set(["linear", "in", "out", "inOut"]);
 const PLACES = new Set(["bl", "br", "tl", "tr", "c"]);
 
@@ -21,6 +21,8 @@ export function validate(C, o = {}) {
   const texts = new Set(), keys = new Set();
   const flagsSet = new Set(), flagsTested = new Set();
   const actions = new Set(C.script.names());
+  /** game time (time.js): its flags `day` and `time` read as set from the start */
+  const timeUsed = !!C.time?.used;
   const roomIds = new Set(C.room.ids()), itemIds = new Set(C.item.ids()), dialogIds = new Set(C.dialog.ids());
   const actorIds = new Set(C.actors.all().map((a) => a.id));
   const actIds = new Set(C.act.ids());
@@ -77,7 +79,17 @@ export function validate(C, o = {}) {
       if ("not" in c) return cond(c.not, roomId, where);
       return err(where, "unknown condition " + JSON.stringify(c));
     }
-    const s = String(c).trim().replace(/^!/, ""), colon = s.indexOf(":");
+    const s = String(c).trim().replace(/^!/, "");
+    // a flag compared with a number or a clock time ("chits>=80", "time>=22:00", "day=2"): names never hold a colon
+    const cmp = /^([^<>!=\s:]+)\s*(>=|<=|!=|>|<|=)\s*(.*)$/.exec(s);
+    const clockTime = (v) => /^\d{1,2}:\d{2}$/.test(v);
+    if (cmp && (cmp[2] !== "=" || clockTime(cmp[3].trim()) || cmp[1] === "day" || cmp[1] === "time")) {
+      const v = cmp[3].trim();
+      if (cmp[2] !== "!=" && (v === "" || (!Number.isFinite(Number(v)) && !clockTime(v)))) err(where, `condition "${c}" compares with "${v}", not a number`);
+      if (!(timeUsed && (cmp[1] === "day" || cmp[1] === "time"))) flagsTested.add(cmp[1]);
+      return;
+    }
+    const colon = s.indexOf(":");
     if (colon < 0) { flagsTested.add(s.split("=")[0]); return; }
     const kind = s.slice(0, colon), arg = s.slice(colon + 1);
     if (kind === "has") item(arg, where);
@@ -86,6 +98,12 @@ export function validate(C, o = {}) {
     else if (kind === "hidden") object(arg, roomId, where);
     else if (kind === "state") object(arg.split("=")[0], roomId, where);
     else if (kind === "at") { const [a, r] = arg.split("="); actor(a, where); room(r, where); }
+    else if (kind === "setting") {
+      const [k, v] = arg.split("="), d = C.settings?.defined.find((x) => x.key === k);
+      if (!d && !(k in (C.settings?.values ?? {}))) err(where, `unknown setting "${k}"`);
+      else if (d && !d.options.some(([o]) => String(o) === v)) err(where, `setting "${k}" has no option "${v}"`);
+    }
+    else if (kind === "moment" || kind === "seen") { if (!C.time?.moments.has(arg)) err(where, `unknown moment "${arg}"`); }
     else err(where, `unknown condition "${c}"`);
   }
 
@@ -113,6 +131,13 @@ export function validate(C, o = {}) {
         break;
       }
       case "wait": if (!Number.isFinite(Number(v))) err(where, "wait needs milliseconds"); break;
+      case "time": {
+        const t = String(v).trim();
+        if (!(t === "next" || /^\+\d+$/.test(t) || /^\d{1,2}:\d{2}$/.test(t))) err(where, `time "${t}": "next", "+minutes" or a clock time "22:00"`);
+        if (s.day !== undefined && !/^\+?\d+$/.test(String(s.day).trim())) err(where, `day "${s.day}": a number, or "+1"`);
+        if (s.day !== undefined && !/^\d{1,2}:\d{2}$/.test(t)) err(where, "a new day needs its clock time: { time: \"18:00\", day: \"+1\" }");
+        break;
+      }
       case "give": item(v, where); if (s.to) actor(s.to, where); break;
       case "take": item(v, where); if (s.hide) object(s.hide, roomId, where); break;
       case "remove": item(v, where); if (s.from) actor(s.from, where); break;
@@ -208,6 +233,8 @@ export function validate(C, o = {}) {
       asset(p.image, pw);
       for (const img of Object.values(p.states ?? {})) asset(img, pw + ".states");
       xy(p.at, pw + ".at");
+      if (p.front !== undefined && (!Array.isArray(p.front) || p.front.length < 4 || p.front.length % 2 || p.front.some((v) => !Number.isFinite(v))))
+        err(pw + ".front", "a front line is a list of room points [x1, y1, x2, y2, ...], at least two");
     }
     for (const f of r.foreground ?? []) asset(f.image, w + ".foreground");
     for (const [hid, h] of Object.entries(r.hotspots ?? {})) {
@@ -237,6 +264,23 @@ export function validate(C, o = {}) {
   /** light, effects, ambience and depth scale of a room */
   function room_extras(r, id, w) {
     const color = (c, where) => { if (c !== undefined && !/^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(c)) err(where, `colour "${c}" is not #rrggbb`); };
+    if (r.mic !== undefined) {
+      if (!xy(r.mic.at, w + ".mic.at")) { /* reported */ }
+      if (r.mic.clear !== undefined && !(r.mic.clear >= 0)) err(w + ".mic.clear", "clear is a distance in px");
+      if (r.mic.lost !== undefined && !(r.mic.lost > (r.mic.clear ?? 40))) err(w + ".mic.lost", "lost is further than clear");
+      if (r.mic.noise !== undefined && !(r.mic.noise >= 0 && r.mic.noise <= 1)) err(w + ".mic.noise", "noise goes from 0 to 1");
+    }
+    if (r.lines !== undefined && !["over", "top", "bottom"].includes(r.lines)) err(w + ".lines", `lines "${r.lines}": "over", "top" or "bottom"`);
+    if (r.post !== undefined) {
+      if (!Array.isArray(r.post)) err(w + ".post", "post is a list of passes: [{ palette: [...] }, { scanlines: 2 }]");
+      else if (!C.post) err(w + ".post", "post-effects need post.js in the page (after fx.js)");
+      else r.post.forEach((p, i) => {
+        const pw = `${w}.post.${i}`, names = new Set(C.post.names()), name = Object.keys(p ?? {}).find((k) => names.has(k));
+        if (!name) { err(pw, `unknown post-effect ${JSON.stringify(p)} (${[...names].join(", ")})`); return; }
+        if (name === "palette") { if (!Array.isArray(p.palette) || p.palette.length < 2) err(pw, "a palette is a list of at least two #rrggbb"); else p.palette.forEach((c, j) => color(c, `${pw}.palette.${j}`)); }
+        if (name === "tint") color(p.tint, pw + ".tint");
+      });
+    }
     if (r.light) {
       const L = r.light;
       if (L.ambient !== undefined && !(L.ambient >= 0 && L.ambient <= 2)) err(w + ".light", "ambient goes from 0 to 2");
@@ -370,6 +414,40 @@ export function validate(C, o = {}) {
     for (const a of h.about === undefined ? [] : [].concat(h.about)) if (!known.has(a)) err(w + ".about", `"${a}" is no hotspot, actor or item`);
   });
 
+  // game time: routines and moments (time.js)
+  if (C.time) {
+    const clockTime = (v) => /^\d{1,2}:\d{2}$/.test(String(v ?? "").trim());
+    const span = (e, w) => {
+      if (!clockTime(e.from) || !clockTime(e.to)) { err(w, "from and to are clock times, \"22:00\""); return; }
+      if (!(C.time.parse(e.from) < C.time.parse(e.to))) err(w, `${e.from} to ${e.to}: the end is before the start (on a game day from its start)`);
+    };
+    for (const [id, list] of C.time.routines) {
+      const w = `routine ${id}`;
+      if (!actorIds.has(id)) err(w, `unknown actor "${id}"`);
+      list.forEach((e, i) => {
+        const ew = `${w}.${i}`;
+        span(e, ew);
+        cond(e.if, e.room ?? "", ew + ".if");
+        if (e.face !== undefined && !FACINGS.has(e.face)) err(ew, `unknown facing "${e.face}"`);
+        if (e.room === null || e.room === undefined) return;
+        room(e.room, ew + ".room");
+        const watched = roomIds.has(e.room) && !!C.room.get(e.room).observe;
+        for (const [k, pt] of [["at", e.at], ...(e.path ?? []).map((q, j) => [`path.${j}`, q])]) {
+          if (pt === undefined) continue;
+          if (xy(pt, `${ew}.${k}`) && roomIds.has(e.room) && !watched) mustReach.get(e.room).push([pt[0], pt[1], `${ew}.${k}`]);
+        }
+      });
+    }
+    for (const [id, m] of C.time.moments) {
+      const w = `moment ${id}`;
+      room(m.room, w + ".room");
+      span(m, w);
+      cond(m.if, m.room, w + ".if");
+      script(m.play, m.room, w + ".play");
+      script(m.unseen, m.room, w + ".unseen");
+    }
+  }
+
   if (C.score) {
     for (const id of C.score.ids()) for (const p of C.score.check(id)) err(`music theme ${id}`, p);
     for (const id of C.score.stingerIds()) for (const p of C.score.checkStinger(id)) err(`stinger ${id}`, p);
@@ -378,7 +456,7 @@ export function validate(C, o = {}) {
   // reachability: every point the actors must stand on is walkable and connected to a way into the room
   // (an exit's arrival, a goto, an actor's start: a walk area of its own, like a boat, is fine if one leads there)
   for (const [id, pts] of mustReach) {
-    if (!pts.length) continue;
+    if (!pts.length || C.room.get(id).observe) continue;   // a watched room: nobody walks there
     const map = C.walk.create({ walk: C.room.get(id).walk ?? [], holes: C.room.get(id).holes ?? [] });
     const ins = pts.filter((p) => p[3] && map.inside({ x: p[0], y: p[1] }));
     const from = ins.length ? ins : [pts[0]];

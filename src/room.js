@@ -21,6 +21,11 @@
  * @property {[number, number]} [anchor]  anchor inside the sprite; [0, 0] = `at` is the top-left corner
  *                                   (cut-outs from a room render), then give a baseline
  * @property {number} [baseline]     sorting y (default: at[1]); actors with a larger y draw in front
+ * @property {number[]} [front]      the front edge of its footprint, a line of room points [x1, y1, x2, y2, ...]
+ *                                   (isometric rooms): an actor draws in front of the prop when its feet are
+ *                                   below the line where they stand (beyond its ends, the end's y), so it can
+ *                                   walk behind a cart and in front of it along a slope. The baseline still
+ *                                   orders the props among themselves.
  * @property {boolean} [flip]
  * @property {boolean} [hidden]      starts hidden (a script can { show: id })
  * @property {number} [scroll]       px per second along x (negative: to the left); the image repeats
@@ -78,6 +83,15 @@
  * @property {FxDef[]} [fx]             effects: haze, dust, rain, drips, sparkles, steam
  * @property {(string | {sfx: string, gain?: number})[]} [ambience]  sound loops while the room shows
  * @property {{far: [number, number], near: [number, number]}} [scale]  actor scale by depth: [y, scale]
+ * @property {Record<string, any>[]} [post]  post-effects over the room's picture, in order (post.js):
+ *                                   { noise }, { palette, dither }, { scanlines, amount }, { roll }, { vignette }, { tint, amount }
+ * @property {{at: [number, number], clear?: number, lost?: number, noise?: number}} [mic]  lines heard through a
+ *                                   microphone: an actor further than `clear` from it loses words, all at `lost`
+ * @property {"over" | "top" | "bottom"} [lines]  where lines show: over the speaker (default) or in a bar
+ * @property {boolean} [label]       put the speaker's name before each line
+ * @property {boolean} [observe]     a watched room (a camera's view): the one played isn't in it, going
+ *                                   there leaves them where they are, clicks never walk; hotspots and the
+ *                                   actors in it are clicked as usual (their lines come from off-screen)
  *                                      at the back and at the front (pixel art: keep it between ~0.7 and 1)
  */
 /** @typedef {RoomDef & {id: string}} Room */
@@ -184,7 +198,51 @@ Cutaway.scene = (function () {
    * @typedef {object} Drawable
    * @property {number} baseline
    * @property {(ctx: CanvasRenderingContext2D) => void} draw
+   * @property {number[]} [front]   a prop's front line (PropDef.front)
+   * @property {number} [x]         an actor's x (for the front lines)
    */
+
+  /** The y of a front line [x1, y1, x2, y2, ...] at x (its points in any order; the end's y beyond it). @param {number[]} line @param {number} x */
+  function frontY(line, x) {
+    const pts = [];
+    for (let i = 0; i + 1 < line.length; i += 2) pts.push([line[i], line[i + 1]]);
+    pts.sort((a, b) => a[0] - b[0]);
+    if (!pts.length) return Infinity;
+    if (x <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+      if (x <= x1) return x1 === x0 ? Math.max(y0, y1) : y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+    }
+    return pts[pts.length - 1][1];
+  }
+
+  /**
+   * Drawing order with front lines: the props by their baselines; each actor right after the last prop
+   * it stands in front of (below its front line, or at or below its baseline), actors at the same place
+   * by their y. Without front lines this is the order of a plain sort by baseline.
+   * @param {Drawable[]} props @param {Drawable[]} actors @returns {Drawable[]}
+   */
+  function orderWithFronts(props, actors) {
+    const ps = props.slice().sort((p, q) => p.baseline - q.baseline);
+    /** @type {Drawable[][]} actors drawn after prop i (index i + 1; 0: before all) */
+    const after = ps.map(() => []);
+    after.push([]);
+    for (const a of actors) {
+      let at = 0;
+      for (let i = 0; i < ps.length; i++) {
+        const p = ps[i], line = p.front;
+        if (line ? a.baseline >= frontY(line, a.x ?? 0) : a.baseline >= p.baseline) at = i + 1;
+      }
+      after[at].push(a);
+    }
+    /** @type {Drawable[]} */
+    const out = [];
+    for (let i = 0; i <= ps.length; i++) {
+      out.push(...after[i].sort((p, q) => p.baseline - q.baseline));
+      if (i < ps.length) out.push(ps[i]);
+    }
+    return out;
+  }
 
   /** @type {Room | null} */
   let current = null;
@@ -233,6 +291,8 @@ Cutaway.scene = (function () {
     if (view || o.shot) return;
     if (def.enter && o.enter !== false) await Cutaway.script.run(def.enter, { path: `${id}.enter` });
     Cutaway.state.visit(id);
+    // game time (time.js, if the game loads it): moments waiting for someone to watch this room play now
+    if (o.enter !== false && Cutaway.time?.used) await Cutaway.time.entered(id);
     Cutaway.events.emit("room.entered", { id });
   }
 
@@ -254,7 +314,9 @@ Cutaway.scene = (function () {
    * @param {{transition?: boolean | string, follow?: boolean, dissolve?: number}} [o]  transition: false = cut; follow: false = alone
    */
   async function go(id, at, face, o = {}) {
-    const a = filming ? null : active(), from = current?.id, fast = Cutaway.script.fast;
+    // a watched room (`observe: true`, a camera's view): the one played stays where they are
+    const watch = !!Cutaway.room.get(id)?.observe;
+    const a = filming || watch ? null : active(), from = current?.id, fast = Cutaway.script.fast;
     const dissolve = o.transition === "dissolve" || o.dissolve !== undefined;
     const fade = o.transition !== false && !dissolve && id !== from && !fast;
     // a script that faded the screen out before a goto within the same room gets the picture back with it
@@ -436,6 +498,20 @@ Cutaway.scene = (function () {
     return out;
   }
 
+  /**
+   * What can be clicked, as boxes on the screen (camera and depth applied): hotspots and the actors in the room,
+   * with their names. For a game's own overlay drawn over the room (brackets round people and things).
+   * @returns {{id: string, actor?: string, name: string, box: [number, number, number, number]}[]}
+   */
+  function boxes() {
+    return hotspots().map((h) => {
+      const xs = h.poly.map((p) => p.x), ys = h.poly.map((p) => p.y);
+      const x0 = Math.min(...xs) - camera.x, y0 = Math.min(...ys) - camera.y;
+      return { id: h.actor ?? h.id, ...(h.actor ? { actor: h.actor } : {}), name: Cutaway.i18n.t(h.def.name ?? h.id),
+        box: /** @type {[number, number, number, number]} */ ([Math.round(x0), Math.round(y0), Math.round(Math.max(...xs) - camera.x - x0), Math.round(Math.max(...ys) - camera.y - y0)]) };
+    });
+  }
+
   /** @param {number} x @param {number} y @param {number} w @param {number} h */
   function rectPoly(x, y, w, h) { return [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }]; }
 
@@ -498,14 +574,21 @@ Cutaway.scene = (function () {
       const d = p.def, pl = live.get(d)?.play, at = placeOf(d), sh = parallax(d), x = Math.round(at.x) + sh.x, y = Math.round(at.y) + sh.y;
       // a played animation runs from its own start (once: then its last frame); others with the scene
       const o = { t: pl ? time - pl.start : time, loop: pl?.loop, flip: d.flip, anchor: d.anchor };
-      list.push({ baseline: d.baseline ?? at.y, draw: d.scroll
+      list.push({ baseline: d.baseline ?? at.y, front: d.front, draw: d.scroll
         ? (c) => { for (const sx of scrollXs(d, p.image, w - sh.x, -sh.x, at.x)) Cutaway.assets.draw(c, p.image, sx + sh.x, y, o); }
         : (c) => Cutaway.assets.draw(c, p.image, x, y, o) });
     }
-    const lit = !!current.light;
-    for (const a of actorsHere()) list.push({ baseline: a.y, draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
-    list.sort((p, q) => p.baseline - q.baseline);       // Array.sort is stable: ties keep data order
-    for (const d of list) d.draw(ctx);
+    const lit = !!current.light, fronts = list.some((d) => d.front);
+    /** @type {Drawable[]} */
+    const people = [];
+    for (const a of actorsHere()) people.push({ baseline: a.y, x: a.x, draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
+    if (fronts) {
+      for (const d of orderWithFronts(list, people)) d.draw(ctx);
+    } else {
+      list.push(...people);
+      list.sort((p, q) => p.baseline - q.baseline);     // Array.sort is stable: ties keep data order
+      for (const d of list) d.draw(ctx);
+    }
     for (const f of current.foreground ?? []) {
       const sh = parallax(f);
       Cutaway.assets.draw(ctx, f.image, (f.at?.[0] ?? 0) + sh.x, (f.at?.[1] ?? 0) + sh.y, { t: time, anchor: [0, 0] });
@@ -556,7 +639,7 @@ Cutaway.scene = (function () {
 
   return {
     load, go, update, render, follow, actorsHere, hotspots, hotspotAt, props, propBox, scaleAt, refresh, scrollXs,
-    cameraTo, cameraFollow, moveProp, playProp, showProp, parallax, unload,
+    cameraTo, cameraFollow, moveProp, playProp, showProp, parallax, unload, frontY, orderWithFronts, boxes,
     /** Where a prop of the current room stands now (moved or not; without its depth). @param {string} id */
     propAt(id) { return placeOf(propDef(id)); },
     get room() { return current; },

@@ -34,6 +34,13 @@ Cutaway.settings = (function () {
   const values = { ...DEFAULTS };
   /** @type {Partial<Settings>} the game's own defaults */
   let gameDefaults = {};
+  /**
+   * Settings a game adds (Cutaway.settings.define): shown on a settings page, kept like the others,
+   * tested in conditions ("setting:violence=bars").
+   * @typedef {{key: string, page: string, pageLabel?: string, label: string, options: [any, string][], default: any}} GameSetting
+   * @type {GameSetting[]}
+   */
+  const defined = [];
   let storeKey = "", seenKey = "", focusHooked = false;
 
   /** @returns {string[]} */
@@ -72,7 +79,25 @@ Cutaway.settings = (function () {
      */
     set(v) { Object.assign(values, v); apply(); persist(); },
     /** Back to the game's defaults. */
-    reset() { Object.assign(values, DEFAULTS, gameDefaults); apply(); persist(); },
+    reset() { Object.assign(values, DEFAULTS, Object.fromEntries(defined.map((d) => [d.key, d.default])), gameDefaults); apply(); persist(); },
+    /**
+     * A setting of the game's own, on one of the settings pages ("sound", "text", "picture", "controls") or a
+     * page of its own (`page` with its `pageLabel`). Labels are game texts ("@key" or plain).
+     *   Cutaway.settings.define("violence", { page: "content", pageLabel: "Inhalt", label: "Gewalt",
+     *     options: [["bars", "mit Balken"], ["shown", "gezeigt"]], default: "bars" })
+     * Call it before Cutaway.start. Conditions: "setting:violence=bars".
+     * @param {string} key @param {{page?: string, pageLabel?: string, label: string, options: [any, string][], default?: any}} o
+     */
+    define(key, o) {
+      const d = { key, page: o.page ?? "content", pageLabel: o.pageLabel, label: o.label, options: o.options, default: o.default ?? o.options[0]?.[0] };
+      const i = defined.findIndex((x) => x.key === key);
+      if (i >= 0) defined[i] = d; else defined.push(d);
+      if (!(key in values)) /** @type {any} */ (values)[key] = d.default;
+    },
+    /** The game's own settings (the menu shows them). */
+    get defined() { return defined.slice(); },
+    /** A setting's value now, the engine's or the game's. @param {string} key */
+    get(key) { return /** @type {any} */ (values)[key]; },
     /** Has the player seen this (a sequence id: the intro) on this machine? @param {string} id */
     seen(id) { return seenList().includes(id); },
     /** Remember that the player has seen it. @param {string} id */

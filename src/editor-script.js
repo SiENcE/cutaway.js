@@ -265,7 +265,7 @@
         case "room": input = select(Cutaway.room.ids(), "(a room)"); break;
         case "dialog": input = select(Cutaway.dialog.ids(), "(a dialogue)"); break;
         case "sfx": input = select(Cutaway.sfx.names().filter((n) => !n.startsWith("_")).sort(), "(a sound)"); break;
-        case "dir": input = select(["left", "right", "up", "down"], "(as they are)"); break;
+        case "dir": input = select(["left", "right", "up", "down", "se", "ne", "sw", "nw"], "(as they are)"); break;
         case "fade":
           input = text("", v === undefined ? "" : String(v), (t) => { t = t.trim(); if (!t) return undefined; if (t === "in" || t === "out") return t; const n = Number(t); if (isNaN(n)) throw new Error(t); return n; }, "cw-sc-fade");
           input.style.width = "60px"; input.title = "out (black), in (back), or how dark: 0..1"; break;

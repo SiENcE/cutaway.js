@@ -68,6 +68,20 @@ export default async function (t) {
     t.ok("settings: back to the defaults", await chrome.ev(`Cutaway.settings.reset(); const v = Cutaway.settings.values;
       v.fit === "sharp" && v.crt === "off" && v.motion && !v.swapButtons && Cutaway.display.scale === 4`));
     t.ok("settings: stored for the next visit", await chrome.ev(`Cutaway.settings.set({ textBox: true }); Object.values(localStorage).some((s) => /"textBox":true/.test(s))`));
+    // a game's own setting: its page in the settings, kept, tested in conditions
+    const own = await chrome.ev(`(() => {
+      Cutaway.settings.define("violence", { page: "content", pageLabel: "Content", label: "Violence", options: [["bars", "Black bars"], ["shown", "Shown"]], default: "bars" });
+      const before = Cutaway.state.test("setting:violence=bars");
+      Cutaway.menu.settings();
+      const page = (Cutaway.menu.rows ?? []).includes("Content");
+      Cutaway.settings.set({ violence: "shown" });
+      const after = Cutaway.state.test("setting:violence=shown") && !Cutaway.state.test("setting:violence=bars");
+      Cutaway.settings.reset();
+      const reset = Cutaway.settings.get("violence") === "bars";
+      Cutaway.menu.close();
+      return JSON.stringify({ before, after, reset, page, defined: Cutaway.settings.defined.length });
+    })()`).then((s) => JSON.parse(s));
+    t.ok("settings: a game's own setting, its page, its default, set, tested, reset", own.before && own.after && own.reset && own.page && own.defined === 1, JSON.stringify(own));
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

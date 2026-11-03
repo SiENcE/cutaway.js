@@ -1682,7 +1682,7 @@ Cutaway.editor = (function () {
         pushUndo();
         if (face.value) h.face = /** @type {Facing} */ (face.value); else delete h.face;
         changed();
-      } }, ["", "left", "right", "up", "down"].map((f) => el("option", { value: f, textContent: f || "face: any", selected: (h.face ?? "") === f }))));
+      } }, ["", "left", "right", "up", "down", "se", "ne", "sw", "nw"].map((f) => el("option", { value: f, textContent: f || "face: any", selected: (h.face ?? "") === f }))));
       row.append(face);
       box.append(row);
       if (h.walkTo) box.append(el("div", {}, [`walk-to ${h.walkTo.join(", ")}`]));

@@ -41,7 +41,11 @@ Cutaway.debug = (function () {
     ctx.fillStyle = "#3ae8ff";
     for (const p of Cutaway.scene.props()) {
       const b = p.def.baseline ?? p.def.at[1], box = Cutaway.scene.propBox(p.def);
-      if (box) ctx.fillRect(box[0], b, box[2], 1);
+      if (p.def.front) {
+        // a front line (isometric props): drawn as the line itself
+        const f = p.def.front;
+        for (let i = 2; i + 1 < f.length; i += 2) line(ctx, { x: f[i - 2], y: f[i - 1] }, { x: f[i], y: f[i + 1] });
+      } else if (box) ctx.fillRect(box[0], b, box[2], 1);
     }
     ctx.fillStyle = "#ffa03a";
     for (const h of Cutaway.scene.hotspots()) outline(ctx, h.poly, "#ffa03a");

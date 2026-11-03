@@ -153,6 +153,11 @@ try {
     if (await chrome.ev("__play.ended")) { check(`the game ended after ${n} moves (the path has ${path.length})`, true); break; }
     try {
       if (m.kind === "switch") await click(await point(`Cutaway.party.portraitPoint(${JSON.stringify(m.id)})`));
+      else if (m.kind === "wait") {
+        // the game's own button for waiting (Cutaway.time.configure({ waitPoint })), else the step itself
+        const p = await chrome.ev("Cutaway.time.waitPoint?.() ?? null");
+        if (p) await click(p); else await chrome.ev(`Cutaway.script.run([{ time: "next" }]); 1`);
+      }
       else if (m.kind === "act" || m.kind === "look") { await reach(m.id); await click(await point(`Cutaway.debug.pointOn(${JSON.stringify(m.id)})`), m.kind === "look" ? "rclick" : "click"); }
       else {
         if (m.kind === "with") await reach(m.id);
