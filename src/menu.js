@@ -19,11 +19,12 @@
  * (`options` as [value, label] pairs with `get`/`pick`) or a text with `text` that `run` cycles.
  * @typedef {{label: string, run?: () => void, more?: boolean, value?: () => number, set?: (v: number) => void,
  *   text?: () => string, options?: [any, string][], get?: () => any, pick?: (v: any) => void}} Entry
- * How a page shows: `y` its top (default: centred; below 0: its bottom, counted from the screen's), `w` its width, `dim` how dark the room behind gets
+ * How a page shows: `x` its left (default: centred; below 0: its right edge, counted from the screen's), `y` its top (default: centred;
+ * below 0: its bottom, counted from the screen's), `w` its width, `dim` how dark the room behind gets
  * (0..1), `pause` whether the game stops meanwhile, `fixed` that Esc and right clicks can't leave it
  * (the title screen), `below` how far it still is below its place as it rises in (0..1 of the way from
  * under the screen; clicks and rows count where it will be).
- * @typedef {{y?: number, w?: number, dim?: number, pause?: boolean, fixed?: boolean, below?: () => number}} PageLook
+ * @typedef {{x?: number, y?: number, w?: number, dim?: number, pause?: boolean, fixed?: boolean, below?: () => number}} PageLook
  */
 
 Cutaway.menu = (function () {
@@ -112,7 +113,8 @@ Cutaway.menu = (function () {
     const SW = Cutaway.display.width, w = Math.min(SW - 6, Math.max(look.w ?? W, need));
     const H = Cutaway.display.height, y = look.y === undefined ? Math.round((H - h + PLATE) / 2) : look.y < 0 ? H + look.y - h : look.y;
     const below = drawn && look.below ? Cutaway.util.clamp(look.below(), 0, 1) : 0;
-    return { x: Math.round((SW - w) / 2), y: y + Math.round(below * (H - y + PLATE + 3)), w, h };
+    const x = look.x === undefined ? Math.round((SW - w) / 2) : look.x < 0 ? SW + look.x - w : look.x;
+    return { x, y: y + Math.round(below * (H - y + PLATE + 3)), w, h };
   }
 
   /** The top of row i's text. @param {{y: number}} g @param {number} i */

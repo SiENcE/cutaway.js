@@ -141,6 +141,16 @@ export default async function (t) {
       return JSON.stringify(seen.slice(0, 2).map((x) => x[0]));
     })()`);
     t.ok("frame: frame.screen comes before frame.ui", order === '["screen","ui"]', order);
+    // a page placed by x: from the left, or its right edge from the screen's right
+    const placed = await chrome.ev(`(() => {
+      Cutaway.menu.page("T", [{ label: "A", run() {} }], null, { x: 10, w: 80 });
+      const left = Cutaway.menu.rowPoint(0).x;
+      Cutaway.menu.page("T", [{ label: "A", run() {} }], null, { x: -6, w: 80 });
+      const right = Cutaway.menu.rowPoint(0).x;
+      Cutaway.menu.close();
+      return [left, right, Cutaway.display.width];
+    })()`);
+    t.ok("menu: a page placed by x (left, or from the right)", placed[0] > 10 && placed[0] < 90 && placed[1] > placed[2] - 86 && placed[1] < placed[2] - 6, JSON.stringify(placed));
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

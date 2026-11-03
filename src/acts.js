@@ -49,6 +49,8 @@
  * @property {string} [tagline]            the heading of the title's menu
  * @property {string} [footer]             small print at the bottom right (version, licence)
  * @property {any} [music]                 music state (default: the room's)
+ * @property {{x?: number, y?: number, w?: number, dim?: number}} [menu]  where the menu goes: `x` its left (below 0: its right edge,
+ *                                         counted from the screen's), `y` its top (below 0: its bottom), `w` its width, `dim`
  */
 /**
  * @typedef {object} DemoOptions
@@ -71,6 +73,8 @@ Cutaway.act = (function () {
 
 Cutaway.acts = (function () {
   const TITLE_LOOK = { y: -18, w: 136, dim: 0.2, pause: false, fixed: true };   // above the small print
+  /** The title's menu: where it goes (the title's `menu`: x, y, w, dim) over the defaults. */
+  const titleLook = () => ({ ...TITLE_LOOK, ...(title?.menu ?? {}), pause: false, fixed: true });
   // the title's entrance (ms from its start): the logo and the small print fade in, then the menu rises
   // from below the screen. A click or a key finishes it at once (and still counts for the menu).
   const LOGO = [100, 1100], RISE = [1000, 1700];
@@ -182,15 +186,15 @@ Cutaway.acts = (function () {
   function titlePage() {
     if (!title) return;
     const newest = Cutaway.save.newest(), acts = unlocked(), start = first();
-    const rise = Cutaway.util.ease("out"), look = { ...TITLE_LOOK, below: () => 1 - rise(part(RISE)) };
+    const rise = Cutaway.util.ease("out"), look = { ...titleLook(), below: () => 1 - rise(part(RISE)) };
     Cutaway.menu.page(Cutaway.i18n.t(title.tagline ?? ""), [
       ...(start ? [{ label: t("title.new"), run: () => { Cutaway.menu.close(); begin(start, { fresh: true }); } }] : []),
       ...(newest ? [{ label: t("title.continue"), run: () => resume(newest.slot) }] : []),
       ...(acts.length > 1 ? [{ label: t("title.acts"), run: actsPage }] : []),
-      ...(newest ? [{ label: t("menu.load"), run: () => Cutaway.menu.loadPage(titlePage, TITLE_LOOK) }] : []),
+      ...(newest ? [{ label: t("menu.load"), run: () => Cutaway.menu.loadPage(titlePage, titleLook()) }] : []),
       ...(intro && Cutaway.sequence?.get(intro) ? [{ label: t("title.intro"), run: watchIntro }] : []),
       ...(prologues && start && Cutaway.sequence?.get(Cutaway.act.get(start)?.prologue ?? "") ? [{ label: t("title.prologue"), run: watchPrologue }] : []),
-      { label: t("menu.settings"), run: () => Cutaway.menu.settings(titlePage, TITLE_LOOK) },
+      { label: t("menu.settings"), run: () => Cutaway.menu.settings(titlePage, titleLook()) },
       { label: t("menu.fullscreen"), run: () => Cutaway.display.toggleFullscreen() },
       ...(quit ? [{ label: t("title.quit"), run: quit }] : []),
     ], null, look);
@@ -203,7 +207,7 @@ Cutaway.acts = (function () {
         return { label: [a.title, a.name].filter(Boolean).map((s) => Cutaway.i18n.t(String(s))).join(": "), run: () => { Cutaway.menu.close(); begin(id, { fresh: true }); } };
       }),
       { label: t("menu.back"), run: titlePage },
-    ], titlePage, TITLE_LOOK);
+    ], titlePage, titleLook());
   }
 
   /** A prologue: from black, the film, and black again for what follows (the act's card). @param {string} seq */

@@ -324,7 +324,9 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   seconds); a click or a key finishes it at once and still counts for the menu. An intro that ends
   showing the title's room goes on into it without a jump (the room keeps its clock and its rain).
   The logo may be an animation (it plays on the game clock: a glitch now and then); the small print
-  takes the skin's `labelColor`.
+  takes the skin's `labelColor`. `menu: { x, y, w, dim }` places the title's menu (and its load and
+  settings pages): `x` its left, or below 0 its right edge from the screen's right (`x: -6`), `y` its top
+  or below 0 its bottom (default `y: -18`, centred), `w` its width (default 136).
 - `demo: { acts, link, text }`: going on to an act the demo lacks ends it with the "end of the demo"
   card (a button that opens `link`, one back to the title).
 - `prologue: "id"`: a sequence that tells the story so far, played when the act is begun as a new game
