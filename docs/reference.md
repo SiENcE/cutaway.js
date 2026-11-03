@@ -491,7 +491,8 @@ The page loads each layer file after the game's own data.
   (wrapped), `buttons`, `hover`, `ms` (how long it has shown, game time: for typing it on), `titleY`,
   `textY`, `buttonsY` and `buttonRow` (where the menu takes the clicks: buttons centred, one per row).
   `Cutaway.menu.frame(ctx, x, y, w, h, { small, fill })` draws one for a game's own pages,
-  `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)`, `Cutaway.inventory.setCorner("bottom")`
+  `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)` (a sprite or an animation, like the skin's
+  `cursor`, `cursorHot` and `buttons`: they play on the game clock), `Cutaway.inventory.setCorner("bottom")`
   (the satchel in the bottom right, its bar sliding up from the bottom edge; the hint button beside it).
 - Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`,
   `"sequence.start"`, `"sequence.shot"`, `"sequence.end"`, ...

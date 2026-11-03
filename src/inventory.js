@@ -134,7 +134,7 @@ Cutaway.inventory = (function () {
       }
       if (Cutaway.script.busy) return;
       const b = bagBox();
-      if (satchelSprite) Cutaway.assets.draw(ctx, satchelSprite, b.x, b.y, { anchor: [0, 0] });
+      if (satchelSprite) Cutaway.assets.draw(ctx, satchelSprite, b.x, b.y, { anchor: [0, 0], t: Cutaway.clock.time });   // may be an animation
       else ctx.drawImage(bagImage(), b.x, b.y);
     },
   };
@@ -156,7 +156,7 @@ Cutaway.inventory = (function () {
     get isOpen() { return open >= 1; },
     /** 0 = closed ... 1 = fully open. */
     get openness() { return open; },
-    /** Use a sprite for the satchel icon (drawn at the top right, 4 px from the edges). @param {string | null} name */
+    /** Use a sprite (or an animation) for the satchel icon (drawn in its corner, 4 px from the edges). @param {string | null} name */
     setSprite(name) { satchelSprite = name; },
     /** Put the satchel in the top right (default) or the bottom right; its bar slides in from that edge. @param {"top" | "bottom"} c */
     setCorner(c) { corner = c === "bottom" ? "bottom" : "top"; },

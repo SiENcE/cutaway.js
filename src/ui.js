@@ -399,7 +399,7 @@ Cutaway.ui = (function () {
     },
     render(ctx) {
       for (const b of buttonBoxes()) {
-        if (b.sprite) Cutaway.assets.draw(ctx, b.sprite, b.x, b.y, { anchor: [0, 0] });
+        if (b.sprite) Cutaway.assets.draw(ctx, b.sprite, b.x, b.y, { anchor: [0, 0], t: Cutaway.clock.time });   // may be an animation
         else ctx.drawImage(icon(b.k), b.x, b.y);
       }
     },
