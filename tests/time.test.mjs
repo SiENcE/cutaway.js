@@ -88,6 +88,11 @@ export default async function (t) {
   };
   const clean = await issues();
   t.ok("validate: time, routines, a moment and a watched room are fine", clean.length === 0, clean.join(" | "));
+  const declared = await issues((C) => {
+    C.script.action("mark", () => {}, { sets: (s) => [`m_${s.mark}`] });
+    C.room.get("hall").hotspots.window.use = [{ mark: "x" }]; C.room.get("hall").hotspots.crate.if = "m_x";
+  });
+  t.ok("validate: a game's action that says which flags it sets", declared.length === 0, declared.join(" | "));
   const bad = [
     ["a bad time step", (C) => { C.room.get("hall").hotspots.window.use = [{ time: "soon" }]; }, /time "soon"/],
     ["an unknown moment", (C) => { C.room.get("hall").hotspots.window.if = "seen:vist"; }, /unknown moment "vist"/],

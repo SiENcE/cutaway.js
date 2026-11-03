@@ -118,6 +118,12 @@ export function validate(C, o = {}) {
     const name = Object.keys(s).find((k) => actions.has(k));
     if (!name) { err(where, "unknown action " + JSON.stringify(s)); return; }
     const v = s[name];
+    // a game's action that says which flags it sets or reads (Cutaway.script.action(name, fn, { sets, tests }))
+    const meta = C.script.meta?.(name);
+    if (meta) {
+      try { for (const f of meta.sets?.(s) ?? []) flagsSet.add(String(f)); for (const f of meta.tests?.(s) ?? []) flagsTested.add(String(f)); }
+      catch (e) { err(where, `${name}: ${e.message}`); }
+    }
     switch (name) {
       case "say": if ("text" in s) { actor(v, where); text(s.text, where); } else text(v, where); break;
       case "narrate": case "end": text(v, where); break;
@@ -223,7 +229,7 @@ export function validate(C, o = {}) {
     if (r.background) asset(r.background, w + ".background");
     (r.walk ?? []).forEach((poly, i) => polygon(poly, `${w}.walk.${i}`));
     (r.holes ?? []).forEach((poly, i) => polygon(poly, `${w}.holes.${i}`));
-    if (!(r.walk ?? []).length && !stills.has(id)) warn(w, "no walkable area");
+    if (!(r.walk ?? []).length && !stills.has(id) && !r.observe) warn(w, "no walkable area");
     // a walk area beyond the room's size: the camera won't scroll there (a wide room without its `size`?)
     const rw = r.size?.[0] ?? C.display?.width ?? 0, rh = r.size?.[1] ?? C.display?.height ?? 0;
     const far = (r.walk ?? []).flat().filter((v, i) => (i % 2 ? v > rh + 1 : v > rw + 1));

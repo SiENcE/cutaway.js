@@ -207,7 +207,8 @@ it changes the state; a `{ dialog }` counts as more), a square when it is the la
 | `{ sequence: "flashback" }`, `{ shot: "name" }` | play a sequence; mark a shot in one ("Sequences and the intro") |
 | `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic |
 
-Add your own: `Cutaway.script.action("organ", async (step, ctx) => { ... })`.
+Add your own: `Cutaway.script.action("organ", async (step, ctx) => { ... })`. A third argument tells the
+validator which flags a step of it sets or reads: `{ sets: (s) => [`tag_${s.tag}`], tests: (s) => [...] }`.
 
 ### Camera, props and cinema
 

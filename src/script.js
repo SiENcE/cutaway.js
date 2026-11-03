@@ -21,6 +21,8 @@
 Cutaway.script = (function () {
   /** @type {Map<string, (step: Record<string, any>, ctx: ScriptContext) => (void | Promise<void>)>} */
   const actions = new Map();
+  /** @type {Map<string, {sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]}>} what games' actions tell the tools */
+  const metas = new Map();
   let busy = 0, fast = false;
 
   /** Wait `ms` of game time; nothing in fast mode. @param {number} ms */
@@ -270,11 +272,19 @@ Cutaway.script = (function () {
     /** @param {boolean} v */
     set fast(v) { fast = v; },
     /**
-     * Add an action: `Cutaway.script.action("organ", async (step, ctx) => { ... })`.
+     * Add an action: `Cutaway.script.action("organ", async (step, ctx) => { ... })`. With `meta`, the
+     * flags its steps set or read, for the validator: `{ sets: (s) => [`tag_${s.tag}`] }`.
      * @param {string} name
      * @param {(step: Record<string, any>, ctx: ScriptContext) => (void | Promise<void>)} fn
+     * @param {{sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]}} [meta]
      */
-    action(name, fn) { actions.set(name, fn); },
+    action(name, fn, meta) { actions.set(name, fn); if (meta) metas.set(name, meta); },
+    /**
+     * What a game's action tells the tools (the validator): `sets(step)`, the flags a step of it sets
+     * (so they count as set), `tests(step)`, the flags it reads.
+     * @param {string} name @returns {{sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]} | undefined}
+     */
+    meta(name) { return metas.get(name); },
     /** Names of every known action (the validator uses this). */
     names() { return [...actions.keys(), "if", "once"]; },
   };
