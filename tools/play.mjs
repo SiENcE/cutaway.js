@@ -32,7 +32,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 
 const HELPERS = `window.__play = {
   ended: false,
-  idle() { return !Cutaway.script.busy && !Cutaway.ui.line && Cutaway.scene.actorsHere().every((a) => a.state !== "walk" && !a.onceDone); },
+  idle() { return !Cutaway.script.busy && !Cutaway.ui.line && Cutaway.scene.actorsHere().every((a) => (a.state !== "walk" || a.ambient) && !a.onceDone); },
   async step(ms) { Cutaway.clock.advance(ms); await new Promise((r) => setTimeout(r, 0)); },
   // run the clock until choices or a card show, the game ends or everything is quiet
   async run(max = 3000) {
