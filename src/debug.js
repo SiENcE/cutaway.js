@@ -120,7 +120,9 @@ Cutaway.debug = (function () {
       for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const wx = cx + dx, wy = cy + dy, s = Cutaway.scene.toScreen(wx, wy);
-        if (s.x < 2 || s.y < 30 || s.x >= W - 2 || s.y >= H - 2) continue;      // keep clear of the top bar
+        // keep clear of the satchel's bar (it slides in from the top, or the bottom: inventory.setCorner)
+        const bottom = Cutaway.inventory?.corner === "bottom";
+        if (s.x < 2 || s.y < (bottom ? 2 : 30) || s.x >= W - 2 || s.y >= H - (bottom ? 30 : 2)) continue;
         if (Cutaway.scene.hotspotAt(wx, wy)?.id === id) return s;
       }
     }
