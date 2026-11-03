@@ -47,6 +47,10 @@ export default async function (t) {
       JSON.stringify({ on, early, splashing: C.acts.splashing, open: C.acts.titleOpen, room: C.scene.room.id }));
     C.acts.showTitle();
     t.ok("title: on the way back from the game, no splash", !C.acts.splashing && C.acts.titleOpen);
+    const bad = validate(C, { languages: ["en"], title: { room: "yard", splash: { room: "nowhere" } } }).issues;
+    const good = validate(C, { languages: ["en"], title: { room: "yard", splash: { room: "hall" } } }).issues;
+    t.ok("title: validate checks the splash's room (and doesn't want it walkable)", bad.some((i) => i.level === "error" && /title\.splash\.room/.test(i.where))
+      && !good.some((i) => /title\.splash/.test(i.where)), JSON.stringify(bad.filter((i) => /splash/.test(i.where))));
     C.acts.configure({ title: undefined });
   }
   {

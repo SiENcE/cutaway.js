@@ -28,7 +28,7 @@ export function validate(C, o = {}) {
   const actIds = new Set(C.act.ids());
   const sequenceIds = new Set(C.sequence?.ids() ?? []);
   /** rooms shown as shots (by sequences) or stills (the title, the gate): they need no walk area */
-  const stills = new Set([o.title?.room, o.gate?.room].filter(Boolean));
+  const stills = new Set([o.title?.room, o.title?.splash?.room, o.gate?.room].filter(Boolean));
   let filming = false;                                   // checking a sequence: a goto shows a room, nobody goes there
   /** @param {any} s */
   const shots = (s) => {
@@ -403,6 +403,8 @@ export function validate(C, o = {}) {
   if (o.demo?.text !== undefined) text(o.demo.text, "demo.text");
   if (o.title) {
     if (o.title.room) room(o.title.room, "title.room");
+    if (o.title.splash) room(o.title.splash.room, "title.splash.room");
+    if (o.title.splash?.prompt !== undefined) text(o.title.splash.prompt, "title.splash.prompt");
     if (o.title.logo) asset(o.title.logo, "title.logo");
     if (o.title.tagline !== undefined) text(o.title.tagline, "title.tagline");
     for (const k of ["name", "footer"]) if (o.title[k] !== undefined && typeof o.title[k] !== "string") err("title." + k, "must be a string");
