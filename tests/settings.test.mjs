@@ -82,6 +82,26 @@ export default async function (t) {
       return JSON.stringify({ before, after, reset, page, defined: Cutaway.settings.defined.length });
     })()`).then((s) => JSON.parse(s));
     t.ok("settings: a game's own setting, its page, its default, set, tested, reset", own.before && own.after && own.reset && own.page && own.defined === 1, JSON.stringify(own));
+    // a game's own frames and cards (the skin's frame.draw and card.draw): the menu asks, the game draws
+    const drawn = await chrome.ev(`(async () => {
+      const kinds = new Set(), cards = [];
+      const old = { frame: Cutaway.ui.style.frame, card: Cutaway.ui.style.card };
+      Cutaway.ui.skin({ frame: { draw: (ctx, x, y, w, h, o) => kinds.add(o.kind) }, card: { draw: (ctx, c) => cards.push(c) } });
+      Cutaway.menu.open();
+      Cutaway.clock.advance(50);
+      await new Promise((r) => setTimeout(r, 120));
+      Cutaway.menu.close();
+      const picked = Cutaway.menu.showCard("A text.", { title: "A title", buttons: ["Yes", "No"] });
+      Cutaway.clock.advance(500);
+      await new Promise((r) => setTimeout(r, 120));
+      Cutaway.menu.closeCard();
+      await picked;
+      Cutaway.ui.skin(old);
+      const c = cards[cards.length - 1];
+      return JSON.stringify({ kinds: [...kinds].sort(), title: c?.title, lines: c?.lines, buttons: c?.buttons, ms: c?.ms, layout: c && c.textY > c.titleY && c.buttonsY > c.textY });
+    })()`).then((s) => JSON.parse(s));
+    t.ok("skin: a game draws the menu's frames (page, plate) and the cards itself", JSON.stringify(drawn.kinds) === '["page","plate"]' && drawn.title === "A title"
+      && drawn.lines[0] === "A text." && drawn.buttons.length === 2 && drawn.ms >= 490 && drawn.layout, JSON.stringify(drawn));
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

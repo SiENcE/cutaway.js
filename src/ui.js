@@ -37,8 +37,25 @@
  * @property {number} [touchReach]    touch: a tap this many pixels off a hotspot still hits it
  * @property {{menu?: string, hotspots?: string, hint?: string}} [buttons]  sprites for the buttons (default: built in)
  * @property {{outline?: string, light?: string, face?: string, dark?: string, fill?: string, plate?: string, rivet?: string,
- *   rivetLight?: string, rivetDark?: string, hover?: string}} [frame]  the menu's frame: its bevel (light, face, dark),
- *   the fill inside, the heading's plate, the fittings at the corners (rivet), the band under the chosen row
+ *   rivetLight?: string, rivetDark?: string, hover?: string,
+ *   draw?: (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, o: FrameLook) => void}} [frame]
+ *   the menu's frame: its bevel (light, face, dark), the fill inside, the heading's plate, the fittings at the corners
+ *   (rivet), the band under the chosen row; `draw`: the game draws every frame itself (pages, plates, cards, buttons)
+ * @property {{draw: (ctx: CanvasRenderingContext2D, c: CardLook) => void}} [card]  the game draws the full-screen cards
+ *   itself (act titles, the end); the menu still places the buttons and takes the clicks
+ */
+/**
+ * How a frame is asked for: `kind` what it is ("page" a menu page, "plate" the heading's plate across its top,
+ * "card" a full-screen card, "button" a card's button, with `hover`); `small` a thin frame; `fill` the inside;
+ * `shadow` false: none.
+ * @typedef {{kind?: "page" | "plate" | "card" | "button", small?: boolean, fill?: string, shadow?: boolean, hover?: boolean}} FrameLook
+ */
+/**
+ * A card to draw: its heading, its lines (wrapped), its buttons and the one under the pointer (-1: none),
+ * how long it has shown (ms, game time: for type-on and glitches), and where the menu puts the heading,
+ * the first line and the first button (one button every `buttonRow` pixels, centred; their clicks count there).
+ * @typedef {{title: string, lines: string[], buttons: string[], hover: number, ms: number, titleY: number,
+ *   textY: number, buttonsY: number, buttonRow: number}} CardLook
  */
 /**
  * A part of the interface drawn over the room.
@@ -53,7 +70,7 @@
 /** @typedef {{id: string, def: HotspotDef, poly: {x: number, y: number}[], actor?: string}} Hotspot */
 
 Cutaway.ui = (function () {
-  /** @type {Required<Omit<Skin, "cursor" | "cursorHot" | "cursorAnchor" | "font" | "buttons" | "frame">> & Skin} */
+  /** @type {Required<Omit<Skin, "cursor" | "cursorHot" | "cursorAnchor" | "font" | "buttons" | "frame" | "card">> & Skin} */
   const skin = { labelColor: "#ffffff", outline: "#1a1426", accent: "#ffe14a", panel: "rgba(20, 16, 32, 0.78)",
     lineWidth: 200, msPerChar: 55, minLineMs: 1400, touchReach: 7 };
 

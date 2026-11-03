@@ -6,7 +6,9 @@
 // and step through their options (left and right, or a click; on the left arrow it steps back).
 // Pages sit in a bevelled frame with fittings at the corners and the heading on a plate across the
 // top edge, the way menus looked in the late eighties (colours: the skin's `frame`). Other modules show
-// their own pages with the same look (the title screen: `page`).
+// their own pages with the same look (the title screen: `page`). A game with a look of its own draws the
+// frames itself (the skin's `frame.draw`: pages, the heading's plate, cards, buttons) and the cards too
+// (the skin's `card.draw`); the menu keeps the layout, the rows and the clicks.
 // Cards are full-screen texts that wait for a click (act titles, the end), optionally with a heading
 // above and buttons below ("end of the demo": a link, back to the title):
 //   { card: "The Hall", title: "Act 1" }
@@ -36,7 +38,7 @@ Cutaway.menu = (function () {
   let look = {};
   /** @type {string[]} */
   let languages = ["en"];
-  /** @type {{title: string, lines: string[], buttons: string[], hover: number, done: (i: number) => void} | null} */
+  /** @type {{title: string, lines: string[], buttons: string[], hover: number, since: number, done: (i: number) => void} | null} */
   let card = null;
 
   /** @param {string} k */
@@ -62,9 +64,11 @@ Cutaway.menu = (function () {
    * A bevelled frame with fittings at the corners and a shadow; inside, the fill. Pages, cards and
    * buttons use it, games' own pages may too.
    * @param {CanvasRenderingContext2D} ctx @param {number} x @param {number} y @param {number} w @param {number} h
-   * @param {{small?: boolean, fill?: string, shadow?: boolean}} [o]  small: a button's frame (two rings, no fittings)
+   * @param {FrameLook} [o]  small: a button's frame (two rings, no fittings)
    */
   function frame(ctx, x, y, w, h, o = {}) {
+    const draw = Cutaway.ui.style.frame?.draw;
+    if (draw) { draw(ctx, x, y, w, h, o); return; }
     const c = colours();
     if (o.shadow !== false) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
@@ -240,7 +244,7 @@ Cutaway.menu = (function () {
   function showCard(text, o = {}) {
     return new Promise((done) => {
       card = { title: o.title ? Cutaway.i18n.t(o.title) : "", lines: Cutaway.ui.font().wrap(Cutaway.i18n.t(text), 260),
-        buttons: (o.buttons ?? []).map((b) => Cutaway.i18n.t(b)), hover: -1,
+        buttons: (o.buttons ?? []).map((b) => Cutaway.i18n.t(b)), hover: -1, since: Cutaway.clock.time,
         done: (i) => { card = null; done(i); } };
     });
   }
@@ -281,14 +285,19 @@ Cutaway.menu = (function () {
     if (!card) return;
     const L = /** @type {NonNullable<ReturnType<typeof cardLayout>>} */ (cardLayout());
     const f = Cutaway.ui.font(), s = Cutaway.ui.style, SW = Cutaway.display.width, SH = Cutaway.display.height;
+    if (s.card?.draw) {
+      s.card.draw(ctx, { title: card.title, lines: card.lines, buttons: card.buttons, hover: card.hover,
+        ms: Cutaway.clock.time - card.since, titleY: L.title, textY: L.text, buttonsY: L.buttons, buttonRow: BUTTON_ROW });
+      return;
+    }
     ctx.fillStyle = "#0c0a14";
     ctx.fillRect(0, 0, SW, SH);
-    frame(ctx, 4, 4, SW - 8, SH - 8, { fill: "#0c0a14", shadow: false });
+    frame(ctx, 4, 4, SW - 8, SH - 8, { fill: "#0c0a14", shadow: false, kind: "card" });
     if (card.title) f.draw(ctx, card.title, SW / 2, L.title, { align: "center", color: s.accent, outline: s.outline });
     card.lines.forEach((l, i) => f.draw(ctx, l, SW / 2, L.text + i * f.lineHeight, { align: "center", color: "#fff" }));
     card.buttons.forEach((b, i) => {
       const y = L.buttons + i * BUTTON_ROW, w = f.measure(b) + 14, on = i === card?.hover;
-      frame(ctx, Math.round(SW / 2 - w / 2), y - 3, w, 13, { small: true, fill: on ? colours().face : s.panel });
+      frame(ctx, Math.round(SW / 2 - w / 2), y - 3, w, 13, { small: true, fill: on ? colours().face : s.panel, kind: "button", hover: on });
       f.draw(ctx, b, SW / 2, y, { align: "center", color: on ? s.accent : "#fff", outline: s.outline });
     });
   }
@@ -300,12 +309,11 @@ Cutaway.menu = (function () {
     const shown = 1 - (look.below ? Cutaway.util.clamp(look.below(), 0, 1) : 0);
     ctx.fillStyle = `rgba(0, 0, 0, ${(look.dim ?? 0.45) * shown})`;
     ctx.fillRect(0, 0, SW, SH);
-    frame(ctx, g.x, g.y, g.w, g.h);
+    frame(ctx, g.x, g.y, g.w, g.h, { kind: "page" });
     if (shown <= 0) return;
     const pw = f.measure(title) + 16, px = Math.round(g.x + (g.w - pw) / 2), py = g.y - PLATE;   // the heading's plate across the top edge
-    frame(ctx, px, py, pw, 15, { small: true, fill: c.plate });
-    ctx.fillStyle = c.face;
-    ctx.fillRect(px + 2, py + 2, pw - 4, 1);
+    frame(ctx, px, py, pw, 15, { small: true, fill: c.plate, kind: "plate" });
+    if (!s.frame?.draw) { ctx.fillStyle = c.face; ctx.fillRect(px + 2, py + 2, pw - 4, 1); }
     f.draw(ctx, title, g.x + g.w / 2, py + 4, { align: "center", color: s.accent, outline: s.outline });
     entries.forEach((e, i) => {
       const y = rowY(g, i), on = i === hoverIx && shown >= 1, color = on ? s.accent : "#ffffff", v = valueBox(e);

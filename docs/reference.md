@@ -481,9 +481,15 @@ The page loads each layer file after the game's own data.
   `"setting:violence=bars"`. `Cutaway.settings.get(key)`.
 - `Cutaway.scene.boxes()`: what can be clicked now, as boxes on the screen (`{ id, actor, name, box: [x,
   y, w, h] }`), for a game's own overlay layer (brackets round people and things).
-- The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons, frame })`;
+- The skin: `Cutaway.ui.skin({ cursor, font, labelColor, outline, accent, panel, buttons, frame, card })`;
   `frame` colours the menu's frame: `{ light, face, dark }` (the bevel), `fill` (inside), `plate` (the
   heading's), `rivet`, `rivetLight`, `rivetDark` (the corner fittings), `hover` (the chosen row's band).
+  A game with a look of its own gives `frame.draw(ctx, x, y, w, h, o)` and draws every frame itself;
+  `o.kind` says what it is (`"page"` a menu page, `"plate"` the heading's plate across its top, `"card"`,
+  `"button"` with `o.hover`), `o.small` a thin one, `o.fill` the inside. `card: { draw(ctx, c) }` draws
+  the full-screen cards (act titles, the end) instead of the built-in look: `c` has `title`, `lines`
+  (wrapped), `buttons`, `hover`, `ms` (how long it has shown, game time: for typing it on), `titleY`,
+  `textY`, `buttonsY` and `buttonRow` (where the menu takes the clicks: buttons centred, one per row).
   `Cutaway.menu.frame(ctx, x, y, w, h, { small, fill })` draws one for a game's own pages,
   `Cutaway.party.layout({...})`, `Cutaway.inventory.setSprite(...)`, `Cutaway.inventory.setCorner("bottom")`
   (the satchel in the bottom right, its bar sliding up from the bottom edge; the hint button beside it).
