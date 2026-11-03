@@ -44,7 +44,7 @@
  * @typedef {object} TitleOptions
  * @property {string} [room]               the room behind the title screen
  * @property {[number, number]} [view]     where the camera stays in it (top left)
- * @property {string} [logo]               sprite; without one, `name` is drawn large (a placeholder)
+ * @property {string} [logo]               sprite or animation (it plays); without one, `name` is drawn large (a placeholder)
  * @property {string} [name]               the game's name
  * @property {string} [tagline]            the heading of the title's menu
  * @property {string} [footer]             small print at the bottom right (version, licence)
@@ -299,11 +299,11 @@ Cutaway.acts = (function () {
       ctx.save();
       ctx.globalAlpha = alpha;
       const logo = title.logo && Cutaway.assets.get(title.logo)?.frames[0];
-      if (logo) Cutaway.assets.draw(ctx, /** @type {string} */ (title.logo), Math.floor(W / 2), 10, { anchor: [Math.floor(logo.w / 2), 0] });
+      if (logo) Cutaway.assets.draw(ctx, /** @type {string} */ (title.logo), Math.floor(W / 2), 10, { anchor: [Math.floor(logo.w / 2), 0], t: Cutaway.clock.time });   // may be an animation
       else if (title.name) { const c = big(Cutaway.i18n.t(title.name)); ctx.drawImage(c, Math.floor((W - c.width) / 2), 22); }
       if (title.footer) {
         const txt = Cutaway.i18n.t(title.footer);
-        f.draw(ctx, txt, W - 4 - f.measure(txt), H - 11, { color: "#d8d4e4", outline: s.outline });
+        f.draw(ctx, txt, W - 4 - f.measure(txt), H - 11, { color: s.labelColor, outline: s.outline });
       }
       ctx.restore();
     },
