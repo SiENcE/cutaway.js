@@ -32,15 +32,23 @@ Cutaway.hints = (function () {
   /** The index of the hint for now, or -1. */
   function currentIndex() { return list.findIndex((h) => (!h.act || h.act === Cutaway.acts.current) && Cutaway.state.test(h.if)); }
 
-  /** Show the hint for now (the next line of it, when asked again). */
-  hints.ask = function () {
+  /** Take the next line of the hint for now (each ask one plainer): the step that shows it and its path. */
+  function next() {
     const i = currentIndex(), h = list[i];
-    if (!h) return Cutaway.script.run({ narrate: "@cutaway.hint.none" });
+    if (!h) return { step: { narrate: "@cutaway.hint.none" }, path: "hint.none" };
     if (i !== lastIx) { lastIx = i; level = 0; }
     const lines = Array.isArray(h.text) ? h.text : [h.text], n = Math.min(level++, lines.length - 1);
     Cutaway.events.emit("hint", { index: i, line: n });
-    return Cutaway.script.run({ narrate: Cutaway.i18n.t("@cutaway.hint.prefix") + Cutaway.i18n.t(lines[n]) }, { path: `hint.${i}` });
+    return { step: { narrate: Cutaway.i18n.t("@cutaway.hint.prefix") + Cutaway.i18n.t(lines[n]) }, path: `hint.${i}` };
+  }
+
+  /** Show the hint for now (the next line of it, when asked again). */
+  hints.ask = function () {
+    const { step, path } = next();
+    return Cutaway.script.run(step, { path });
   };
+  /** The next line as a script step, for the { hint: true } action (a character who gives the hints). */
+  hints.next = () => next().step;
   /** Does the game have hints? */
   hints.any = () => list.length > 0;
   /** All hints (the tools check them). */
@@ -53,5 +61,7 @@ Cutaway.hints = (function () {
   hints.init = function () {
     Cutaway.events.on("key", (k) => { if (k.code === "KeyH" && hints.ready()) { hints.ask(); k.event.preventDefault(); } });
   };
+  // { hint: true }: the hint for now, as if the hint button were pressed (from a hotspot, a character)
+  Cutaway.script.action("hint", (s, ctx) => Cutaway.script.exec([hints.next()], ctx));
   return hints;
 })();

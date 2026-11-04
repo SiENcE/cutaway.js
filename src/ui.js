@@ -380,7 +380,7 @@ Cutaway.ui = (function () {
     const bag = Cutaway.inventory.bagCentre(), y = Cutaway.inventory.corner === "bottom" ? Cutaway.display.height - 16 : 5;
     /** @type {{k: "hint" | "hotspots" | "menu", x: number, y: number, w: number, h: number, sprite: string | undefined}[]} */
     const out = [];
-    if (!Cutaway.scene.active || Cutaway.script.busy || Cutaway.inventory.openness > 0 || Cutaway.menu.isOpen) return out;
+    if (!Cutaway.scene.active || Cutaway.script.busy || Cutaway.inventory.openness > 0 || Cutaway.menu.isOpen || Cutaway.scene.room?.buttons === false) return out;
     /** @type {("hint" | "hotspots" | "menu")[]} */
     const kinds = [...(Cutaway.hints.any() && opts.hintButton ? /** @type {const} */ (["hint"]) : []),
       ...(Cutaway.input.touched || opts.buttons ? /** @type {const} */ (["hotspots", "menu"]) : [])];

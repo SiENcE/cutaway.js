@@ -54,7 +54,7 @@ Cutaway.inventory = (function () {
   function barY() { return corner === "bottom" ? Math.round(H() - BAR_H * open) : Math.round(-BAR_H + BAR_H * open); }
   /** Is a point outside the bar (it is open)? @param {number} y */
   function offBar(y) { return y < barY() || y >= barY() + BAR_H; }
-  function shown() { return !!Cutaway.scene.active && !Cutaway.script.busy; }
+  function shown() { return !!Cutaway.scene.active && !Cutaway.script.busy && Cutaway.scene.room?.buttons !== false; }
 
   /** @param {number} x @param {number} y @returns {number} item index under the point, or -1 */
   function itemAt(x, y) {
@@ -132,7 +132,7 @@ Cutaway.inventory = (function () {
         });
         if (!list.length) f.draw(ctx, Cutaway.i18n.t("@cutaway.empty"), 8, y + 9, { color: "#c8c8d8" });
       }
-      if (Cutaway.script.busy) return;
+      if (Cutaway.script.busy || Cutaway.scene.room?.buttons === false) return;
       const b = bagBox();
       if (satchelSprite) Cutaway.assets.draw(ctx, satchelSprite, b.x, b.y, { anchor: [0, 0], t: Cutaway.clock.time });   // may be an animation
       else ctx.drawImage(bagImage(), b.x, b.y);

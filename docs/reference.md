@@ -75,6 +75,8 @@ Cutaway.room("hall", {
   watching) come through whole.
 - `lines: "top"` or `"bottom"`: every line shows in a bar there instead of over the speaker; `label:
   true` puts the speaker's name before it ("Kessler: ...").
+- `buttons: false`: the satchel and the buttons beside it don't show in this room (a full-screen computer,
+  a map); the keys (H, Tab, Esc) still work.
 - `observe: true`: a watched room (a camera's view, a window seen from afar). The one played isn't in
   it: going there (a `goto` or an exit) leaves them where they are, and clicks never walk. Hotspots and
   the actors in it are clicked as usual; the played actor's lines come from off-screen (at the top).
@@ -210,6 +212,7 @@ it changes the state; a `{ dialog }` counts as more), a square when it is the la
 | `{ letterbox: true, ms }`, `{ caption: "Paris, 1925.", at: "bl", type: true, ms }`, `{ dissolve: 800 }`, `{ tape: 1, ms }` | cinema, below |
 | `{ sequence: "flashback" }`, `{ shot: "name" }` | play a sequence; mark a shot in one ("Sequences and the intro") |
 | `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic |
+| `{ hint: true }` | the hint for now, as the hint button gives it (each ask one plainer): a character or a thing that gives the hints |
 
 Add your own: `Cutaway.script.action("organ", async (step, ctx) => { ... })`. A third argument tells the
 validator which flags a step of it sets or reads: `{ sets: (s) => [`tag_${s.tag}`], tests: (s) => [...] }`.

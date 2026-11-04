@@ -100,6 +100,10 @@ export default async function (t) {
     C.state.set("got_key");
     await C.hints.ask();
     t.ok("hints: asking again gets clearer, a new hint starts over", lines.join(" ") === "0.0 0.1 0.2 0.2 1.0", lines.join(" "));
+    // { hint: true } in a script gives the next line, as the button does (this hint has two: the plainest stays)
+    lines.length = 0;
+    await C.script.run([{ hint: true }, { hint: true }]);
+    t.ok("hints: the hint action asks like the button", lines.join(" ") === "1.1 1.1", lines.join(" "));
     // an act's own hints count only while it is played, before the game's others
     const all = C.hints.all();
     C.hints([{ text: "Night hint." }], { act: "act2" });

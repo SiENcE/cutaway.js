@@ -89,6 +89,7 @@
  *                                   microphone: an actor further than `clear` from it loses words, all at `lost`
  * @property {"over" | "top" | "bottom"} [lines]  where lines show: over the speaker (default) or in a bar
  * @property {boolean} [label]       put the speaker's name before each line
+ * @property {boolean} [buttons]     false: no satchel and no buttons beside it in this room (a full-screen computer, a map)
  * @property {boolean} [observe]     a watched room (a camera's view): the one played isn't in it, going
  *                                   there leaves them where they are, clicks never walk; hotspots and the
  *                                   actors in it are clicked as usual (their lines come from off-screen)

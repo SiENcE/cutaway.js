@@ -83,7 +83,8 @@
           bulb_clean: [{ remove: "bulb_clean" }, { state: "lamp", value: "lit" }, { stinger: "discovery" }, { music: { intensity: 1 } }, "Let there be light!",
             { say: "bolt", text: "Nice work, Pip." }, { end: "The lamp shines. Thanks for playing the Cutaway.js demo!" }],
         } },
-      hills: { name: "hills", rect: [60, 78, 260, 18], look: "Hills. They go on for a while." },
+      hills: { name: "hills", rect: [60, 78, 260, 18], look: "Hills. They go on for a while.",
+        use: ["Looking at the hills always helps me think.", { hint: true }] },   // a thing that gives the hints
     },
     enter: [{ if: "!visited:yard", then: ["Fresh air!"] }],
   });
