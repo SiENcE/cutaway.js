@@ -147,6 +147,8 @@
     costume: { idle: "bolt_idle_r", walk: "bolt_walk_r", talk: "bolt_talk_r" },
     speed: [18, 9],
     voice: { pitch: 57, range: 3, wave: "saw", syllable: 85, speed: 0.9, gain: 0.2, formant: 0.9 },
+    // Pip talks to him from in front of him, a little to his left (not wherever she happens to come from)
+    walkTo: [204, 154], face: "right",
     look: "Bolt. Tall, orange and very polite.", talk: [{ say: "bolt", text: "Yes, Pip?" }, { dialog: "bolt" }],
   });
 

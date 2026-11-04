@@ -151,6 +151,9 @@ Cutaway.actor("pip", {
 - An actor without a `costume` is a voice only (someone on the phone, a megaphone far away): it can
   `say` lines but is never drawn, so don't place it in a room.
 - Double click (or double tap) makes the played actor run.
+- Clicking another actor walks the one played up beside it, and the two turn to each other. `walkTo: [x, y]`
+  (and `face`) on the actor says where to stand instead: someone behind a counter is talked to from its
+  front (`face` then is the way the one played looks there, and neither turns).
 
 ## Items
 

@@ -500,7 +500,7 @@ Cutaway.scene = (function () {
       if (a.id === activeId || a.def.hidden) continue;
       const [x, y, w, h] = a.box();
       out.push({ id: "@" + a.id, actor: a.id, poly: rectPoly(x, y, w, h),
-        def: { name: a.name, look: a.def.look, talk: a.def.talk, with: a.def.with, z: 1 } });
+        def: { name: a.name, look: a.def.look, talk: a.def.talk, with: a.def.with, walkTo: a.def.walkTo, face: a.def.face, z: 1 } });
     }
     return out;
   }

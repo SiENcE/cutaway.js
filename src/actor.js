@@ -29,6 +29,9 @@
  * @property {string} [portrait]   sprite for the party portraits
  * @property {string} [portraitActive]  sprite while this actor is the active one (frames drawn by the game)
  * @property {boolean} [hidden]    not clickable
+ * @property {[number, number]} [walkTo]  where the one played stands to talk to this actor (default: beside it);
+ *                                 with it, `face` is which way they face there (and neither turns to the other)
+ * @property {Facing} [face]
  * @property {VoiceProfile} [voice] how the actor's blips sound
  * @property {{x: number, y: number, w?: number, align?: "left" | "right" | "center"}} [lineBox]  where this actor's lines
  *   show when it isn't drawn in the room (a voice from a screen, a speaker, a bag): x the edge they align to,
