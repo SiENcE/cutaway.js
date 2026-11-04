@@ -10,11 +10,11 @@
   I("hat", { type: "drum", kind: "hat", gain: 0.22, pan: 0.25 });
   I("bass", { type: "sub", wave: "saw", filter: { cutoff: 260, env: 1100, q: 7, decay: 0.18 }, amp: { a: 0.004, d: 0.2, s: 0.55, r: 0.08 }, gain: 0.42 });
   I("epiano", { type: "fm", ratio: 1, index: 1.4, indexDecay: 0.45, amp: { a: 0.003, d: 0.9, s: 0.25, r: 0.35 }, gain: 0.16, reverb: 0.25, pan: -0.15 });
-  I("pad", { type: "sub", wave: "saw", voices: 3, detune: 16, filter: { cutoff: 850, q: 1 }, amp: { a: 0.7, d: 0.5, s: 0.85, r: 1.2 }, gain: 0.06, reverb: 0.45 });
+  I("pad", { type: "sub", wave: "saw", voices: 3, detune: 16, filter: { cutoff: 850, q: 1 }, amp: { a: 0.7, d: 0.5, s: 0.85, r: 1.2 }, gain: 0.06, reverb: 0.3, hall: 0.25 });
   I("lead", { type: "sub", wave: "pulse", pulseWidth: 0.3, filter: { cutoff: 2200, env: 1400, decay: 0.3 }, vibrato: { rate: 5.5, depth: 16, delay: 0.2 },
     amp: { a: 0.01, d: 0.1, s: 0.8, r: 0.15 }, gain: 0.11, delay: 0.22, reverb: 0.2, pan: 0.1 });
   I("guitar", { type: "pluck", decay: 0.995, bright: 0.65, gain: 0.32, pan: -0.25, reverb: 0.2 });
-  I("whistle", { type: "sub", wave: "sine", vibrato: { rate: 6, depth: 24, delay: 0.12 }, amp: { a: 0.03, d: 0.1, s: 0.9, r: 0.15 }, gain: 0.16, reverb: 0.3, delay: 0.2 });
+  I("whistle", { type: "sub", wave: "sine", bend: { from: -60, time: 0.08 }, vibrato: { rate: 6, depth: 24, delay: 0.12, rise: 0.3 }, amp: { a: 0.03, d: 0.1, s: 0.9, r: 0.15 }, gain: 0.16, reverb: 0.3, delay: 0.2 });
   I("bell", { type: "fm", ratio: 3.5, index: 2, indexDecay: 0.8, amp: { a: 0.002, d: 1.2, s: 0, r: 1 }, gain: 0.2, reverb: 0.4 });
   I("brass", { type: "sub", wave: "saw", voices: 2, detune: 8, filter: { cutoff: 600, env: 2400, a: 0.05, decay: 0.4, sustain: 0.4 }, amp: { a: 0.03, d: 0.2, s: 0.8, r: 0.2 }, gain: 0.14, reverb: 0.3 });
 

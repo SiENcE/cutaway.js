@@ -436,6 +436,10 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 ## Music
 
 - Instruments: `Cutaway.synth.define(name, { type: "sub" | "fm" | "pluck" | "drum", ... })`.
+  Sends: `reverb` (a short room), `hall` (a long, dark reverb, 6.5 s: distance, a city at night),
+  `delay` (echoes), each 0..1. Expression for `sub` and `fm`: `bend: { from: -120, time: 0.3 }` starts
+  every note 120 cents low and slides it onto its pitch (a CS-80's ribbon, a scoop);
+  `vibrato: { rate, depth, delay, rise }` with `rise` waits `delay` seconds, then deepens over `rise`.
 - Themes: `Cutaway.score.theme(id, { tempo, key, tracks, layers, sections, start, transitions })`;
   sections loop or go `next`, and change only at jump points (`exits`: the bar, the end, listed bars).
 - Layers fade in and out with the intensity; stingers (`Cutaway.score.stinger`) play on the next beat

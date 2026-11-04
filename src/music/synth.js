@@ -8,7 +8,12 @@
 //   fm     two-operator FM (bells, electric piano, slap bass): ratio, index, indexDecay
 //   pluck  Karplus-Strong string (guitar, harp): decay, bright
 //   drum   kick, snare, clap, hat, openhat, tom: tune, decay; `gate` adds the gated-reverb snare sound
-// Every instrument: gain, pan (-1..1), reverb and delay send levels (0..1).
+// Every instrument: gain, pan (-1..1), reverb, hall and delay send levels (0..1). `hall` is a long, dark
+// reverb (a city at night, a cathedral); `reverb` the short room.
+// Expression (sub, fm): `bend: { from, time }` starts each note `from` cents off (negative: from below)
+// and slides onto the pitch over `time` seconds (a CS-80's ribbon, a singer's scoop); `vibrato.rise`
+// makes the vibrato wait `delay` seconds and then deepen over `rise` (without it, it ramps in from the
+// note's start as before).
 "use strict";
 
 /**
@@ -22,7 +27,8 @@
  * @property {number} [octave]       shift in octaves
  * @property {{type?: BiquadFilterType, cutoff?: number, q?: number, env?: number, a?: number, decay?: number, sustain?: number, keyTrack?: number}} [filter]
  * @property {Env} [amp]
- * @property {{rate?: number, depth?: number, delay?: number}} [vibrato]  depth in cents
+ * @property {{rate?: number, depth?: number, delay?: number, rise?: number}} [vibrato]  depth in cents
+ * @property {{from?: number, time?: number}} [bend]  each note slides from `from` cents onto its pitch in `time` s
  * @property {number} [ratio]        fm: modulator frequency / carrier frequency
  * @property {number} [index]        fm: modulation depth
  * @property {number} [indexDecay]   fm: seconds for the index to fall to a fifth
@@ -34,6 +40,7 @@
  * @property {number} [gain]
  * @property {number} [pan]
  * @property {number} [reverb]
+ * @property {number} [hall]
  * @property {number} [delay]
  */
 /**
@@ -118,8 +125,29 @@ Cutaway.synth = (function () {
     amp.connect(pan).connect(out);
     const b = Cutaway.audio.buses;
     if (b && def.reverb) { const s = c.createGain(); s.gain.value = def.reverb; pan.connect(s).connect(b.reverb); }
+    if (b && def.hall && b.hall) { const s = c.createGain(); s.gain.value = def.hall; pan.connect(s).connect(b.hall); }
     if (b && def.delay) { const s = c.createGain(); s.gain.value = def.delay; pan.connect(s).connect(b.delay); }
     return amp;
+  }
+
+  /** A note's pitch offset (cents) on a detune param: where it starts with a bend, then onto `cents`.
+   * @param {AudioParam} p @param {number} t @param {number} cents @param {InstrumentDef} def */
+  function pitch(p, t, cents, def) {
+    if (!def.bend?.from) { p.value = cents; return; }
+    p.setValueAtTime(cents + def.bend.from, t);
+    p.setTargetAtTime(cents, t, Math.max(0.005, (def.bend.time ?? 0.15) / 3));
+  }
+
+  /** Vibrato into a detune param from t to end. @param {BaseAudioContext} c @param {AudioParam} p @param {number} t @param {number} end
+   * @param {NonNullable<InstrumentDef["vibrato"]>} V */
+  function vibrato(c, p, t, end, V) {
+    const lfo = c.createOscillator(), lg = c.createGain();
+    lfo.frequency.value = V.rate ?? 5.5;
+    lg.gain.setValueAtTime(0, t);
+    if (V.rise !== undefined) { lg.gain.setValueAtTime(0, t + (V.delay ?? 0.25)); lg.gain.linearRampToValueAtTime(V.depth ?? 15, t + (V.delay ?? 0.25) + V.rise); }
+    else lg.gain.linearRampToValueAtTime(V.depth ?? 15, t + (V.delay ?? 0.25) + 0.2);
+    lfo.connect(lg).connect(p);
+    lfo.start(t); lfo.stop(end);
   }
 
   /** @param {BaseAudioContext} c @param {InstrumentDef} def @param {PlayOptions} o @param {AudioNode} out */
@@ -140,15 +168,8 @@ Cutaway.synth = (function () {
       if (def.wave === "pulse") osc.setPeriodicWave(pulseWave(c, def.pulseWidth ?? 0.25));
       else osc.type = def.wave === "saw" ? "sawtooth" : (def.wave ?? "sawtooth");
       osc.frequency.value = f;
-      osc.detune.value = n > 1 ? (i / (n - 1) - 0.5) * (def.detune ?? 12) : 0;
-      if (def.vibrato) {
-        const lfo = c.createOscillator(), lg = c.createGain(), V = def.vibrato;
-        lfo.frequency.value = V.rate ?? 5.5;
-        lg.gain.setValueAtTime(0, t);
-        lg.gain.linearRampToValueAtTime(V.depth ?? 15, t + (V.delay ?? 0.25) + 0.2);
-        lfo.connect(lg).connect(osc.detune);
-        lfo.start(t); lfo.stop(end);
-      }
+      pitch(osc.detune, t, n > 1 ? (i / (n - 1) - 0.5) * (def.detune ?? 12) : 0, def);
+      if (def.vibrato) vibrato(c, osc.detune, t, end, def.vibrato);
       osc.connect(filt);
       osc.start(t); osc.stop(end);
     }
@@ -166,6 +187,8 @@ Cutaway.synth = (function () {
     mod.connect(mg).connect(car.frequency);
     car.connect(amp);
     const end = envelope(amp.gain, t, dur, (def.gain ?? 0.3) * (o.velocity ?? 1), def.amp ?? { a: 0.003, d: 0.6, s: 0.3, r: 0.3 });
+    pitch(car.detune, t, 0, def); pitch(mod.detune, t, 0, def);
+    if (def.vibrato) { vibrato(c, car.detune, t, end, def.vibrato); vibrato(c, mod.detune, t, end, def.vibrato); }
     car.start(t); mod.start(t); car.stop(end); mod.stop(end);
     return end;
   }

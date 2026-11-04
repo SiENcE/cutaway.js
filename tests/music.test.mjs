@@ -13,6 +13,33 @@ export default function (t) {
   t.ok("notes: holds, chords, accents, flats", notes[0].len === 3 && notes[0].notes[0] === 60 && notes[4].notes.join() === "60,64,67" && notes[4].vel === 1 && notes[6].notes[0] === 46);
   t.ok("note names", C.synth.midi("A4") === 69 && C.synth.midi("F#3") === 54 && C.synth.midi(61) === 61);
 
+  // expression on a fake audio context that records what is set: a bend slides onto the pitch, a rising
+  // vibrato waits and then deepens, the hall send goes to the hall bus
+  {
+    const log = [];
+    const param = (name) => ({ name, value: 0, setValueAtTime(v, t) { log.push([name, "set", v, t]); }, linearRampToValueAtTime(v, t) { log.push([name, "ramp", v, t]); },
+      setTargetAtTime(v, t, k) { log.push([name, "target", v, t, k]); }, exponentialRampToValueAtTime(v, t) { log.push([name, "exp", v, t]); }, cancelScheduledValues() {} });
+    const seen = [];
+    const node = (kind) => { const n = { kind, outs: [], connect(o) { n.outs.push(o); return o; } }; seen.push(n); return n; };
+    const ctx = {
+      sampleRate: 44100, currentTime: 0,
+      createGain: () => Object.assign(node("gain"), { gain: param("gain") }),
+      createStereoPanner: () => Object.assign(node("pan"), { pan: param("pan") }),
+      createBiquadFilter: () => Object.assign(node("filter"), { type: "", frequency: param("cutoff"), Q: param("q") }),
+      createOscillator: () => Object.assign(node("osc"), { type: "", frequency: param("freq"), detune: param("detune"), start() {}, stop() {}, setPeriodicWave() {} }),
+    };
+    const hall = node("hall"), reverb = node("reverb"), delay = node("delay");
+    C.audio = { ctx, buses: { hall, reverb, delay, music: node("music") } };
+    C.synth.define("t_swell", { type: "sub", wave: "saw", bend: { from: -120, time: 0.3 }, vibrato: { rate: 4, depth: 20, delay: 0.5, rise: 1 }, hall: 0.6 });
+    C.synth.play("t_swell", { time: 2, note: "A3", duration: 1, out: node("out") });
+    const det = log.filter((e) => e[0] === "detune");
+    t.ok("bend: the note starts 120 cents low and slides onto its pitch", det.some((e) => e[1] === "set" && e[2] === -120 && e[3] === 2) && det.some((e) => e[1] === "target" && e[2] === 0 && e[3] === 2 && Math.abs(e[4] - 0.1) < 1e-9), JSON.stringify(det));
+    const vib = log.filter((e) => e[0] === "gain" && (e[2] === 20 || (e[1] === "set" && e[2] === 0 && e[3] === 2.5)));
+    t.ok("vibrato.rise: silent until the delay, full depth after the rise", vib.some((e) => e[1] === "set" && e[3] === 2.5) && vib.some((e) => e[1] === "ramp" && e[2] === 20 && e[3] === 3.5), JSON.stringify(vib));
+    t.ok("hall: a send into the hall bus", seen.some((n) => n !== hall && n.outs.includes(hall)));
+    delete C.audio;
+  }
+
   // the demo's scores, with instruments defined by demo/music.js
   vm.runInContext(readFileSync("demo/music.js", "utf8"), vm.createContext(Object.assign(Object.create(null), { Cutaway: C })));
   t.ok("demo scores check out", C.score.ids().every((id) => C.score.check(id).length === 0) && C.score.stingerIds().every((id) => C.score.checkStinger(id).length === 0),

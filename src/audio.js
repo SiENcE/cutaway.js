@@ -15,6 +15,7 @@
  * @property {GainNode} voice
  * @property {GainNode} sfx
  * @property {GainNode} reverb   send: whatever goes in comes out reverberated
+ * @property {GainNode} hall     send: a long, dark reverb (6.5 s)
  * @property {GainNode} delay    send: echoes
  */
 
@@ -62,7 +63,7 @@ Cutaway.audio = (function () {
     if (ctx && !o.context) return ctx;
     const c = o.context ?? new AudioContext({ latencyHint: "interactive" });
     const g = () => c.createGain();
-    const master = g(), music = g(), voice = g(), sfx = g(), reverb = g(), delay = g();
+    const master = g(), music = g(), voice = g(), sfx = g(), reverb = g(), hall = g(), delay = g();
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.2;
     master.connect(comp).connect(c.destination);
@@ -74,13 +75,17 @@ Cutaway.audio = (function () {
     conv.buffer = impulse(c, 2.4, 2.6);
     const wet = g(); wet.gain.value = 0.32;
     reverb.connect(conv).connect(wet).connect(master);
+    // the hall: a long tail, its highs rolled off, so it stays behind the music like distance
+    const hconv = c.createConvolver(), hlp = c.createBiquadFilter(), hwet = g();
+    hconv.buffer = impulse(c, 6.5, 2.2); hlp.type = "lowpass"; hlp.frequency.value = 2400; hwet.gain.value = 0.3;
+    hall.connect(hconv).connect(hlp).connect(hwet).connect(master);
     const dl = c.createDelay(2), fb = g(), dlf = c.createBiquadFilter();
     dl.delayTime.value = 0.375; fb.gain.value = 0.32; dlf.type = "lowpass"; dlf.frequency.value = 2600;
     delay.connect(dl).connect(dlf).connect(fb).connect(dl);
     const dwet = g(); dwet.gain.value = 0.4;
     dlf.connect(dwet).connect(master);
     ctx = c;
-    buses = { master, music, voice, sfx, reverb, delay };
+    buses = { master, music, voice, sfx, reverb, hall, delay };
     tone = { hp, lp, mid };
     speaker(speakerAmount, 0);
     applyVolumes();
