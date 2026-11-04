@@ -200,8 +200,18 @@ export async function makeSolver(g, opts = {}) {
    */
   async function expandHere(snaps, known) {
     const out = [];
-    for (const packed of snaps) {
-      const snap = unpack(packed), res = [], here = new Set(), k0 = key(snap);
+    for (const packed of snaps) out.push(await expandState(unpack(packed), known));
+    return out;
+  }
+
+  /**
+   * Every move from one state and the states they lead to (one per key; the snapshot only of a state
+   * `known` doesn't have). Shared by this thread and the workers.
+   * @param {any} snap @param {(k: string) => boolean} known
+   */
+  async function expandState(snap, known) {
+    {
+      const res = [], here = new Set(), k0 = key(snap);
       // with view flags: every view this state can open (by moves that change nothing else), each move
       // played once, in the first view that offers it; a move found in a view carries the clicks to it (pre)
       const open = [{ snap, pre: /** @type {Move[]} */ ([]) }], seenViews = new Set([viewSig(snap)]), played = new Set();
@@ -224,9 +234,8 @@ export async function makeSolver(g, opts = {}) {
           }
         }
       }
-      out.push(res);
+      return res;
     }
-    return out;
   }
 
   /** @param {Uint8Array[]} snaps */
@@ -402,5 +411,5 @@ export async function makeSolver(g, opts = {}) {
     return { uses, problems };
   }
 
-  return { C, start, moves, play, search, key };
+  return { C, start, moves, play, search, key, expandState };
 }
