@@ -18,6 +18,13 @@ export default async function (t) {
     // lines: by themselves, or waiting for a click
     const said = await chrome.ev("Cutaway.ui.say(Cutaway.scene.active, 'A line.'); Cutaway.clock.advance(20000); !Cutaway.ui.line");
     t.ok("lines: auto, a line goes by itself", said);
+    // an actor's lineBox: its lines show at its own place (right-aligned at x, the bottom at y, wrapped to w)
+    const pl = await chrome.ev(`Cutaway.actor("speaker", { name: "Speaker", color: "#8ef5d8", lineBox: { x: 300, y: 170, w: 120, align: "right" } });
+      Cutaway.ui.say(Cutaway.actors.get("speaker"), "A voice from a small speaker in the corner of the screen.");
+      const p = Cutaway.ui.linePlacement(), f = Cutaway.ui.font();
+      Cutaway.clock.advance(20000);
+      ({ ...p, bottom: p.y + p.lines.length * f.lineHeight, widest: Math.max(...p.lines.map((l) => f.measure(l))) })`);
+    t.ok("lineBox: right-aligned at its x, its bottom at y, wrapped to its width", pl.align === "right" && pl.x === 300 && pl.bottom === 170 && pl.widest <= 120 && pl.lines.length > 1, JSON.stringify(pl));
     const waits = await chrome.ev(`Cutaway.settings.set({ advance: "click" }); Cutaway.ui.say(Cutaway.scene.active, "A line."); Cutaway.clock.advance(20000);
       [Cutaway.ui.line?.waiting, Cutaway.scene.active.state]`);
     t.ok("lines: on click, a line waits when its time is up (and the actor stops talking)", waits[0] === true && waits[1] !== "talk", JSON.stringify(waits));

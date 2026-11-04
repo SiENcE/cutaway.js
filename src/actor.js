@@ -30,6 +30,9 @@
  * @property {string} [portraitActive]  sprite while this actor is the active one (frames drawn by the game)
  * @property {boolean} [hidden]    not clickable
  * @property {VoiceProfile} [voice] how the actor's blips sound
+ * @property {{x: number, y: number, w?: number, align?: "left" | "right" | "center"}} [lineBox]  where this actor's lines
+ *   show when it isn't drawn in the room (a voice from a screen, a speaker, a bag): x the edge they align to,
+ *   y their bottom, w the wrap width
  * @property {Script} [look]       when another actor is in control: right click
  * @property {Script} [talk]       left click
  * @property {Record<string, Script>} [with]  an item used on this actor (party members take items by default)

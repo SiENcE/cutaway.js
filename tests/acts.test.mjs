@@ -104,6 +104,14 @@ export default async function (t) {
     lines.length = 0;
     await C.script.run([{ hint: true }, { hint: true }]);
     t.ok("hints: the hint action asks like the button", lines.join(" ") === "1.1 1.1", lines.join(" "));
+    // a hint giver: configure({ by }) has an actor say the hints, no prefix (ui.say is the tools' stub here: watched)
+    const said = [];
+    const realSay = C.ui.say;
+    C.ui.say = async (/** @type {any} */ a, /** @type {string} */ text) => { said.push({ actor: a.id, text }); };
+    C.hints.configure({ by: "bolt" });
+    await C.hints.ask();
+    C.ui.say = realSay; C.hints.configure({ by: null });
+    t.ok("hints: said by the hint giver", said.length === 1 && said[0].actor === "bolt" && !said[0].text.startsWith(C.i18n.t("@cutaway.hint.prefix")), JSON.stringify(said));
     // an act's own hints count only while it is played, before the game's others
     const all = C.hints.all();
     C.hints([{ text: "Night hint." }], { act: "act2" });

@@ -123,6 +123,34 @@ Cutaway.ui = (function () {
   /** A hover label as shown (the skin's `label.format`: "[ DECK ]"). @param {string} t */
   function labelText(t) { return skin.label?.format ? skin.label.format(t) : t; }
 
+  /** An actor's own place for its lines (its `lineBox`), when it isn't drawn in the room shown. @param {any} actor */
+  function boxOf(actor) {
+    const b = actor?.def?.lineBox;
+    return b && !(actor.room === Cutaway.scene.room?.id && actor.def.costume) ? b : null;
+  }
+
+  /** Where the line shows: its lines' anchor x (by `align`), the top y, the alignment. Shared by drawing and the tools.
+   * @returns {{x: number, y: number, align: "left" | "right" | "center", lines: string[]} | null} */
+  function placeLine() {
+    if (!line) return null;
+    const f = font(), W = Cutaway.display.width, lh = f.lineHeight, n = line.lines.length, pad = opts.textBox ? 3 : 0;
+    const wMax = Math.max(...line.lines.map((l) => f.measure(l))), box = boxOf(line.actor);
+    if (box) {                                        // the actor's own place: aligned to its x, its bottom at y
+      const align = box.align ?? "center", y = Math.round(box.y - n * lh);
+      return { x: Math.round(box.x), y, align, lines: line.lines };
+    }
+    let x = W / 2, y = 6;
+    const at = Cutaway.scene.room?.lines;          // a room may show its lines in a bar ("top", "bottom") instead of over heads
+    if (at === "bottom") y = Cutaway.display.height - n * lh - 6;
+    else if (at !== "top" && line.actor && line.actor.room === Cutaway.scene.room?.id) {   // a voice from another room: at the top
+      const s = Cutaway.scene.toScreen(line.actor.x, line.actor.y);
+      x = s.x; y = s.y - line.actor.height() - 4 - n * lh;
+    }
+    // room is kept on the right for the mark after the last word
+    x = Cutaway.util.clamp(Math.round(x), Math.ceil(wMax / 2) + 2 + pad, W - Math.ceil(wMax / 2) - 10 - pad);
+    return { x, y: Math.max(2 + pad, Math.round(y)), align: "center", lines: line.lines };
+  }
+
   /**
    * Show a line above an actor until its time is up or the player clicks.
    * @param {InstanceType<typeof Cutaway.actor.Actor>} actor
@@ -137,7 +165,7 @@ Cutaway.ui = (function () {
     return new Promise((done) => {
       // a room with `label: true` puts the speaker's name before the line ("Kessler: ...")
       const shown = Cutaway.scene.room?.label && actor.name ? `${Cutaway.i18n.t(actor.name)}: ${text}` : text;
-      line = { actor, lines: font().wrap(shown, skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
+      line = { actor, lines: font().wrap(shown, boxOf(actor)?.w ?? skin.lineWidth), color: actor.color, until: Cutaway.clock.time + ms, done, since: Cutaway.clock.time, more: !!o.more };
       if (actor.state === "idle") actor.setState("talk");
       Cutaway.events.emit("say", { actor: actor.id, text, id: o.id, ms, source: o.source ?? text });
     });
@@ -425,26 +453,20 @@ Cutaway.ui = (function () {
     const f = font(), W = Cutaway.display.width;
     refreshHover();
     if (hud && !cutscene) renderMarks(ctx);
-    if (line) {
-      const lh = f.lineHeight, n = line.lines.length;
-      let x = W / 2, y = 6;
-      const at = Cutaway.scene.room?.lines;          // a room may show its lines in a bar ("top", "bottom") instead of over heads
-      if (at === "bottom") y = Cutaway.display.height - n * lh - 6;
-      else if (at !== "top" && line.actor && line.actor.room === Cutaway.scene.room?.id) {   // a voice from another room: at the top
-        const s = Cutaway.scene.toScreen(line.actor.x, line.actor.y);
-        x = s.x; y = s.y - line.actor.height() - 4 - n * lh;
-      }
+    const place = placeLine();
+    if (line && place) {
+      const lh = f.lineHeight, n = line.lines.length, { x, y, align } = place;
       const wMax = Math.max(...line.lines.map((l) => f.measure(l))), pad = opts.textBox ? 3 : 0;
       // its mark after the last word, all the time it shows: an arrow if another line follows, a square
-      // if it is the last; once a line waits for a click, the arrow bobs. Room is kept for it on the right.
-      x = Cutaway.util.clamp(Math.round(x), Math.ceil(wMax / 2) + 2 + pad, W - Math.ceil(wMax / 2) - 10 - pad);
-      y = Math.max(2 + pad, Math.round(y));
-      const last = line.lines[n - 1], ax = x + Math.ceil(f.measure(last) / 2) + 3, left = x - Math.ceil(wMax / 2) - pad;
+      // if it is the last; once a line waits for a click, the arrow bobs
+      const last = line.lines[n - 1], lw = f.measure(last);
+      const ax = align === "right" ? x + 3 : align === "left" ? x + lw + 3 : x + Math.ceil(lw / 2) + 3;
+      const left = align === "right" ? x - wMax - pad : align === "left" ? x - pad : x - Math.ceil(wMax / 2) - pad;
       if (opts.textBox) {
         ctx.fillStyle = skin.panel;
         ctx.fillRect(left, y - pad, Math.max(wMax + 2 * pad + 1, ax + 6 + pad - left), n * lh + 2 * pad - 1);
       }
-      line.lines.forEach((l, i) => f.draw(ctx, l, x, y + i * lh, { color: line?.color, outline: skin.outline, align: "center" }));
+      line.lines.forEach((l, i) => f.draw(ctx, l, x, y + i * lh, { color: line?.color, outline: skin.outline, align }));
       const bob = line.waiting && line.more && Math.floor((Cutaway.clock.time - line.until) / 400) % 2 === 1 ? 1 : 0;
       const ay = y + (n - 1) * lh + 2 + bob;
       ctx.fillStyle = skin.outline;
@@ -546,6 +568,8 @@ Cutaway.ui = (function () {
     get hover() { return hover; },
     /** The line on screen, if any. */
     get line() { return line ? { actor: line.actor?.id ?? null, text: line.lines.join(" "), waiting: !!line.waiting, more: line.more } : null; },
+    /** Where the line on screen shows (x by its alignment, its top y, its lines), or null. */
+    linePlacement: placeLine,
     /** The inventory item on the cursor. */
     get held() { return held; },
     /** @param {string | null} id */

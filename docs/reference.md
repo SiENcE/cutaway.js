@@ -410,7 +410,8 @@ Cutaway.hints([
 ]);
 ```
 
-The first hint whose `if` holds is the one for now; each ask (the bulb by the satchel, H, the pause
+`Cutaway.hints.configure({ by: "evi" })` has an actor say the hints (in their voice and colour, no "Hint:"
+prefix): a character who gives them. The first hint whose `if` holds is the one for now; each ask (the bulb by the satchel, H, the pause
 menu) shows the next, plainer line. A game in acts can give an act its own hints,
 `Cutaway.hints([...], { act: "act2" })`: they count only while that act is played. `solve.mjs --full` checks that every state from which the end can
 still be reached has a hint, and that its `about` (hotspots, actors, items) is still needed.
@@ -460,6 +461,9 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 ## Voices and texts
 
 - Lines are spoken in blips: an actor's `voice: { pitch, range, wave, syllable, speed, gain, formant }`.
+- An actor's `lineBox: { x, y, w, align }` puts its lines at a place of its own whenever it isn't drawn in
+  the room shown (a voice from a screen, a speaker, a bag): aligned to x (`"left"`, `"right"`, `"center"`),
+  their bottom at y, wrapped to w. `Cutaway.ui.linePlacement()` says where the line on screen shows.
 - Recorded voices (the editor's Voices tab) replace the blips line by line: a language's voices file
   `Cutaway.voice.layer("de", { "Hallo!": { sample, ms, from, gain }, "robby|Hallo!": { ... } })` keeps
   clips by the line's text in the game's data (before translation), or by `"actor|text"` for one

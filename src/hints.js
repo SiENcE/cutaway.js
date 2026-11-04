@@ -32,14 +32,19 @@ Cutaway.hints = (function () {
   /** The index of the hint for now, or -1. */
   function currentIndex() { return list.findIndex((h) => (!h.act || h.act === Cutaway.acts.current) && Cutaway.state.test(h.if)); }
 
+  /** who speaks the hints (an actor's id), or null: they are narrated with the hint prefix */
+  let by = /** @type {string | null} */ (null);
+  /** The step that shows a hint's text: said by the hint giver, or narrated. @param {string} text @param {boolean} plain */
+  const show = (text, plain) => (by ? { say: by, text } : { narrate: plain ? text : Cutaway.i18n.t("@cutaway.hint.prefix") + Cutaway.i18n.t(text) });
+
   /** Take the next line of the hint for now (each ask one plainer): the step that shows it and its path. */
   function next() {
     const i = currentIndex(), h = list[i];
-    if (!h) return { step: { narrate: "@cutaway.hint.none" }, path: "hint.none" };
+    if (!h) return { step: show("@cutaway.hint.none", true), path: "hint.none" };
     if (i !== lastIx) { lastIx = i; level = 0; }
     const lines = Array.isArray(h.text) ? h.text : [h.text], n = Math.min(level++, lines.length - 1);
     Cutaway.events.emit("hint", { index: i, line: n });
-    return { step: { narrate: Cutaway.i18n.t("@cutaway.hint.prefix") + Cutaway.i18n.t(lines[n]) }, path: `hint.${i}` };
+    return { step: show(lines[n], false), path: `hint.${i}` };
   }
 
   /** Show the hint for now (the next line of it, when asked again). */
@@ -47,6 +52,8 @@ Cutaway.hints = (function () {
     const { step, path } = next();
     return Cutaway.script.run(step, { path });
   };
+  /** `by`: an actor who speaks the hints (in their voice and colour, no prefix); null narrates them. @param {{by?: string | null}} o */
+  hints.configure = (o) => { if ("by" in o) by = o.by ?? null; };
   /** The next line as a script step, for the { hint: true } action (a character who gives the hints). */
   hints.next = () => next().step;
   /** Does the game have hints? */
