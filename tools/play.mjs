@@ -89,6 +89,14 @@ try {
     check("the intro plays first: " + id, !!id);
     if (id) {
       await chrome.ev("Cutaway.debug.settle(900000)");
+      // a game with a splash waits there for a click on start-up, as the player does
+      if (await chrome.ev("Cutaway.acts.splashing")) {
+        check("  ... to its end, then the splash", await chrome.ev("!Cutaway.sequence.playing()"));
+        await chrome.ev("__play.step(1000)");
+        await click({ x: 160, y: 90 });
+        await chrome.ev("new Promise((r) => setTimeout(r, 100))");
+        await chrome.ev("Cutaway.debug.settle()");
+      }
       check("  ... to its end, then the title screen", await chrome.ev("!Cutaway.sequence.playing() && Cutaway.acts.titleOpen"));
       check("  ... and it is marked as seen", await chrome.ev(`Cutaway.settings.seen(${JSON.stringify(id)})`));
       const row = await chrome.ev(`(Cutaway.menu.rows ?? []).indexOf(Cutaway.i18n.t("@cutaway.title.intro"))`);
