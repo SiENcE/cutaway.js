@@ -67,7 +67,8 @@
     holes: [[193, 145, 207, 145, 207, 152, 193, 152]],
     props: [
       { id: "mailbox", image: "mailbox", states: { open: "mailbox_open" }, at: [200, 150] },
-      { id: "lamp", image: "lamppost", states: { lit: "lamppost_lit" }, at: [270, 140] },
+      // whoever walks behind the lamp post shows through it
+      { id: "lamp", image: "lamppost", states: { lit: "lamppost_lit" }, at: [270, 140], seeThrough: true },
     ],
     hotspots: {
       door: { name: "door", rect: [10, 62, 34, 72], walkTo: [28, 140], face: "up", look: "Back into the hall.",

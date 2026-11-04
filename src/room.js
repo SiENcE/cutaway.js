@@ -28,6 +28,9 @@
  *                                   orders the props among themselves.
  * @property {boolean} [flip]
  * @property {boolean} [hidden]      starts hidden (a script can { show: id })
+ * @property {boolean} [seeThrough]  where it hides an actor standing behind it, it is drawn see-through
+ *                                   over that actor's figure (every other pixel, a checkerboard): an
+ *                                   umbrella, a lamp post, a tall sign in front of where people walk
  * @property {number} [scroll]       px per second along x (negative: to the left); the image repeats
  *                                   across the room's width, so scenery passes by in a moving shot
  * @property {number} [depth]        parallax against the camera (default 1, the room): on the screen
@@ -201,6 +204,9 @@ Cutaway.scene = (function () {
    * @property {(ctx: CanvasRenderingContext2D) => void} draw
    * @property {number[]} [front]   a prop's front line (PropDef.front)
    * @property {number} [x]         an actor's x (for the front lines)
+   * @property {() => ([number, number, number, number] | null)} [box]  its box in the room (see-through props, actors)
+   * @property {boolean} [seeThrough]  a prop drawn see-through over the actors it hides
+   * @property {(ctx: CanvasRenderingContext2D) => void} [silhouette]  an actor's figure, untinted (for the see-through)
    */
 
   /** The y of a front line [x1, y1, x2, y2, ...] at x (its points in any order; the end's y beyond it). @param {number[]} line @param {number} x */
@@ -575,20 +581,26 @@ Cutaway.scene = (function () {
       const d = p.def, pl = live.get(d)?.play, at = placeOf(d), sh = parallax(d), x = Math.round(at.x) + sh.x, y = Math.round(at.y) + sh.y;
       // a played animation runs from its own start (once: then its last frame); others with the scene
       const o = { t: pl ? time - pl.start : time, loop: pl?.loop, flip: d.flip, anchor: d.anchor };
-      list.push({ baseline: d.baseline ?? at.y, front: d.front, draw: d.scroll
+      list.push({ baseline: d.baseline ?? at.y, front: d.front, seeThrough: d.seeThrough, box: () => propBox(d), draw: d.scroll
         ? (c) => { for (const sx of scrollXs(d, p.image, w - sh.x, -sh.x, at.x)) Cutaway.assets.draw(c, p.image, sx + sh.x, y, o); }
         : (c) => Cutaway.assets.draw(c, p.image, x, y, o) });
     }
     const lit = !!current.light, fronts = list.some((d) => d.front);
     /** @type {Drawable[]} */
     const people = [];
-    for (const a of actorsHere()) people.push({ baseline: a.y, x: a.x, draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
-    if (fronts) {
-      for (const d of orderWithFronts(list, people)) d.draw(ctx);
-    } else {
-      list.push(...people);
-      list.sort((p, q) => p.baseline - q.baseline);     // Array.sort is stable: ties keep data order
-      for (const d of list) d.draw(ctx);
+    for (const a of actorsHere()) people.push({ baseline: a.y, x: a.x, box: () => a.box(), silhouette: (c) => a.draw(c),
+      draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
+    let order;
+    if (fronts) order = orderWithFronts(list, people);
+    else {
+      order = list.concat(people);
+      order.sort((p, q) => p.baseline - q.baseline);    // Array.sort is stable: ties keep data order
+    }
+    /** @type {Drawable[]} the actors drawn so far: a see-through prop shows those it covers */
+    const drawn = [];
+    for (const d of order) {
+      if (d.seeThrough) drawSeeThrough(ctx, d, drawn); else d.draw(ctx);
+      if (d.silhouette) drawn.push(d);
     }
     for (const f of current.foreground ?? []) {
       const sh = parallax(f);
@@ -602,6 +614,37 @@ Cutaway.scene = (function () {
     Cutaway.fx.render(ctx);
     Cutaway.events.emit("scene.drawn", ctx);           // world-space overlays (debug)
     ctx.restore();
+  }
+
+  /** @type {{prop: HTMLCanvasElement, mask: HTMLCanvasElement, dots: CanvasPattern | null} | null} scratch canvases for see-through props */
+  let seeScratch = null;
+  /**
+   * A see-through prop: drawn as usual, but where it covers an actor drawn before it (one standing behind
+   * it) every other pixel over that actor's figure is left out, so the figure shows through in a
+   * checkerboard fixed to the room (it doesn't crawl when the prop moves). Only when their boxes meet.
+   * @param {CanvasRenderingContext2D} ctx @param {Drawable} d @param {Drawable[]} actors
+   */
+  function drawSeeThrough(ctx, d, actors) {
+    const b = d.box?.(), meets = (/** @type {number[] | null | undefined} */ q) => !!b && !!q && q[0] < b[0] + b[2] && q[0] + q[2] > b[0] && q[1] < b[1] + b[3] && q[1] + q[3] > b[1];
+    const hidden = actors.filter((a) => meets(a.box?.()));
+    if (!b || !hidden.length || typeof document === "undefined") { d.draw(ctx); return; }
+    if (!seeScratch) {
+      const dots = document.createElement("canvas"); dots.width = 2; dots.height = 2;
+      const g = /** @type {CanvasRenderingContext2D} */ (dots.getContext("2d")); g.fillStyle = "#000"; g.fillRect(0, 0, 1, 1); g.fillRect(1, 1, 1, 1);
+      seeScratch = { prop: document.createElement("canvas"), mask: document.createElement("canvas"), dots: null };
+      seeScratch.dots = /** @type {CanvasRenderingContext2D} */ (seeScratch.mask.getContext("2d")).createPattern(dots, "repeat");
+    }
+    const [bx, by, bw, bh] = b, S = seeScratch;
+    for (const c of [S.prop, S.mask]) { if (c.width < bw) c.width = bw; if (c.height < bh) c.height = bh; }
+    const p = /** @type {CanvasRenderingContext2D} */ (S.prop.getContext("2d")), m = /** @type {CanvasRenderingContext2D} */ (S.mask.getContext("2d"));
+    for (const g of [p, m]) { g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = "source-over"; g.imageSmoothingEnabled = false; g.clearRect(0, 0, bw, bh); }
+    p.translate(-bx, -by); d.draw(p); p.setTransform(1, 0, 0, 1, 0, 0);
+    // the mask: the hidden figures, kept on every other pixel (the pattern's phase by the room's pixel)
+    m.translate(-bx, -by); for (const a of hidden) a.silhouette?.(m); m.setTransform(1, 0, 0, 1, 0, 0);
+    m.globalCompositeOperation = "destination-in"; m.fillStyle = /** @type {CanvasPattern} */ (S.dots);
+    m.translate(((bx + by) & 1) ? 1 : 0, 0); m.fillRect(-1, 0, bw + 2, bh); m.setTransform(1, 0, 0, 1, 0, 0);
+    p.globalCompositeOperation = "destination-out"; p.drawImage(S.mask, 0, 0); p.globalCompositeOperation = "source-over";
+    ctx.drawImage(S.prop, 0, 0, bw, bh, bx, by, bw, bh);
   }
 
   /**
