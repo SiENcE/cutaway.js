@@ -35,6 +35,7 @@
  * @property {string} [room]               a room shown behind the prompt, as a still
  * @property {[number, number]} [view]     where the camera stays in it (top left)
  * @property {string} [prompt]             the blinking text (default "@cutaway.gate.prompt": "Click to start")
+ * @property {boolean} [introOnly]         only when the intro is about to play (so it isn't silent); other starts go on at once
  */
 
 /** Define a sequence: `Cutaway.sequence(id, { steps, after })`; play it with `Cutaway.sequence.play(id)`. */

@@ -72,6 +72,10 @@ export default async function (t) {
     const shot = await chrome.ev(`(async () => { await Cutaway.script.run([{ tape: 1 }]); Cutaway.clock.advance(40); return Cutaway.fx.tapeLevel(); })()`);
     t.ok("tape: drawn without errors at full level", shot === 1 && chrome.errors.length === 0, chrome.errors.join(" | "));
     await chrome.ev("Cutaway.script.run([{ tape: 0 }])");
+    // the demo's gate is introOnly: the intro has been seen, so sound or no sound there is no gate now
+    await chrome.open(url + "?manual");
+    await until("Cutaway.acts.titleOpen");
+    t.ok("gate: introOnly, no gate once the intro has been seen", await chrome.ev("Cutaway.acts.titleOpen && !Cutaway.sequence.gated() && !Cutaway.sequence.playing()"));
     t.ok("opening: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

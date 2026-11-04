@@ -208,6 +208,6 @@
   ]);
 
   Cutaway.start({ width: 320, height: 180, actor: "pip", party: ["pip", "bolt"],
-    id: "cutaway-demo", version: 2, languages: ["en", "de"], intro: "intro", gate: { room: "yard" },
+    id: "cutaway-demo", version: 2, languages: ["en", "de"], intro: "intro", gate: { room: "yard", introOnly: true },
     title: { room: "yard", name: "Cutaway.js", tagline: "The demo", footer: "Cutaway.js " + Cutaway.version + " - MIT" } });
 })();

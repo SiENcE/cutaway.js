@@ -402,11 +402,12 @@ Cutaway.sequence("intro", {
   short enough, or one that leads into the title: a click goes on a shot, Esc skips it). The title
   screen gets "Watch intro" (`@cutaway.title.intro`) to see it again. `?act=`, `?nointro` and `?edit`
   leave it out.
-- `gate: { room, view, prompt }` (start option): browsers let sound start only after a click or a key.
+- `gate: { room, view, prompt, introOnly }` (start option): browsers let sound start only after a click or a key.
   Before the intro and the title, if sound can't start yet, the gate shows `room` as a still (at `view`,
   its top left) with `prompt` blinking at the bottom (default `@cutaway.gate.prompt`, "Click to start");
   the click or key starts the sound and goes on. Where sound may start at once (a desktop shell, a
-  browser that allows it), there is no gate and the sound starts right away.
+  browser that allows it), there is no gate and the sound starts right away. `introOnly`: only when the intro
+  is about to play, so that it isn't silent; a start without it has no gate (a click on the title lets the sound start).
 - The Node tools don't play the intro: validate and solve don't start the game that way, and `play.mjs`
   and `shot.mjs` add `?nointro` (`--intro` plays it: `play.mjs --intro` plays it through to the title,
   then again from "Watch intro", with a click and Esc). `await Cutaway.debug.settle()` plays a sequence

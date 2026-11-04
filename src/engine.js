@@ -144,8 +144,9 @@ Cutaway.start = async function (o = {}) {
     else if (o.room) Cutaway.scene.load(o.room);
   };
   const intro = o.intro && !params.has("nointro") && !(dev && params.has("edit")) && (o.introAlways || !Cutaway.settings.seen(o.intro)) ? o.intro : undefined;
+  const gate = o.gate?.introOnly && !intro ? undefined : o.gate;   // later starts have a title screen with its own click
   if (act) Cutaway.acts.begin(act, { fresh: true, card: false, prologue: false });
-  else if ((o.gate || intro) && Cutaway.sequence) Cutaway.sequence.opening({ gate: o.gate, intro }).then(begin);
+  else if ((gate || intro) && Cutaway.sequence) Cutaway.sequence.opening({ gate, intro }).then(begin);
   else begin();
   if (dev && (o.debug || params.has("debug"))) Cutaway.debug.toggle(true);
   if (dev && params.has("edit")) Cutaway.openEditor();
