@@ -263,8 +263,6 @@ Cutaway.scene = (function () {
   let time = 0;
   /** @type {[number, number] | null} where the camera stays in a backdrop */
   let view = null;
-  /** @type {{to: [number, number], ms: number} | null} a backdrop's slow pan: from `view` to `to` and back */
-  let pan = null;
   /** @type {{x: number, y: number} | null} the camera's place while a script moves it (unrounded) */
   let scripted = null;
   /** a sequence is playing: gotos show rooms as shots */
@@ -281,16 +279,13 @@ Cutaway.scene = (function () {
    * the scene as it is when the room is the one shown already (its clock, its props: a film that ends
    * on the title screen's room goes on into it without a jump).
    * @param {string} id
-   * A backdrop may pan (`pan: { to, ms }`): the camera glides from the backdrop's point to `to` in `ms`,
-   * eased, and back, for as long as it shows; a pure function of the scene's clock, in whole pixels.
-   * @param {{enter?: boolean, backdrop?: [number, number], pan?: {to: [number, number], ms: number}, shot?: boolean, keep?: boolean}} [o]
+   * @param {{enter?: boolean, backdrop?: [number, number], shot?: boolean, keep?: boolean}} [o]
    */
   async function load(id, o = {}) {
     const def = Cutaway.room.get(id), same = !!o.keep && current === def;
     current = def;
     walkMap = mapOf(def);
     view = o.backdrop ?? null;
-    pan = view && o.pan ? o.pan : null;
     Cutaway.tween.stop("camera");
     scripted = null;
     if (!same) {
@@ -381,11 +376,6 @@ Cutaway.scene = (function () {
     const a = active(), { w, h } = size();
     const sw = Cutaway.display.width, sh = Cutaway.display.height;
     if (scripted) { const c = clampCamera(scripted.x, scripted.y); camera.x = c.x; camera.y = c.y; return; }
-    if (view && pan) {
-      const ph = (time % (2 * pan.ms)) / pan.ms, k = ph < 1 ? ph : 2 - ph, e = k * k * (3 - 2 * k);
-      const c = clampCamera(view[0] + (pan.to[0] - view[0]) * e, view[1] + (pan.to[1] - view[1]) * e);
-      camera.x = c.x; camera.y = c.y; return;
-    }
     if (!a || view || a.room !== current?.id) { camera.x = view?.[0] ?? 0; camera.y = view?.[1] ?? 0; return; }
     const tx = Cutaway.util.clamp(Math.round(a.x - sw / 2), 0, Math.max(0, w - sw));
     const ty = Cutaway.util.clamp(Math.round(a.y - 20 - sh / 2), 0, Math.max(0, h - sh));
@@ -676,7 +666,7 @@ Cutaway.scene = (function () {
   function unload() {
     for (const p of live.keys()) if (p.id) Cutaway.tween.stop("prop:" + p.id);
     Cutaway.tween.stop("camera");
-    current = null; walkMap = null; view = null; pan = null; scripted = null;
+    current = null; walkMap = null; view = null; scripted = null;
     live = new Map();
     camera.x = 0; camera.y = 0;
   }
