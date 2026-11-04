@@ -338,7 +338,10 @@ Cutaway.act("act1", { title: "Act 1", name: "The Hall", room: "hall", actor: "pi
   The logo may be an animation (it plays on the game clock: a glitch now and then); the small print
   takes the skin's `labelColor`. `menu: { x, y, w, dim }` places the title's menu (and its load and
   settings pages): `x` its left, or below 0 its right edge from the screen's right (`x: -6`), `y` its top
-  or below 0 its bottom (default `y: -18`, centred), `w` its width (default 136).
+  or below 0 its bottom (default `y: -18`, centred), `w` its width (default 136). `view: [x, y]` is where the
+  camera stands in the title's room; `pan: { to: [x, y], ms }` lets it glide from there to `to` in `ms`,
+  eased, and back, for as long as the title shows (a room wider than the screen, seen whole over time); a
+  pure function of the room's clock, so screenshots of the same moment match.
   `splash: { room, view, prompt, music }` puts a screen before the title on start-up: its room as a
   backdrop (the game's key art, its people), a blinking prompt at the bottom ("Click to start", or
   `prompt`), until a click or a key; then the title screen comes in. Left out where the intro is

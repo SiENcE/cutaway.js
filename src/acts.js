@@ -47,6 +47,8 @@
  * @typedef {object} TitleOptions
  * @property {string} [room]               the room behind the title screen
  * @property {[number, number]} [view]     where the camera stays in it (top left)
+ * @property {{to: [number, number], ms: number}} [pan]  a slow pan over a room wider than the screen: from `view`
+ *                                         to `to` in `ms`, eased, and back, for as long as the title shows
  * @property {string} [logo]               sprite or animation (it plays); without one, `name` is drawn large (a placeholder)
  * @property {string} [name]               the game's name
  * @property {string} [tagline]            the heading of the title's menu
@@ -269,7 +271,7 @@ Cutaway.acts = (function () {
     reset();
     titleOpen = true;
     // after an intro that ends on the title's room, it stays as it is (its clock, its rain)
-    if (title.room) Cutaway.scene.load(title.room, { backdrop: title.view ?? [0, 0], keep: true });
+    if (title.room) Cutaway.scene.load(title.room, { backdrop: title.view ?? [0, 0], pan: title.pan, keep: true });
     if (title.music) Cutaway.events.emit("music", title.music);
     Cutaway.fx.transition("in");
     entrance = 0;
