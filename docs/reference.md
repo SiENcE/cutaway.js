@@ -254,6 +254,14 @@ Positions may be fractional while moving; drawing is always in whole pixels.
 - The bars and the caption are drawn over the room and the fade, under lines and the interface. None
   of it is saved.
 
+## View flags
+
+`Cutaway.state.view("deck_app")` declares flags that only say what a screen of the game's own shows (which
+window is open, which page). They are saved like any flag, but the solver doesn't count them as state: from
+each state it opens every view it can (by moves that change nothing else), plays every other move once, and
+puts the clicks that open a view into its path (so `play.mjs` clicks them too). A view may change what can
+be clicked, never what a click does.
+
 ## Conditions
 
 | condition | true when |

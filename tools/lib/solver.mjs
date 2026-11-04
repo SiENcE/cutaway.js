@@ -65,6 +65,10 @@ export async function makeSolver(g, opts = {}) {
   const run = await boot(g, { instant: true });
   const C = g.C;
   const start = C.save.capture();
+  /** the game's view flags (Cutaway.state.view): not part of a state's key */
+  const views = C.state.views?.() ?? [];
+  /** a snapshot's views, as one string @param {any} snap */
+  const viewSig = (snap) => JSON.stringify(views.map((v) => snap.state?.flags?.[v] ?? null));
 
   /**
    * A state's identity: rooms (not positions), who plays, the party and the game state. Canonical:
@@ -75,6 +79,11 @@ export async function makeSolver(g, opts = {}) {
    */
   function key(snap) {
     const actors = Object.fromEntries(Object.entries(snap.actors).map(([id, a]) => [id, a.room]));
+    if (views.length && snap.state?.flags) {                // view flags are what is shown, not state (state.view)
+      const flags = { ...snap.state.flags };
+      for (const v of views) delete flags[v];
+      snap = { ...snap, state: { ...snap.state, flags } };
+    }
     const inv = Object.fromEntries(Object.entries(snap.state.inv ?? {}).filter(([, l]) => l.length).map(([who, l]) => [who, [...l].sort()]));
     const party = { ...snap.party, locked: [...(snap.party.locked ?? [])].sort(), staying: [...(snap.party.staying ?? [])].sort() };
     return createHash("sha1").update(canon([snap.room, snap.active, actors, party, { ...snap.state, inv }])).digest("base64");
@@ -192,13 +201,27 @@ export async function makeSolver(g, opts = {}) {
   async function expandHere(snaps, known) {
     const out = [];
     for (const packed of snaps) {
-      const snap = unpack(packed), res = [], here = new Set();
-      for (const m of await moves(snap)) {
-        for (const r of await play(snap, m)) {
-          const rk = r.ended ? "WIN:" + key(r.snap) : key(r.snap);
-          if (here.has(rk)) continue;
-          here.add(rk);
-          res.push({ rk, move: r.move, ended: r.ended, room: r.snap.room, snap: known(rk) ? null : pack(r.snap) });
+      const snap = unpack(packed), res = [], here = new Set(), k0 = key(snap);
+      // with view flags: every view this state can open (by moves that change nothing else), each move
+      // played once, in the first view that offers it; a move found in a view carries the clicks to it (pre)
+      const open = [{ snap, pre: /** @type {Move[]} */ ([]) }], seenViews = new Set([viewSig(snap)]), played = new Set();
+      for (let i = 0; i < open.length; i++) {
+        const { snap: s, pre } = open[i];
+        for (const m of await moves(s)) {
+          const mk = describe(m);
+          if (views.length && played.has(mk)) continue;
+          played.add(mk);
+          for (const r of await play(s, m)) {
+            const rk = r.ended ? "WIN:" + key(r.snap) : key(r.snap);
+            if (views.length && !r.ended && rk === k0) {     // only the view changed (or nothing): a view to look in
+              const sig = viewSig(r.snap);
+              if (!seenViews.has(sig)) { seenViews.add(sig); open.push({ snap: r.snap, pre: [...pre, r.move] }); }
+              continue;
+            }
+            if (here.has(rk)) continue;
+            here.add(rk);
+            res.push({ rk, move: pre.length ? { ...r.move, pre } : r.move, ended: r.ended, room: r.snap.room, snap: known(rk) ? null : pack(r.snap) });
+          }
         }
       }
       out.push(res);
@@ -308,7 +331,14 @@ export async function makeSolver(g, opts = {}) {
       say(`${nodes.size} states, ${level.length} new`);
     }
     /** @param {string | null} k */
-    const pathTo = (k) => { const p = []; for (let n = k ? nodes.get(k) : null; n && n.move; n = n.parent ? nodes.get(n.parent) : null) p.unshift(n.move); return p; };
+    const pathTo = (k) => {
+      const p = [];
+      for (let n = k ? nodes.get(k) : null; n && n.move; n = n.parent ? nodes.get(n.parent) : null) {
+        const { pre, ...m } = /** @type {any} */ (n.move);
+        p.unshift(...(pre ?? []), m);
+      }
+      return p;
+    };
     /** The moves to a state, counted. @param {string} k */
     const depthOf = (k) => { let d = 0; for (let n = nodes.get(k); n && n.move; n = n.parent ? nodes.get(n.parent) : null) d++; return d; };
     let softlocks = [], hints = null;
@@ -362,7 +392,8 @@ export async function makeSolver(g, opts = {}) {
       for (let cur = k, left = d; left > 0 && !on; left--) {
         const node = /** @type {any} */ (nodes.get(cur));
         const [c, m] = /** @type {[string, Move]} */ ([...node.next].find(([c]) => dist.get(c) === left - 1));
-        for (const x of [m.id, m.item, m.a, m.b]) if (x) { const id = x.replace(/^@/, ""); if (about.has(id) || about.has(`${node.room}/${id}`)) on = true; }
+        for (const mm of [.../** @type {any} */ (m).pre ?? [], m])
+          for (const x of [mm.id, mm.item, mm.a, mm.b]) if (x) { const id = x.replace(/^@/, ""); if (about.has(id) || about.has(`${node.room}/${id}`)) on = true; }
         cur = c;
       }
       if (!on) found(k, i, `about ${[...about].join(", ")}, which the way to the end no longer needs`);

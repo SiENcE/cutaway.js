@@ -40,6 +40,29 @@ export default async function (t) {
   const dv = validate(decl.C, { languages: decl.options.languages });
   t.ok("validate: a declared text is a text", dv.texts.has("Only on a panel."));
   t.ok("validate fails: a declared @key missing in a language", dv.issues.some((i) => i.level === "error" && /"@panel.nowhere" missing/.test(i.msg)));
+  // view flags (state.view): a "lens" view that shows the shelf; the solver opens it on the way (its click
+  // in the path) and doesn't count it as state
+  {
+    const viewed = await demo((/** @type {any} */ C) => {
+      const hall = C.room.get("hall");
+      hall.hotspots.lens = { name: "lens", rect: [0, 0, 8, 8], use: [{ set: "lens", value: "near" }] };
+      hall.hotspots.lens_off = { name: "lens off", rect: [8, 0, 8, 8], if: "lens", use: [{ unset: "lens" }] };
+      hall.hotspots.shelf.if = "lens=near";
+      C.state.view("lens");
+    });
+    const sv = await makeSolver(viewed);
+    const rv = await sv.search({ full: true });
+    const ids = rv.path.map((m) => m.id);
+    t.ok("view flags: solved, the view opened on the way", rv.solved && ids.indexOf("lens") >= 0 && ids.indexOf("lens") < ids.indexOf("shelf"), ids.join(" "));
+    const plain = await demo((/** @type {any} */ C) => {
+      const hall = C.room.get("hall");
+      hall.hotspots.lens = { name: "lens", rect: [0, 0, 8, 8], use: [{ set: "lens", value: "near" }] };
+      hall.hotspots.lens_off = { name: "lens off", rect: [8, 0, 8, 8], if: "lens", use: [{ unset: "lens" }] };
+      hall.hotspots.shelf.if = "lens=near";
+    });
+    const rp = await (await makeSolver(plain)).search({ full: true });
+    t.ok("view flags: fewer states than the same flag as state, no soft-locks", rv.states < rp.states && rv.softlocks.length === 0, `${rv.states} vs ${rp.states}`);
+  }
   const broken = [
     ["unknown item", (C) => { C.room.get("hall").hotspots.plant.take[0].take = "leef"; }, /unknown item "leef"/],
     ["unknown exit room", (C) => { C.room.get("hall").hotspots.doorway.exit.to = "yrad"; }, /unknown room "yrad"/],

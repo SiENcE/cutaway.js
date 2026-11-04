@@ -112,8 +112,20 @@ Cutaway.state = (function () {
   /** Hidden by a script, or else by the room data (`fallback`). @param {string} id @param {boolean} [fallback] */
   function isHidden(id, fallback = false) { return s.hidden[key(id)] ?? fallback; }
 
+  /** flags that only say what is shown (a window open, a page): saved, but no part of the game's state for the solver */
+  const viewFlags = new Set();
   return {
     test, flag, has, key,
+    /**
+     * Declare view flags: what a screen of the game's own shows (which window is open, which page). They
+     * are saved like any flag, but the solver doesn't count them as state: it opens whatever view a move
+     * needs on the way (the clicks go into its path) and plays every other move once. So a view may change
+     * what can be clicked, never what a click does.
+     * @param {...string} names
+     */
+    view(...names) { for (const n of names) viewFlags.add(n); },
+    /** The view flags. */
+    views() { return [...viewFlags]; },
     /** @param {string} name @param {any} [value] */
     set(name, value = true) { s.flags[name] = value; Cutaway.events.emit("state.changed", { flag: name }); },
     /** @param {string} name */
