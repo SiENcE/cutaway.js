@@ -479,6 +479,9 @@ export function validate(C, o = {}) {
   for (const f of flagsTested) if (!f.startsWith("~") && !flagsSet.has(f)) err("flags", `flag "${f}" is tested but never set`);
   for (const f of flagsSet) if (!flagsTested.has(f)) warn("flags", `flag "${f}" is set but never tested`);
 
+  // texts the game shows through its own code (Cutaway.i18n.declare)
+  for (const d of C.i18n.declared?.() ?? []) text(d.text, `declared: ${d.where}`);
+
   // strings: "@keys" must exist in every language; literal texts need a translation in every other one
   const langs = o.languages ?? [C.i18n.language];
   for (const k of keys) for (const l of langs) if (!(k in C.i18n.strings(l))) err("strings", `"@${k}" missing in "${l}"`);

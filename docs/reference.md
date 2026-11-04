@@ -460,6 +460,12 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
   the line stays on screen at least that long. Lines without a clip in the language played blip.
 - Texts are written in the game's first language, inline. Other languages are tables:
   `Cutaway.i18n.table("en", { "Hallo.": "Hello." })`; `"@key"` texts look a key up instead.
+- Texts a game shows through its own code (its UI layers, its own actions, lists the engine doesn't
+  know) are declared, so validate and the Texts tab see them like the data's:
+  `const L = Cutaway.i18n.declare("deck", ["NACHRICHTEN", "Kein Zugang."])` (returns the list; repeat
+  calls add). The game still draws them through `Cutaway.i18n.t(text)`. Validate checks them like the
+  others (an `"@key"` must exist in every language, a literal text needs a translation in every other
+  one); the Texts tab lists them as "game: deck".
 - The editor's Texts tab exports every text as CSV or JSON for translators and imports them back.
 
 ## Layers: what the editor writes

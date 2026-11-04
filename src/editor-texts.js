@@ -16,7 +16,7 @@
 
   /**
    * Every text in the game's data: [where, text]. Script steps (captions too), names, choices, cards,
-   * hints, sequences, the title screen and the gate's prompt.
+   * hints, sequences, the title screen, the gate's prompt and the texts the game declares.
    * @returns {{where: string, room: string, text: string}[]}
    */
   function collect() {
@@ -83,6 +83,8 @@
     const ti = Cutaway.acts.title;
     if (ti) for (const k of /** @type {const} */ (["name", "tagline", "footer"])) add(ti[k], `title screen: ${k}`, "");
     add(Cutaway.sequence?.gate()?.prompt, "the gate: prompt", "");
+    // what the game shows through its own code (Cutaway.i18n.declare)
+    for (const d of Cutaway.i18n.declared()) add(d.text, `game: ${d.where}`, "");
     return out;
   }
 
@@ -209,7 +211,7 @@
         ...(differs || lang !== source() ? [el("div", { style: { color: "#777", fontSize: "11px", whiteSpace: "pre-wrap" } }, [t.text])] : []),
         area]);
     };
-    // grouped (this room: by hotspot; else by room, items, dialogues, acts, hints, sequences, the title); a group's rows are made while it is open
+    // grouped (this room: by hotspot; else by room, items, dialogues, acts, hints, sequences, the title, what the game declares); a group's rows are made while it is open
     /** @type {Map<string, {where: string, room: string, text: string}[]>} */
     const groups = new Map();
     for (const t of list) { const g = groupOf(t); groups.set(g, [...(groups.get(g) ?? []), t]); }
@@ -227,6 +229,7 @@
     if (w.startsWith("hint ")) return "hints";
     if (w.startsWith("sequence ")) return w.split(":")[0];
     if (w.startsWith("title screen") || w.startsWith("the gate")) return "title screen";
+    if (w.startsWith("game: ")) return w;                         // declared by the game, by what shows them
     return t.room || "the cast";
   }
 

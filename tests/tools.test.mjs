@@ -34,6 +34,12 @@ export default async function (t) {
   const wide = await demo((/** @type {any} */ C) => { const hall = C.room.get("hall"); hall.walk = [...hall.walk, [300, 150, 380, 150, 380, 170, 300, 170]]; });
   await boot(wide, { instant: true });
   t.ok("validate warns: a walk area beyond the room's size", validate(wide.C, {}).issues.some((i) => i.level === "warning" && /beyond the room's size/.test(i.msg)));
+  // texts the game declares (Cutaway.i18n.declare): validate sees them like the data's
+  const decl = await demo((/** @type {any} */ C) => { C.i18n.declare("a panel", ["Only on a panel.", "@panel.nowhere"]); });
+  await boot(decl, { instant: true });
+  const dv = validate(decl.C, { languages: decl.options.languages });
+  t.ok("validate: a declared text is a text", dv.texts.has("Only on a panel."));
+  t.ok("validate fails: a declared @key missing in a language", dv.issues.some((i) => i.level === "error" && /"@panel.nowhere" missing/.test(i.msg)));
   const broken = [
     ["unknown item", (C) => { C.room.get("hall").hotspots.plant.take[0].take = "leef"; }, /unknown item "leef"/],
     ["unknown exit room", (C) => { C.room.get("hall").hotspots.doorway.exit.to = "yrad"; }, /unknown room "yrad"/],

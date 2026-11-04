@@ -184,6 +184,8 @@ Cutaway.i18n = (function () {
 
   /** @type {Map<string, Record<string, string>>} the editor's text layers, per language */
   const layers = new Map();
+  /** @type {{where: string, text: string}[]} texts a game shows through its own code (declare) */
+  const declaredTexts = [];
 
   /** A table's keys and texts as they are (a release build may have scrambled them). @param {Record<string, string>} strings */
   function plain(strings) {
@@ -211,6 +213,21 @@ Cutaway.i18n = (function () {
       layers.set(code, { ...(layers.get(code) ?? {}), ...p });
       tables.set(code, { ...(tables.get(code) ?? {}), ...p });
     },
+    /**
+     * Texts a game shows through its own code (its UI layers, its own actions, lists the engine doesn't
+     * know), so validate and the editor's Texts tab see them like the texts in the data: literal texts
+     * in the game's first language or "@keys". The game still shows them through t(). Returns the list.
+     * @template {string[]} T
+     * @param {string} where  what shows them ("deck", "feed display")
+     * @param {T} texts
+     * @returns {T}
+     */
+    declare(where, texts) {
+      for (const text of texts) if (typeof text === "string" && text) declaredTexts.push({ where, text });
+      return texts;
+    },
+    /** Every declared text, in the order declared. @returns {{where: string, text: string}[]} */
+    declared() { return declaredTexts.map((d) => ({ ...d })); },
     /** The editor's text layer of a language. @param {string} code */
     layerOf(code) { return { ...(layers.get(code) ?? {}) }; },
     /** @param {string} code */
