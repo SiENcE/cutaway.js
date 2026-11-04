@@ -173,7 +173,7 @@
     "The lamp is dark. Its bulb is missing.": "Die Laterne ist dunkel. Die Birne fehlt.", "No bulb, no light.": "Ohne Birne kein Licht.",
     "Too dusty. It would never shine like that.": "Zu staubig. So leuchtet die nie.", "Let there be light!": "Es werde Licht!",
     "Nice work, Pip.": "Gut gemacht, Pip.", "The lamp shines. Thanks for playing the Cutaway.js demo!": "Die Laterne leuchtet. Danke fürs Spielen der Cutaway.js-Demo!",
-    "Hills. They go on for a while.": "Hügel. Ziemlich viele.", "Pip": "Pip", "Bolt": "Bolt",
+    "Hills. They go on for a while.": "Hügel. Ziemlich viele.", "Looking at the hills always helps me think.": "Wenn ich auf die Hügel schaue, fällt mir was ein.", "Pip": "Pip", "Bolt": "Bolt",
     "Pip. Small, but full of ideas.": "Pip. Klein, aber voller Ideen.", "Need anything, Bolt?": "Brauchst du was, Bolt?",
     "Just checking on you.": "Ich schau nur, ob alles passt.", "Bolt. Tall, orange and very polite.": "Bolt. Groß, orange und sehr höflich.",
     "A small brass key.": "Ein kleiner Messingschlüssel.", "Plastic. Dusty. Surprisingly soft.": "Plastik. Staubig. Erstaunlich weich.",
