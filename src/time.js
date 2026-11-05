@@ -8,6 +8,10 @@
 // earlier than the start is the next morning, so "01:00" comes after "23:00". Conditions compare it:
 // "time>=22:00", "time<23:30", "day=2", "day>1".
 //
+// Cutaway.time.hold((to) => ...) can stop the clock: asked with the minutes a step would go on to, a true value
+// (a text saying why, say) keeps the time where it is, until the state changes. `next` then gives null, so the
+// solver can't wait past it either; Cutaway.time.holding() is that value for the next change. A new day isn't held.
+//
 // Routines put actors where they are at a time: Cutaway.routine("kessler", [{ day: 1, from: "22:00",
 // to: "22:30", room: "cam03", at: [120, 140], face: "se", path: [[120, 140], [160, 120]] }, ...]);
 // outside every entry the actor is in no room. An entry may have an `if`. A `path` is walked round and
@@ -54,6 +58,8 @@ Cutaway.time = (function () {
   let waitPoint = null;
   /** @type {string[]} extra times `next` stops at */
   const marks = [];
+  /** @type {((to: number) => any) | null} may the clock go on to these minutes? (a true value: no) */
+  let hold = null;
   /** which entry each actor was last put in (`day/index`), so a slot doesn't put them back while it lasts */
   const placed = new Map();
   /** where each actor is on its path */
@@ -129,8 +135,8 @@ Cutaway.time = (function () {
     }
   }
 
-  /** The next time something changes today (a routine's or a moment's start or end, a mark), or null. */
-  function next() {
+  /** The next change today, held or not. */
+  function upcoming() {
     const d = day(), t = minutes(), end = cfg?.end ?? null;
     /** @type {number[]} */
     const at = [];
@@ -139,6 +145,11 @@ Cutaway.time = (function () {
     for (const m of marks) at.push(parse(m));
     const later = at.filter((v) => Number.isFinite(v) && v > t && (end === null || v <= end));
     return later.length ? Math.min(...later) : null;
+  }
+  /** The next time something changes today (a routine's or a moment's start or end, a mark), or null: none, or the clock is held. */
+  function next() {
+    const n = upcoming();
+    return n !== null && hold?.(n) ? null : n;
   }
 
   /**
@@ -161,9 +172,9 @@ Cutaway.time = (function () {
       return set(Number.isFinite(parse(v)) ? parse(v) : cfg?.start ?? 0, n);
     }
     if (v === "next") { const n = next(); if (n !== null) await set(n); return; }
-    if (/^\+\d+$/.test(v)) return set(t + Number(v.slice(1)));
+    if (/^\+\d+$/.test(v)) { const on = t + Number(v.slice(1)); if (!hold?.(on)) await set(on); return; }
     const to = parse(v);
-    if (Number.isFinite(to) && to > t) await set(to);
+    if (Number.isFinite(to) && to > t && !hold?.(to)) await set(to);
   }
   Cutaway.script.action("time", action);
 
@@ -201,6 +212,10 @@ Cutaway.time = (function () {
     routine(actor, entries) { routines.set(actor, entries); placed.delete(actor); },
     /** @param {string} id @param {MomentDef} def */
     moment(id, def) { moments.set(id, def); },
+    /** Stop the clock while `fn(to)` gives a true value; null: never. @param {((to: number) => any) | null} fn */
+    hold(fn) { hold = fn; },
+    /** What holds the clock at the next change (the value `hold` gave), or null. */
+    holding() { const n = upcoming(); return n === null ? null : hold?.(n) || null; },
     /** Extra times `next` stops at. @param {...string} times */
     mark(...times) { marks.push(...times); },
     parse, format, next, apply, check, set,

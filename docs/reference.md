@@ -311,6 +311,10 @@ Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   //
   its room is the one shown (it waits for a watcher, within its window); if the window passes and nobody
   watched, it happens unseen and runs `unseen` (what it leaves behind). `next` stops at every
   routine's and moment's start and end, and at `Cutaway.time.mark("23:00")`.
+- **Holding the clock:** `Cutaway.time.hold((to) => ...)` is asked with the minutes a step would go on to; a true
+  value keeps the time where it is until the state changes (a deadline the player must not sleep through).
+  `next` then gives null, so the solver can't wait past it either, and `Cutaway.time.holding()` gives that value
+  for the next change (a text saying why, say). A step to a new day isn't held.
 - `Cutaway.time.now` (`{ day, minutes, text }`), `Cutaway.time.next()` (minutes, or null), and the
   event `"time.changed"`. `configure({ waitPoint: () => ({ x, y }) })` tells `play.mjs` where the
   game's own button for waiting is; without it, it runs the step.

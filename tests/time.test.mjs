@@ -109,6 +109,23 @@ export default async function (t) {
     t.ok(`validate fails: ${name}`, errs.some((e) => re.test(e)), errs.join(" | ") || "no errors");
   }
 
+  // ---- holding the clock
+  const gh = loadGame("demo/index.html");
+  withCamera(gh.C);
+  await boot(gh, { instant: true });
+  const H = gh.C, stop = H.time.parse("18:30");
+  H.time.mark("18:15", "18:30", "18:45");
+  H.time.hold((to) => to > stop && !H.state.flag("go") ? "not yet" : null);
+  await H.script.run([{ time: "next" }, { time: "next" }]);
+  t.ok("hold: the clock goes on up to where it is held", H.time.now.text === "18:30", H.time.now.text);
+  t.ok("hold: next gives null, holding says why", H.time.next() === null && H.time.holding() === "not yet");
+  await H.script.run([{ time: "next" }, { time: "+15" }, { time: "19:00" }]);
+  t.ok("hold: no step goes past it", H.time.now.text === "18:30", H.time.now.text);
+  await H.script.run([{ time: "18:00", day: "+1" }]);
+  t.ok("hold: a new day isn't held", H.time.now.day === 2 && H.time.now.text === "18:00");
+  await H.script.run([{ time: "18:00", day: 1 }, { time: "18:30" }, { set: "go" }, { time: "next" }]);
+  t.ok("hold: once the state allows it, the clock goes on", H.time.now.text === "18:45" && H.time.holding() === null, H.time.now.text);
+
   // ---- the solver waits for what it needs
   const gs = loadGame("demo/index.html");
   withCamera(gs.C, { need: true });
