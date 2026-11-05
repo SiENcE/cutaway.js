@@ -7,6 +7,8 @@
 // intro (a sequence: the hall, a tilt down a tall shot room with a parallax lamp post, the yard).
 "use strict";
 (function () {
+  // fixed: it stays in the bag, a click only looks at it
+  Cutaway.item("sticker", { name: "Pip's sticker", icon: "inv_leaf", fixed: true, look: "Pip's sticker. It stays in the bag." });
   Cutaway.item("key", { name: "key", icon: "inv_key", look: "A small brass key." });
   Cutaway.item("leaf", { name: "plastic leaf", icon: "inv_leaf", look: "Plastic. Dusty. Surprisingly soft." });
   Cutaway.item("bulb", { name: "dusty bulb", icon: "inv_bulb", look: "A light bulb under a fur of dust.",
@@ -196,7 +198,7 @@
     "Use the clean bulb on the lamp post.": "Benutz die saubere Birne mit der Laterne.",
   });
 
-  Cutaway.act("act1", { title: "Act 1", name: "The lamp in the yard", room: "hall", actor: "pip" });
+  Cutaway.act("act1", { title: "Act 1", name: "The lamp in the yard", room: "hall", actor: "pip", start: [{ give: "sticker", to: "pip" }] });
 
   // the first that holds is the hint for now; each asks again more plainly
   Cutaway.hints([

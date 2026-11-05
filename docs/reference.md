@@ -162,6 +162,8 @@ Cutaway.item("key", { name: "key", icon: "inv_key", look: "A brass key.",
   combine: { string: [{ remove: "key" }, { give: "key_on_string" }] } });   // works both ways round
 ```
 
+`fixed: true`: it stays in the bag, a click only looks at it (a companion who lives in there, a keepsake).
+
 Items live in a bag per actor, or one shared bag (`inventory: "shared"`). Click the satchel (top right),
 pick an item, click a hotspot, an actor or another item to use it there.
 

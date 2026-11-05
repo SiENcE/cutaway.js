@@ -55,6 +55,9 @@ export async function shared(t) {
   C.state.share(["pip", "bolt"]);
   C.state.give("key", "pip");
   t.ok("shared bag: what Pip takes, Bolt has", C.state.has("key", "bolt") && C.state.items("bolt").join() === "key");
+  C.item("pin", { name: "pin", fixed: true, look: "A pin." }); C.state.give("pin", "pip");
+  t.ok("a fixed item says so, and stays in the bag", C.item.get("pin").fixed === true && C.state.has("pin", "pip"));
+  C.state.remove?.("pin", "pip");
   t.ok("shared bag: same bag", C.state.sameBag("pip", "bolt") && !C.state.sameBag("pip", "nobody"));
   C.state.remove("key", "bolt");
   t.ok("shared bag: and it's gone for both", !C.state.has("key", "pip"));

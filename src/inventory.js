@@ -12,6 +12,7 @@
  * @property {string} [icon]     sprite, about 24x16
  * @property {Script} [look]
  * @property {Record<string, Script>} [combine]  other item id -> script (works in both directions)
+ * @property {boolean} [fixed]  it stays in the bag: a click looks at it, it can't be held or used on anything
  */
 
 /** Define an item: `Cutaway.item(id, def)`; look one up with `Cutaway.item.get(id)`. */
@@ -92,7 +93,7 @@ Cutaway.inventory = (function () {
       if (open < 1 || offBar(p.y)) return false;
       const i = itemAt(p.x, p.y), id = i >= 0 ? items()[i] : null, held = Cutaway.ui.held;
       if (!id) { Cutaway.ui.hold(null); return true; }          // empty part of the bar
-      if (p.button === 2) { Cutaway.ui.hold(null); look(id); return true; }
+      if (p.button === 2 || (Cutaway.item.get(id)?.fixed && !held)) { Cutaway.ui.hold(null); look(id); return true; }
       if (held && held !== id) { Cutaway.ui.hold(null); combine(held, id); return true; }
       Cutaway.ui.hold(held === id ? null : id);
       return true;
