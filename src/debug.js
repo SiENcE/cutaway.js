@@ -145,8 +145,17 @@ Cutaway.debug = (function () {
     const sx = left ? 3 : W - 4;
     // (clear of the satchel's bar, as in pointOn: a click there opens the bag)
     const bottom = Cutaway.inventory?.corner === "bottom";
-    for (let sy = H - (bottom ? 30 : 3); sy >= 30; sy--) if (map.inside(Cutaway.scene.toWorld(sx, sy))) return { x: sx, y: sy };
-    return null;
+    // (and clear of any hotspot: a finger's tap reaches a few px, and would take it instead of the floor)
+    const clear = (/** @type {{x: number, y: number}} */ w) => [-9, 0, 9].every((dx) => [-9, 0, 9].every((dy) => !Cutaway.scene.hotspotAt(w.x + dx, w.y + dy)));
+    /** @type {{x: number, y: number} | null} */
+    let floor = null;
+    for (let sy = H - (bottom ? 30 : 3); sy >= 30; sy--) {
+      const w = Cutaway.scene.toWorld(sx, sy);
+      if (!map.inside(w)) continue;
+      if (clear(w)) return { x: sx, y: sy };
+      floor ??= { x: sx, y: sy };
+    }
+    return floor;
   }
 
   return {
