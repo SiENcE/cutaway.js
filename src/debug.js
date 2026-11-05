@@ -149,11 +149,12 @@ Cutaway.debug = (function () {
     const clear = (/** @type {{x: number, y: number}} */ w) => [-9, 0, 9].every((dx) => [-9, 0, 9].every((dy) => !Cutaway.scene.hotspotAt(w.x + dx, w.y + dy)));
     /** @type {{x: number, y: number} | null} */
     let floor = null;
-    for (let sy = H - (bottom ? 30 : 3); sy >= 30; sy--) {
-      const w = Cutaway.scene.toWorld(sx, sy);
+    // from the screen's edge inwards, as far as a quarter of it: any clear floor on that side will do
+    for (let d = 0; d < W / 4; d += 8) for (let sy = H - (bottom ? 30 : 3); sy >= 30; sy--) {
+      const x = left ? sx + d : sx - d, w = Cutaway.scene.toWorld(x, sy);
       if (!map.inside(w)) continue;
-      if (clear(w)) return { x: sx, y: sy };
-      floor ??= { x: sx, y: sy };
+      if (clear(w)) return { x, y: sy };
+      floor ??= { x, y: sy };
     }
     return floor;
   }
