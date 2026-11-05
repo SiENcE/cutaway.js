@@ -4,8 +4,8 @@
 // The intro (Cutaway.start({ intro })) is left out (?nointro); --intro plays it first, through to the
 // title screen, then again from "Watch intro" with a click (the next shot) and Esc (skip it all); and the
 // first act's prologue on the new game (a click on, Esc skips it).
-//   node tools/play.mjs <index.html> [--path path.json] [--max states] [--workers N] [--shots dir] [--touch] [--intro] [--size 844x390] [--dpr 3]
-// Must end with "all passed"; a demo that ends before the path does stops there. --shots saves a screenshot after every move. --touch plays it like a
+//   node tools/play.mjs <index.html> [--act id] [--path path.json] [--max states] [--workers N] [--shots dir] [--touch] [--intro] [--size 844x390] [--dpr 3]
+// --act plays one act alone from its start, on to where it would go on to the next. Must end with "all passed"; a demo that ends before the path does stops there. --shots saves a screenshot after every move. --touch plays it like a
 // phone: a mobile viewport, taps for clicks and long presses for looks.
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -14,15 +14,17 @@ import { launch } from "./lib/chrome.mjs";
 import { availableParallelism } from "node:os";
 import { makeSolver, loadFor, describe } from "./lib/solver.mjs";
 
-const args = process.argv.slice(2), page = args.find((a, i) => !a.startsWith("--") && !["--path", "--shots", "--size", "--dpr", "--max"].includes(args[i - 1]));
-if (!page) { console.error("usage: node tools/play.mjs <index.html> [--path path.json] [--shots dir] [--touch] [--intro] [--size WxH] [--dpr n]"); process.exit(2); }
+const args = process.argv.slice(2), page = args.find((a, i) => !a.startsWith("--") && !["--path", "--shots", "--size", "--dpr", "--max", "--act", "--workers"].includes(args[i - 1]));
+if (!page) { console.error("usage: node tools/play.mjs <index.html> [--act id] [--path path.json] [--shots dir] [--touch] [--intro] [--size WxH] [--dpr n]"); process.exit(2); }
 const touch = args.includes("--touch"), intro = args.includes("--intro");
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
+// --act: one act alone, from its start (?act=), on to where it would go on to the next
+const act = opt("--act");
 
 let path;
 if (opt("--path")) path = JSON.parse(readFileSync(opt("--path"), "utf8"));
 else {
-  const setup = { page }, workers = Number(opt("--workers") ?? Math.min(12, availableParallelism() - 1));
+  const setup = act ? { page, options: { act, demo: { acts: [act] } } } : { page }, workers = Number(opt("--workers") ?? Math.min(12, availableParallelism() - 1));
   const r = await (await makeSolver(loadFor(setup), { workers, setup })).search({ maxStates: Number(opt("--max") ?? 100000) });
   if (!r.solved) { console.log("FAIL  the solver found no way to the end"); process.exit(1); }
   path = r.path;
@@ -79,7 +81,7 @@ const click = async (p, kind = "click") => {
 };
 
 try {
-  await chrome.open(pathToFileURL(resolve(page)).href + "?manual" + (intro ? "" : "&nointro"));
+  await chrome.open(pathToFileURL(resolve(page)).href + "?manual" + (intro ? "" : "&nointro") + (act ? `&act=${act}` : ""));
   await chrome.ev(HELPERS);
   // the opening may take a moment (the audio gate asks the browser first)
   const shown = "Cutaway.acts.titleOpen || !!Cutaway.sequence.playing() || (!!Cutaway.scene.room && !Cutaway.sequence.gated())";

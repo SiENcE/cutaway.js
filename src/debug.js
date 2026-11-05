@@ -143,7 +143,9 @@ Cutaway.debug = (function () {
     const left = Cutaway.scene.toScreen(Math.max(...xs), 0).x < 2, right = Cutaway.scene.toScreen(Math.min(...xs), 0).x >= W - 2;
     if (!left && !right) return null;
     const sx = left ? 3 : W - 4;
-    for (let sy = H - 3; sy >= 30; sy--) if (map.inside(Cutaway.scene.toWorld(sx, sy))) return { x: sx, y: sy };
+    // (clear of the satchel's bar, as in pointOn: a click there opens the bag)
+    const bottom = Cutaway.inventory?.corner === "bottom";
+    for (let sy = H - (bottom ? 30 : 3); sy >= 30; sy--) if (map.inside(Cutaway.scene.toWorld(sx, sy))) return { x: sx, y: sy };
     return null;
   }
 
