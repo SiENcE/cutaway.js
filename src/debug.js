@@ -132,11 +132,14 @@ Cutaway.debug = (function () {
   /**
    * For a hotspot out of view in a room wider than the screen: a point on the walkable floor at the
    * screen's edge on its side, where a click walks the played actor (and the camera) towards it; null
-   * when it is in view or there's no floor there. For tools and headless playthroughs.
+   * when it is in view or there's no floor there. One a layer has scrolled away: where its layer says (`reveal`).
+   * For tools and headless playthroughs.
    * @param {string} id
    * @returns {{x: number, y: number} | null}
    */
   function towards(id) {
+    const shown = Cutaway.ui.reveal(id);       // in a list a layer scrolls: its arrow
+    if (shown) return shown;
     const h = Cutaway.scene.hotspots().find((q) => q.id === id), map = Cutaway.scene.walkMap;
     if (!h || !map) return null;
     const xs = h.poly.map((p) => p.x), W = Cutaway.display.width, H = Cutaway.display.height;

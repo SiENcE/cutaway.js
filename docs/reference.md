@@ -505,6 +505,10 @@ itself doesn't scroll), and for a finger `Cutaway.events.on("pointer.drag", ({ x
 last time, `from` where it went down, `claim()` takes the drag, so that coming up doesn't act. Give it buttons too: a mouse without a wheel and a
 controller have no other way. The demo's logbook in the hall shows it (`demo/game.js`).
 
+A layer tells the rest of the game about them: `targets()` gives what can be clicked on it now (`{ x, y, w, h, name }`), so the marks show them and
+`Cutaway.ui.targets()`, everything clickable on the screen with the hotspots, has them for a controller's pointer; `reveal(id)` says where a click brings
+a hotspot nearer that the layer has scrolled away, and `tools/play.mjs` clicks there until it shows.
+
 ## Layers: what the editor writes
 
 | | |

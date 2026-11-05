@@ -213,6 +213,7 @@
   Cutaway.events.on("pointer.drag", (/** @type {{dy: number, claim: () => void}} */ e) => { if (L.open) { e.claim(); by(-e.dy); L.y = L.to; } });
   Cutaway.ui.addLayer({ z: 70, modal: true,
     update() { L.y += (L.to - L.y) * 0.2; },
+    targets() { const [x, y, w, h] = L.box; return L.open ? [{ x: x + w - 12, y, w: 12, h: 12, name: "up" }, { x: x + w - 12, y: y + h - 12, w: 12, h: 12, name: "down" }] : []; },
     click(/** @type {{x: number, y: number}} */ p) {
       if (!L.open) return false;
       const [x, y, w, h] = L.box;

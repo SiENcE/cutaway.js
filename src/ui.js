@@ -77,6 +77,9 @@
  * @property {(x: number, y: number) => (string | null | undefined)} [hover]   label under the pointer
  * @property {(ctx: CanvasRenderingContext2D) => void} [render]
  * @property {(dt: number) => void} [update]
+ * @property {() => {x: number, y: number, w: number, h: number, name?: string}[]} [targets]  what can be clicked on it now, besides the hotspots
+ *   (a list's arrows): the marks show them, and a controller's pointer can snap to them (ui.targets)
+ * @property {(id: string) => ({x: number, y: number} | null)} [reveal]  a hotspot it has scrolled out of view: where a click brings it nearer (for the tools)
  */
 /** @typedef {{id: string, def: HotspotDef, poly: {x: number, y: number}[], actor?: string}} Hotspot */
 
@@ -378,8 +381,8 @@ Cutaway.ui = (function () {
     if (!markHeld && Cutaway.clock.time >= markUntil) return;
     if (Cutaway.script.busy || line) return;
     const pulse = Math.floor(Cutaway.clock.time / 300) % 2;
-    for (const h of Cutaway.scene.hotspots()) {
-      const p = Cutaway.debug.pointOn(h.id);
+    const points = [...Cutaway.scene.hotspots().map((h) => Cutaway.debug.pointOn(h.id)), ...layerTargets().map((b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 }))];
+    for (const p of points) {
       if (!p) continue;
       const x = Math.round(p.x), y = Math.round(p.y), r = 3 + pulse;
       ctx.fillStyle = skin.outline;
@@ -388,6 +391,9 @@ Cutaway.ui = (function () {
       ctx.fillRect(x - r, y, 2 * r + 1, 1); ctx.fillRect(x, y - r, 1, 2 * r + 1);
     }
   }
+
+  /** What the layers say can be clicked now. */
+  function layerTargets() { return layers.flatMap((l) => l.targets?.() ?? []); }
 
   /** Built-in button icon. @param {"menu" | "hotspots" | "hint"} k */
   function icon(k) {
@@ -552,6 +558,13 @@ Cutaway.ui = (function () {
     font,
     addLayer,
     showHotspots,
+    /**
+     * Everything that can be clicked now, on the screen: the room's hotspots and what the layers say (their `targets`). What a controller's
+     * pointer would snap to. @returns {{x: number, y: number, w: number, h: number, id?: string, name?: string}[]}
+     */
+    targets() { return [...Cutaway.scene.boxes().map((b) => ({ x: b.box[0], y: b.box[1], w: b.box[2], h: b.box[3], id: b.id, name: b.name })), ...layerTargets()]; },
+    /** Where a click brings a hotspot nearer that a layer has scrolled out of view, or null. @param {string} id */
+    reveal(id) { for (const l of layers) { const p = l.reveal?.(id); if (p) return p; } return null; },
     /** Screen centre of a button ("hint", "hotspots", "menu") if it shows (for tools). @param {string} k */
     buttonPoint(k) { const b = buttonBoxes().find((q) => q.k === k); return b ? { x: b.x + Math.floor(b.w / 2), y: b.y + Math.floor(b.h / 2) } : null; },
     /**

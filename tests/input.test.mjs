@@ -31,6 +31,13 @@ export default async function (t) {
     const c = await chrome.ev(`seen.claim = true; seen.click.length = 0; fire("pointerdown", 100, 100); fire("pointermove", 100, 80); fire("pointerup", 100, 80); seen.click.length`);
     t.ok("drag: a claimed one doesn't act", c === 0, String(c));
 
+    const m = await chrome.ev(`Cutaway.demoLog.open = true; const ta = Cutaway.ui.targets().filter((b) => b.name === "up" || b.name === "down").length; Cutaway.demoLog.open = false;
+      const tb = Cutaway.ui.targets().filter((q) => q.name === "up").length;
+      Cutaway.ui.addLayer({ z: 1, reveal: (id) => (id === "far_away" ? { x: 5, y: 6 } : null) });
+      [ta, tb, Cutaway.debug.towards("far_away")?.x, Cutaway.ui.targets().some((q) => q.id === "shelf")]`);
+    t.ok("targets: a layer's only while it shows them, beside the hotspots", m[0] === 2 && m[1] === 0 && m[3] === true, JSON.stringify(m));
+    t.ok("reveal: the tools' way to a hotspot a layer has scrolled away", m[2] === 5, JSON.stringify(m));
+
     const l = await chrome.ev(`seen.claim = false; const L = Cutaway.demoLog; L.open = true; L.y = 0; wheel(64, 0); const a = L.y; fire("pointerdown", 160, 120); fire("pointermove", 160, 110); fire("pointerup", 160, 110);
       const b = L.y; const n = seen.click.length; L.open = false; [a, b]`);
     t.ok("the demo's logbook scrolls by wheel and by finger", l[0] > 0 && l[1] === l[0] + 10, JSON.stringify(l));
