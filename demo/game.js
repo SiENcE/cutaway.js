@@ -228,7 +228,8 @@
       ctx.save(); ctx.beginPath(); ctx.rect(x, y + 2, w, h - 4); ctx.clip();
       LOG.forEach((/** @type {string} */ l, /** @type {number} */ i) => f.draw(ctx, Cutaway.i18n.t(l), x + 6, y + 3 + i * 12 - Math.round(L.y), { color: "#e8e8d8" }));
       ctx.restore();
-      f.draw(ctx, "^", x + w - 9, y + 2, { color: "#8fb0d0" }); f.draw(ctx, "v", x + w - 9, y + h - 12, { color: "#8fb0d0" });
+      ctx.fillStyle = "#8fb0d0";
+      for (let d = 0; d < 3; d++) { ctx.fillRect(x + w - 7 - d, y + 3 + d, 1 + 2 * d, 1); ctx.fillRect(x + w - 7 - d, y + h - 4 - d, 1 + 2 * d, 1); }
     },
   });
 
