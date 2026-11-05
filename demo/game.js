@@ -43,6 +43,7 @@
         look: "Jars of bolts, nuts and one suspicious pickle.",
         use: [{ if: "is:bolt", then: [{ if: "!got_key", then: [{ give: "key" }, { set: "got_key" }, { stinger: "discovery" }, "A key, in the pickle jar. Of course."],
           else: "Just bolts and nuts now." }], else: "I'm too short to reach anything up there." }] },
+      logbook: { name: "logbook", rect: [200, 44, 40, 30], walkTo: [220, 130], face: "up", look: "The hall's logbook. Mostly weather.", use: [{ logbook: true }] },
       crate: { name: "crate", walkTo: [160, 158], look: "A big crate. It says THIS WAY UP on the bottom.",
         use: [{ once: ["Locked tight."], else: "Still locked." }] },
       plant: { name: "plant", walkTo: [58, 170], face: "left", look: "A plastic fern. Low maintenance.",
@@ -201,6 +202,36 @@
   Cutaway.act("act1", { title: "Act 1", name: "The lamp in the yard", room: "hall", actor: "pip", start: [{ give: "sticker", to: "pip" }] });
 
   // the first that holds is the hint for now; each asks again more plainly
+  // the logbook: a long list in a UI layer that scrolls, by the wheel, by a finger, and by its arrows (a pixel at a time, eased); a click elsewhere closes it
+  const LOG = Cutaway.i18n.declare("logbook", ["Monday: rain.", "Tuesday: rain.", "Wednesday: a cloud shaped like a wrench.", "Thursday: rain.", "Friday: Bolt oiled the door.", "Saturday: the door still sticks.",
+    "Sunday: rain.", "Monday: Pip found a sticker.", "Tuesday: rain, then more rain.", "Wednesday: the pickle jar was moved.", "Thursday: nobody admits to it.", "Friday: sun, for a minute."]);
+  const L = { open: false, y: 0, to: 0, box: [60, 20, 200, 120], max: () => Math.max(0, LOG.length * 12 - 116) };
+  /** @type {any} */ (Cutaway).demoLog = L;
+  const by = (/** @type {number} */ d) => { L.to = Math.max(0, Math.min(L.max(), L.to + d)); };
+  Cutaway.script.action("logbook", () => { L.open = true; L.y = L.to = 0; });
+  Cutaway.events.on("pointer.wheel", (/** @type {{dy: number}} */ e) => { if (L.open) { by(e.dy / 4); L.y = L.to; } });
+  Cutaway.events.on("pointer.drag", (/** @type {{dy: number, claim: () => void}} */ e) => { if (L.open) { e.claim(); by(-e.dy); L.y = L.to; } });
+  Cutaway.ui.addLayer({ z: 70, modal: true,
+    update() { L.y += (L.to - L.y) * 0.2; },
+    click(/** @type {{x: number, y: number}} */ p) {
+      if (!L.open) return false;
+      const [x, y, w, h] = L.box;
+      if (p.x >= x + w - 12 && p.x < x + w && p.y >= y && p.y < y + 12) by(-24);
+      else if (p.x >= x + w - 12 && p.x < x + w && p.y >= y + h - 12 && p.y < y + h) by(24);
+      else L.open = false;
+      return true;
+    },
+    render(/** @type {CanvasRenderingContext2D} */ ctx) {
+      if (!L.open) return;
+      const [x, y, w, h] = L.box, f = Cutaway.ui.font();
+      ctx.fillStyle = "#1c2230"; ctx.fillRect(x, y, w, h);
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y + 2, w, h - 4); ctx.clip();
+      LOG.forEach((/** @type {string} */ l, /** @type {number} */ i) => f.draw(ctx, Cutaway.i18n.t(l), x + 6, y + 3 + i * 12 - Math.round(L.y), { color: "#e8e8d8" }));
+      ctx.restore();
+      f.draw(ctx, "^", x + w - 9, y + 2, { color: "#8fb0d0" }); f.draw(ctx, "v", x + w - 9, y + h - 12, { color: "#8fb0d0" });
+    },
+  });
+
   Cutaway.hints([
     { if: "!got_key", about: "shelf", text: ["The door is locked. Is the key somewhere up high?", "Bolt is tall enough to reach the shelf.", "Switch to Bolt and search the shelf."] },
     { if: "!door_open", about: "door", text: ["Bolt found a key. What could it open?", "Bolt can use the key on the door."] },

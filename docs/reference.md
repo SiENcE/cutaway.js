@@ -498,6 +498,13 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
   one); the Texts tab lists them as "game: deck".
 - The editor's Texts tab exports every text as CSV or JSON for translators and imports them back.
 
+## Scrolling
+
+A game's own list (a UI layer) scrolls by listening: `Cutaway.events.on("pointer.wheel", ({ x, y, dy }) => ...)` (`dy` in screen pixels, the page
+itself doesn't scroll), and for a finger `Cutaway.events.on("pointer.drag", ({ x, y, dx, dy, from, claim }) => ...)`: `dx`, `dy` what it moved since the
+last time, `from` where it went down, `claim()` takes the drag, so that coming up doesn't act. Give it buttons too: a mouse without a wheel and a
+controller have no other way. The demo's logbook in the hall shows it (`demo/game.js`).
+
 ## Layers: what the editor writes
 
 | | |
