@@ -28,6 +28,7 @@
  *                                   orders the props among themselves.
  * @property {boolean} [flip]
  * @property {boolean} [hidden]      starts hidden (a script can { show: id })
+ * @property {number} [alpha]         how much of it shows, 0 to 1 (default 1): a projection, a reflection, smoke
  * @property {boolean} [seeThrough]  where it hides an actor standing behind it, it is drawn see-through
  *                                   over that actor's figure (every other pixel, a checkerboard): an
  *                                   umbrella, a lamp post, a tall sign in front of where people walk
@@ -580,7 +581,7 @@ Cutaway.scene = (function () {
     for (const p of props()) {
       const d = p.def, pl = live.get(d)?.play, at = placeOf(d), sh = parallax(d), x = Math.round(at.x) + sh.x, y = Math.round(at.y) + sh.y;
       // a played animation runs from its own start (once: then its last frame); others with the scene
-      const o = { t: pl ? time - pl.start : time, loop: pl?.loop, flip: d.flip, anchor: d.anchor };
+      const o = { t: pl ? time - pl.start : time, loop: pl?.loop, flip: d.flip, anchor: d.anchor, alpha: d.alpha };
       list.push({ baseline: d.baseline ?? at.y, front: d.front, seeThrough: d.seeThrough, box: () => propBox(d), draw: d.scroll
         ? (c) => { for (const sx of scrollXs(d, p.image, w - sh.x, -sh.x, at.x)) Cutaway.assets.draw(c, p.image, sx + sh.x, y, o); }
         : (c) => Cutaway.assets.draw(c, p.image, x, y, o) });

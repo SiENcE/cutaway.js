@@ -72,6 +72,8 @@
       { id: "mailbox", image: "mailbox", states: { open: "mailbox_open" }, at: [200, 150] },
       // whoever walks behind the lamp post shows through it
       { id: "lamp", image: "lamppost", states: { lit: "lamppost_lit" }, at: [270, 140], seeThrough: true },
+      // a projection hanging in the air, in front of everyone: only partly there
+      { id: "holo", image: "bolt_walk_r", at: [130, 112], baseline: 999, alpha: 0.35 },
     ],
     hotspots: {
       door: { name: "door", rect: [10, 62, 34, 72], walkTo: [28, 140], face: "up", look: "Back into the hall.",
