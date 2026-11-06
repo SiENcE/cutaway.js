@@ -101,6 +101,7 @@ try {
       }
       check("  ... to its end, then the title screen", await chrome.ev("!Cutaway.sequence.playing() && Cutaway.acts.titleOpen"));
       check("  ... and it is marked as seen", await chrome.ev(`Cutaway.settings.seen(${JSON.stringify(id)})`));
+      await chrome.ev("Cutaway.debug.settle()");                  // the menu takes no input while it rises
       const row = await chrome.ev(`(Cutaway.menu.rows ?? []).indexOf(Cutaway.i18n.t("@cutaway.title.intro"))`);
       check("title screen: \"" + (await chrome.ev(`Cutaway.i18n.t("@cutaway.title.intro")`)) + "\"", row >= 0);
       if (row >= 0) {
@@ -117,6 +118,7 @@ try {
           // one shot only: a click skips to its end; then play it once more for Esc
           await chrome.ev("Cutaway.debug.settle()");
           check(`  a click skips to the end of its only shot (${before}), back to the title screen`, await chrome.ev("!Cutaway.sequence.playing() && Cutaway.acts.titleOpen && !!Cutaway.menu.rows"));
+          await chrome.ev("Cutaway.debug.settle()");
           await click(await chrome.ev(`Cutaway.menu.rowPoint((Cutaway.menu.rows ?? []).indexOf(Cutaway.i18n.t("@cutaway.title.intro")))`));
           await chrome.ev("__play.step(1000)");
         }
@@ -132,6 +134,7 @@ try {
     await chrome.ev("__play.step(600)");
     const rows = await chrome.ev("Cutaway.menu.rows");
     check("title screen: " + (rows ?? []).join(" / "), Array.isArray(rows) && rows.length > 0);
+    await chrome.ev("Cutaway.debug.settle()");                    // the menu takes no input while it rises
     await click(await chrome.ev("Cutaway.menu.rowPoint(0)"));             // new game
     // the first act's prologue (with --intro; ?nointro leaves it out): a click goes on a shot, Esc skips it
     const pro = await chrome.ev("Cutaway.act.get(Cutaway.act.ids()[0] ?? '')?.prologue ?? null");
