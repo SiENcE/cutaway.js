@@ -81,7 +81,7 @@ Cutaway.acts = (function () {
   /** The title's menu: where it goes (the title's `menu`: x, y, w, dim) over the defaults. */
   const titleLook = () => ({ ...TITLE_LOOK, ...(title?.menu ?? {}), pause: false, fixed: true });
   // the title's entrance (ms from its start): the logo and the small print fade in, then the menu rises
-  // from below the screen. A click or a key finishes it at once (and still counts for the menu).
+  // from below the screen. A click or a key finishes it at once and does nothing else: the menu takes input once it is there.
   const LOGO = [100, 1100], RISE = [1000, 1700];
   // a prologue begins in silence: the music fades out with the picture (s), the film brings its own
   const PROLOGUE_FADE = 0.8;
@@ -323,7 +323,7 @@ Cutaway.acts = (function () {
     z: 101, modal: true,
     click() {
       if (splashing) { endSplash(); return true; }
-      if (titleOpen && Cutaway.tween.has("title.entrance")) Cutaway.tween.finish("title.entrance");
+      if (titleOpen && Cutaway.tween.has("title.entrance")) { Cutaway.tween.finish("title.entrance"); return true; }
       return false;
     },
     hover() { return splashing ? null : undefined; },

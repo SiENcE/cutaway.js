@@ -1,5 +1,5 @@
 // Cutaway.js menu and cards.
-// Esc (or the touch menu button) opens the pause menu: continue, hint, save, load (autosave and slots),
+// Esc (or the touch menu button) opens the pause menu: continue, hint, save, load (autosave and slots; a page to delete saves from),
 // settings, language, fullscreen, back to the title. The settings have pages of their own: sound,
 // text and dialogue, picture, controls. Mouse, touch and keys (arrows, Enter, Esc) all work. Value rows
 // show a meter: click it where you want the value, or use left and right; option rows show "< value >"
@@ -139,6 +139,8 @@ Cutaway.menu = (function () {
   }
 
   function close() { entries = null; look = {}; Cutaway.clock.paused = false; }
+  /** A page that is still rising in takes no input: a click must not choose a row that hasn't arrived. */
+  const arriving = () => !!look.below && look.below() > 0;
   function goBack() { if (backTo) backTo(); else if (!look.fixed) close(); }
 
   /** @param {string | number} slot */
@@ -162,7 +164,24 @@ Cutaway.menu = (function () {
 
   /** The load page; `back` is where it returns to (the pause menu or the title screen). @param {() => void} from @param {PageLook} [o] */
   function loadPage(from, o) {
-    show(t("load"), [...["auto", ...SLOTS].map((s) => ({ label: slotLabel(s), run: () => { loadSlot(s); } })), back(from)], from, o);
+    show(t("load"), [...["auto", ...SLOTS].map((s) => ({ label: slotLabel(s), run: () => { loadSlot(s); } })),
+      ...(savedSlots().length ? [{ label: t("delete"), more: true, run: () => deletePage(from, o) }] : []), back(from)], from, o);
+  }
+
+  /** The slots that hold a save, in the order the pages list them. */
+  function savedSlots() { return ["auto", ...SLOTS].filter((s) => Cutaway.save.read(s)); }
+
+  /** The page to delete saves from: a click asks first. @param {() => void} from @param {PageLook} [o] */
+  function deletePage(from, o) {
+    const again = () => loadPage(from, o);
+    show(t("delete"), [...savedSlots().map((s) => ({ label: slotLabel(s), run: () => { askDelete(s, from, o); } })), back(again)], again, o);
+  }
+
+  /** Asks, deletes if so, and comes back to what is left. @param {string | number} s @param {() => void} from @param {PageLook} [o] */
+  async function askDelete(s, from, o) {
+    const i = await showCard(slotLabel(s), { title: t("deleteAsk"), buttons: [t("deleteYes"), t("deleteNo")] });
+    if (i === 0) Cutaway.save.remove(s);
+    if (savedSlots().length) deletePage(from, o); else loadPage(from, o);
   }
 
   function main() {
@@ -355,6 +374,7 @@ Cutaway.menu = (function () {
         return true;
       }
       if (!entries) return false;
+      if (arriving()) return true;
       const i = indexAt(p.x, p.y), e = i >= 0 ? entries[i] : null;
       if (!e) { if (p.button === 2) goBack(); return true; }
       hoverIx = i;
@@ -371,6 +391,7 @@ Cutaway.menu = (function () {
     hover(x, y) {
       if (card) { const i = cardButtonAt(x, y); if (i >= 0) card.hover = i; return null; }
       if (!entries) return undefined;
+      if (arriving()) return null;
       const i = indexAt(x, y);
       if (i >= 0) hoverIx = i;
       return null;
@@ -398,7 +419,7 @@ Cutaway.menu = (function () {
       else if (!Cutaway.acts?.titleOpen && !Cutaway.ui.cutscene) main();    // in a cutscene, Esc skips it
       return;
     }
-    if (!entries) return;
+    if (!entries || arriving()) return;
     const n = entries.length, e = hoverIx >= 0 ? entries[hoverIx] : null;
     if (k.code === "ArrowDown") hoverIx = (hoverIx + 1) % n;
     else if (k.code === "ArrowUp") hoverIx = (hoverIx - 1 + n) % n;

@@ -158,6 +158,57 @@ export default async function (t) {
       return [left, right, Cutaway.display.width];
     })()`);
     t.ok("menu: a page placed by x (left, or from the right)", placed[0] > 10 && placed[0] < 90 && placed[1] > placed[2] - 86 && placed[1] < placed[2] - 6, JSON.stringify(placed));
+    // deleting a save: the load page offers it only when there is one, asks first, and comes back to what is left
+    const deleting = await chrome.ev(`(async () => {
+      const wait = () => new Promise((r) => setTimeout(r, 60));
+      const press = (i) => { const q = Cutaway.menu.rowPoint(i); Cutaway.events.emit("pointer.click", { x: q.x, y: q.y, button: 0 }); };
+      const pressCard = (i) => { const q = Cutaway.menu.cardButtonPoint(i); Cutaway.events.emit("pointer.click", { x: q.x, y: q.y, button: 0 }); };
+      const del = Cutaway.i18n.t("@cutaway.menu.delete"), out = {};
+      for (const s of ["auto", 1, 2, 3]) Cutaway.save.remove(s);
+      Cutaway.menu.loadPage(() => Cutaway.menu.close());
+      out.none = Cutaway.menu.rows.includes(del);
+      Cutaway.save.write(1); Cutaway.save.write(2);
+      Cutaway.menu.loadPage(() => Cutaway.menu.close());
+      press(Cutaway.menu.rows.indexOf(del));
+      out.listed = Cutaway.menu.rows.length;
+      press(0); await wait();
+      out.asks = [Cutaway.menu.cardButtons?.length, !!Cutaway.save.read(1)];
+      pressCard(1); await wait();
+      out.kept = [!Cutaway.menu.card, !!Cutaway.save.read(1), Cutaway.menu.rows.length];
+      press(0); await wait();
+      pressCard(0); await wait();
+      out.gone = [!Cutaway.save.read(1), !!Cutaway.save.read(2), Cutaway.menu.rows.length];
+      press(0); await wait();
+      pressCard(0); await wait();
+      out.last = [!Cutaway.save.read(2), Cutaway.menu.rows.includes(del)];
+      Cutaway.menu.close();
+      return out;
+    })()`);
+    t.ok("saves: nothing to delete, no row for it", deleting.none === false, JSON.stringify(deleting));
+    t.ok("saves: the delete page lists what is saved, and the way back", deleting.listed === 3, JSON.stringify(deleting));
+    t.ok("saves: it asks first", deleting.asks[0] === 2 && deleting.asks[1], JSON.stringify(deleting));
+    t.ok("saves: keeping it keeps it", deleting.kept[0] && deleting.kept[1] && deleting.kept[2] === 3, JSON.stringify(deleting));
+    t.ok("saves: deleting it deletes that one only", deleting.gone[0] && deleting.gone[1] && deleting.gone[2] === 2, JSON.stringify(deleting));
+    t.ok("saves: the last one gone, back on the load page without the row", deleting.last[0] && !deleting.last[1], JSON.stringify(deleting));
+    // the title's menu takes no input while it rises: the first click or key only brings it in, the next one chooses
+    const rising = await chrome.ev(`(async () => {
+      let chosen = 0;
+      const click = () => { const p = Cutaway.menu.rowPoint(0); Cutaway.events.emit("pointer.click", { x: p.x, y: p.y, button: 0 }); };
+      const open = () => { Cutaway.acts.showTitle(); Cutaway.menu.page("T", [{ label: "row", run: () => { chosen++; } }], null,
+        { below: () => (Cutaway.tween.has("title.entrance") ? 1 : 0), fixed: true, pause: false }); };
+      open();
+      click(); const afterFirst = [chosen, Cutaway.tween.has("title.entrance")];
+      click(); const afterSecond = chosen;
+      open();
+      ${key("ArrowDown")} ${key("Enter")} const afterKey = chosen;
+      ${key("ArrowDown")} ${key("Enter")} const afterKeys = chosen;
+      Cutaway.menu.close();
+      return { afterFirst, afterSecond, afterKey, afterKeys };
+    })()`);
+    t.ok("title: a click while it rises finishes the entrance and chooses nothing", rising.afterFirst[0] === 0 && rising.afterFirst[1] === false, JSON.stringify(rising));
+    t.ok("title: once it is there, a click chooses", rising.afterSecond === 1, JSON.stringify(rising));
+    t.ok("title: a key while it rises chooses nothing either", rising.afterKey === 1 && rising.afterKeys === 2, JSON.stringify(rising));
+
     t.ok("settings: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

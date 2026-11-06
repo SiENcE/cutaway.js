@@ -524,7 +524,7 @@ The page loads each layer file after the game's own data.
 
 ## Saves, settings, the interface
 
-- An autosave on every room change, three slots in the pause menu (Esc), versioned:
+- An autosave on every room change, three slots in the pause menu (Esc), which the load page can also delete (it asks first), versioned:
   `Cutaway.save.configure({ migrate: (data, from) => data })` updates old saves.
 - Settings belong to the player, not the save (localStorage per game). The pause menu's Settings has
   four pages: Sound (`master`, `music`, `sfx`, `voice` 0..1, `voices`, `muteUnfocused`), Text and
