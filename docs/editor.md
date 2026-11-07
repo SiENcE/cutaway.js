@@ -77,7 +77,7 @@ the same way at their headings (also with Enter or Space on the heading).
 | Room | the rooms (open one), **+ Walk area**, **+ Hole**, **+ Hotspot**, save the shapes |
 | Art | **Edit pixels** (the selected sprite), **New sprite**, **Revert** to the game's art, **Import PNG**, **Export PNG**, **Reload art**, the pxl sources (with the studio) |
 | Play | **Pause game** (Ctrl+P), **Step** (F8: 100 ms), **Play from here** (F10); the **sequences**: each one, and each from one of its shot marks (the game runs while it plays, then is paused again), **Stop sequence** (as Esc in the game: `after` runs), **Next shot** (as Space); begin an act as a new game, **Test dialogue** (the one picked in Dialogue) |
-| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, State |
+| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, State |
 | Help | the editor guide (F1), the reference, the keys |
 
 **Inspector in its own window** moves the inspector into a window of its own (the game gets the room
@@ -303,6 +303,30 @@ soft-locks, checks the hints), build the art. Their output shows here and in the
 runs them from anywhere). **Reload the game** loads new files (the editor opens again); **Reload art**
 loads only the art.
 
+## Connections
+The game's connections: every state searched and every move watched (`tools/graph.mjs`), as the puzzle
+dependency chart in the centre. A step is a move with what it brings about (one click that opens a box,
+takes what is in it or closes it again is three steps), a box in its room's colour with the room's name;
+a fact is a pill (dashed: there from the start); the winning way's steps are numbered. Click one: what it
+needs lights up to the left, what it opens to the right, and the inspector lists them (each a link).
+The wheel zooms, a drag moves, a double click fits everything in.
+
+- **The data:** the files in the studio's `graph` folder (`layers.graph`, default `out/graph`). The game's
+  tasks whose names begin with "graph" make them from here (they search every state: minutes in a big
+  game) and the new file loads when done; without the studio, **Load a file …** takes one from anywhere.
+- **Show:** only what the winning way needs; facts nothing needs; conditions on absence ("not yet …",
+  red, dashed); facts read only sometimes; the clock. **Rooms:** click one to leave it out.
+- **Open in Things** (a step): its hotspot, actor or item in the Things tab, with the script the move runs
+  in the centre as blocks. A fact lists every place in the data that names it (rooms, hotspots, actors,
+  items, dialogues, sequences, an act's start), each opening there; "nowhere" means the game's own code
+  sets or asks it.
+- **Budget:** how many times more states each part of the state makes (a flag, an item carried, an
+  object's state, a once-mark, where an actor is): ×2 doubles them, ×1 follows from the rest.
+- The other way: the Things tab shows a hotspot's or an actor's steps (**connections**, while data is
+  loaded); a click shows the step in the chart.
+
+The same chart opens as a page of its own: `tools/graph.html?data=<the file's URL>` (graph.mjs prints the link).
+
 ## Files the editor writes
 
 | layer | file (the studio's `layers`) | what |
@@ -314,6 +338,7 @@ loads only the art.
 | audio | `assets/audio.js` | recorded sounds (embedded) |
 | voices | `assets/voices.<lang>.js` | recorded voices per line (embedded), one file per language |
 | art | `art/import/`, packed into `assets/imported.js` (`artAtlas`) | imported and painted pictures and animations |
+| graph | `out/graph/` (read only) | the connections' data the Connections tab shows (`tools/graph.mjs` writes it) |
 
 The page must load each layer after the game's own data (the game's `index.html`). The studio writes
 (and, for Revert, removes) only in the folders `studio.json` lists in `write`. Its `studio.json`:

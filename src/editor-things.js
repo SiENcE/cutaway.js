@@ -228,6 +228,11 @@
         el("div", { className: "cw-dim" }, ["Its name and texts: the Texts tab. Its shape and walk-to point: the Room tab."]),
       ], { note: String(sc.list.length) })]));
     }
+    // its steps in the game's connections (the Connections tab's data, when some is loaded)
+    if (kind === "hot" || kind === "actor") {
+      const steps = E.modules.graph?.section(room()?.id ?? "", kind === "hot" ? sel.slice(4) : "@" + sel.slice(6));
+      if (steps) box.append(steps);
+    }
   }
 
   /** Click on the picture: the hotspot or actor there (else a prop's box: shown ones first, hidden ones last). @param {{x: number, y: number}} p */

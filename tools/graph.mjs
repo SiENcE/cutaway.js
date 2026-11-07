@@ -2,7 +2,7 @@
 // every move it plays: what it needed of the state and what it changed. Out comes a data file for
 // tools/graph.html: the puzzle dependency chart (moves, the facts they need and bring about, the winning
 // way through them) and the state budget (how much each flag, item or once-mark multiplies the states).
-//   node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--max N] [--workers N] [--out out/graph-data.js]
+//   node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--max N] [--workers N] [--out out/graph/<act>.js]
 // --act: one act alone, from its start (going on to the next act ends it, as ?alone); --set: flags for its
 // start (one the act before leaves, or one that shuts a part of the game away).
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ const valued = ["--act", "--set", "--max", "--workers", "--out"];
 const opt = (/** @type {string} */ n, /** @type {string} */ d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
 const page = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));
 if (!page) { console.error("usage: node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--max N] [--workers N] [--out file.js]"); process.exit(2); }
-const act = opt("--act", ""), kept = opt("--set", ""), out = path.resolve(opt("--out", "out/graph-data.js"));
+const act = opt("--act", ""), kept = opt("--set", ""), out = path.resolve(opt("--out", `out/graph/${act || "game"}.js`));   // out/graph: the studio's "graph" folder, where the editor looks
 
 const setup = { page, options: act ? { act, demo: { acts: [act] } } : {}, start: kept ? kept.split(",").map((f) => ({ set: f })) : [] };
 const g = loadFor(setup);

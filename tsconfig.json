@@ -63,6 +63,8 @@
     "src/editor-state.js",
     "src/editor-issues.js",
     "src/editor-checks.js",
+    "src/graph-view.js",
+    "src/editor-graph.js",
     "src/editor-guide.js"
   ]
 }

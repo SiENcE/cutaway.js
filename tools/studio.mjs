@@ -10,7 +10,7 @@
 //     "layers": { "room": "game/rooms/{id}.geo.js", "texts": "game/strings/{lang}.texts.js",
 //                 "edits": "game/edits.js", "sounds": "game/sounds.edit.js",
 //                 "art": "art/import", "artAtlas": "assets/imported.js", "audio": "assets/audio.js",
-//                 "voices": "assets/voices.{lang}.js" },
+//                 "voices": "assets/voices.{lang}.js", "graph": "out/graph" },   graph: the connections' data (tools/graph.mjs)
 //     "tasks": { "validate": ["node", "lib/cutaway/tools/validate.mjs", "index.html"], ... },
 //     "palette": ["art/palette.px.js"] }               files whose "#rrggbb" colours are the paint view's game palette
 // The editor's Art tab runs the task "art: imported" (when there is one) after it writes into the
@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 const DEFAULTS = {
   write: ["game", "art", "assets"],
   layers: { room: "game/rooms/{id}.geo.js", texts: "game/strings/{lang}.texts.js", edits: "game/edits.js", sounds: "game/sounds.edit.js",
-    art: "art/import", artAtlas: "assets/imported.js", audio: "assets/audio.js", voices: "assets/voices.{lang}.js" },
+    art: "art/import", artAtlas: "assets/imported.js", audio: "assets/audio.js", voices: "assets/voices.{lang}.js", graph: "out/graph" },
   tasks: {},
   palette: [],
 };

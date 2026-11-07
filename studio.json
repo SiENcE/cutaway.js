@@ -7,11 +7,13 @@
     "sounds": "demo/layers/sounds.edit.js",
     "art": "demo/layers/art",
     "artAtlas": "demo/layers/imported.js",
-    "audio": "demo/layers/audio.js"
+    "audio": "demo/layers/audio.js",
+    "graph": "out/graph"
   },
   "tasks": {
     "validate": ["node", "tools/validate.mjs", "demo/index.html"],
     "solve": ["node", "tools/solve.mjs", "demo/index.html", "--full"],
-    "play": ["node", "tools/play.mjs", "demo/index.html"]
+    "play": ["node", "tools/play.mjs", "demo/index.html"],
+    "graph": ["node", "tools/graph.mjs", "demo/index.html", "--out", "out/graph/demo.js"]
   }
 }
