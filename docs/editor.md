@@ -315,7 +315,9 @@ The wheel zooms, a drag moves, a double click fits everything in.
   tasks whose names begin with "graph" make them from here (they search every state: minutes in a big
   game) and the new file loads when done; without the studio, **Load a file …** takes one from anywhere.
 - **Show:** only what the winning way needs; facts nothing needs; conditions on absence ("not yet …",
-  red, dashed); facts read only sometimes; the clock. **Rooms:** click one to leave it out.
+  red, dashed); facts read only sometimes; the clock; the search's own flags (what `--set` gave its start,
+  such as one shutting a part of the game away). **Rooms:** click one to leave it out. Being in its room
+  is a need of every step there, so it alone doesn't put a step on the chart.
 - **Open in Things** (a step): its hotspot, actor or item in the Things tab, with the script the move runs
   in the centre as blocks. A fact lists every place in the data that names it (rooms, hotspots, actors,
   items, dialogues, sequences, an act's start), each opening there; "nowhere" means the game's own code

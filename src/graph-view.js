@@ -106,7 +106,9 @@ Cutaway.graphView = (function () {
     const colour = (/** @type {string} */ r) => { const i = placed.indexOf(r); return i >= 0 && i < SLOTS.length ? SLOTS[i] : OTHER; };
     const roomName = (/** @type {string} */ r) => r || "(anywhere)";
     const shownRooms = new Set(rooms);
-    const opts = { way: false, unused: false, neg: false, partial: false, clock: false };
+    const opts = { way: false, unused: false, neg: false, partial: false, clock: false, setup: false };
+    // the flags the search began with (graph.mjs --set: one shutting a part of the game away) are its setup, no step's need
+    const setup = new Set(G.set.map((f) => f.replace(/=.*$/, "")));
     let find = "";
     /** @type {string | null} */
     let selected = null;
@@ -127,7 +129,7 @@ Cutaway.graphView = (function () {
 
     /** What is shown, from the data and the switches: steps merged when they bring about the same. */
     function build() {
-      const keepRead = (/** @type {[string, number]} */ [f, s]) => (opts.partial || s >= 1) && (opts.clock || !isClock(f));
+      const keepRead = (/** @type {[string, number]} */ [f, s]) => (opts.partial || s >= 1) && (opts.clock || !isClock(f)) && (opts.setup || !setup.has(f.replace(/=.*$/, "")));
       const cand = G.moves.filter((m) => shownRooms.has(m.room));
       const needed = new Set();
       for (const m of cand) { for (const [f] of m.reads.filter(keepRead)) needed.add(f); if (opts.neg) for (const [f] of m.neg.filter(keepRead)) needed.add(f); }
@@ -151,8 +153,10 @@ Cutaway.graphView = (function () {
         const part = (/** @type {Map<string, number>} */ c) => [...c].map(([f, n]) => /** @type {[string, number]} */ ([f, n / st.n])).filter(([, sh]) => opts.partial || sh >= 0.999).sort();
         st.reads = part(st.cnt); st.neg = part(st.ncnt);
         st.writes.sort();
-        // shown: what brings about something needed, what a condition holds back (a door that needs a key), the end
-        if (!st.writes.some((/** @type {string} */ w) => !w.startsWith("!")) && !st.reads.length && !st.neg.length && !st.wins) steps.delete(st.id);
+        // shown: what brings about something needed, what a condition holds back (a door that needs a key; being in
+        // its room is no such condition: every step there needs that), the end
+        const gated = st.reads.some((/** @type {[string, number]} */ [f]) => f !== `visited:${st.room}`) || st.neg.length;
+        if (!st.writes.some((/** @type {string} */ w) => !w.startsWith("!")) && !gated && !st.wins) steps.delete(st.id);
       }
       /** @type {string[]} */
       const way = [];
@@ -499,7 +503,7 @@ Cutaway.graphView = (function () {
       root.append(input, htmlEl("h3", "", "Show"));
       /** @type {[keyof typeof opts, string][]} */
       const switches = [["way", "only what the winning way needs"], ["unused", "facts nothing needs"], ["neg", "conditions on absence (“not yet …”)"],
-        ["partial", "facts read only sometimes"], ["clock", "the clock (time, day)"]];
+        ["partial", "facts read only sometimes"], ["clock", "the clock (time, day)"], ...(setup.size ? /** @type {[keyof typeof opts, string][]} */ ([["setup", `the search's own flags (${[...setup].join(", ")})`]]) : [])];
       for (const [k, text] of switches) {
         const label = htmlEl("label"), cb = htmlEl("input");
         cb.type = "checkbox"; cb.checked = opts[k];

@@ -140,6 +140,8 @@ Cutaway.state = (function () {
      * @param {((kind: string, name: string, value: any) => void) | null} fn
      */
     watch(fn) { watcher = fn; },
+    /** A flag read that the watcher doesn't hear: the engine's own bookkeeping (the clock asking which moments have happened). @param {string} name */
+    peek(name) { return s.flags[name]; },
     /** The view flags. */
     views() { return [...viewFlags]; },
     /** @param {string} name @param {any} [value] */

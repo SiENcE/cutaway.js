@@ -82,9 +82,10 @@ Cutaway.time = (function () {
     const m = ((Math.round(min) % 1440) + 1440) % 1440;
     return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   }
-  function day() { return Number(Cutaway.state.flag("day")) || 1; }
+  // the clock's own reads are bookkeeping, no move's condition (state.peek: a tool watching the state doesn't hear them)
+  function day() { return Number(Cutaway.state.peek("day")) || 1; }
   function minutes() {
-    const t = Cutaway.state.flag("time");
+    const t = Cutaway.state.peek("time");
     return t === undefined || t === "" || !Number.isFinite(Number(t)) ? cfg?.start ?? 0 : Number(t);
   }
   /** @param {number | number[] | undefined} d @param {number} today */
@@ -119,7 +120,7 @@ Cutaway.time = (function () {
   async function check() {
     const here = Cutaway.scene.backdrop ? null : Cutaway.scene.room?.id ?? null;
     for (const [id, m] of moments) {
-      if (Cutaway.state.flag(`~moment.${id}`)) continue;
+      if (Cutaway.state.peek(`~moment.${id}`)) continue;
       const d = day(), t = minutes();
       const past = typeof m.day === "number" ? d > m.day || (d === m.day && t >= parse(m.to)) : onDay(m.day, d) && t >= parse(m.to);
       if (!Cutaway.state.test(m.if) && !past) continue;
@@ -141,7 +142,7 @@ Cutaway.time = (function () {
     /** @type {number[]} */
     const at = [];
     for (const list of routines.values()) for (const e of list) if (onDay(e.day, d)) at.push(parse(e.from), parse(e.to));
-    for (const [id, m] of moments) if (onDay(m.day, d) && !Cutaway.state.flag(`~moment.${id}`)) at.push(parse(m.from), parse(m.to));
+    for (const [id, m] of moments) if (onDay(m.day, d) && !Cutaway.state.peek(`~moment.${id}`)) at.push(parse(m.from), parse(m.to));
     for (const m of marks) at.push(parse(m));
     const later = at.filter((v) => Number.isFinite(v) && v > t && (end === null || v <= end));
     return later.length ? Math.min(...later) : null;

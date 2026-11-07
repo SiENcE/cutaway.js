@@ -272,7 +272,8 @@ be clicked, never what a click does.
 
 `Cutaway.state.watch(fn)` tells `fn(kind, name, value)` of every read of the state (kind `"flag"`, `"item"`,
 `"obj"`, `"hidden"`, `"visited"` or `"at"`); `watch(null)` stops it. Tools use it: `graph.mjs` asks what each
-move depends on.
+move depends on. `Cutaway.state.peek(name)` reads a flag without telling it: the engine's own bookkeeping (the
+clock asking which moments have happened) is no move's condition.
 
 ## Conditions
 
