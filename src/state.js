@@ -31,11 +31,18 @@ Cutaway.state = (function () {
   function key(id) { return id.includes("/") ? id : `${Cutaway.scene.room?.id ?? ""}/${id}`; }
   function activeId() { return Cutaway.scene.active?.id ?? ""; }
 
+  /** Told of every read of the state (tools: which facts a move depends on); null: nobody. @type {((kind: string, name: string, value: any) => void) | null} */
+  let watcher = null;
+  /** @param {string} kind @param {string} name @param {any} value */
+  function seen(kind, name, value) { watcher?.(kind, name, value); return value; }
+
   /** @param {string} name */
-  function flag(name) { return s.flags[name]; }
+  function flag(name) { return watcher ? seen("flag", name, s.flags[name]) : s.flags[name]; }
+  /** Is a flag set at all? (heard as true or false: the condition asks no more of its value) @param {string} name */
+  function isSet(name) { const v = !!s.flags[name]; return watcher ? seen("flag", name, v) : v; }
 
   /** @param {string} who @param {string} item */
-  function has(item, who = activeId()) { return (s.inv[bag(who)] ?? []).includes(item); }
+  function has(item, who = activeId()) { const v = (s.inv[bag(who)] ?? []).includes(item); return watcher ? seen("item", item, v) : v; }
 
   /**
    * @param {Cond | undefined} c
@@ -58,6 +65,7 @@ Cutaway.state = (function () {
       const v = number(cmp.value);
       // the game time's own flags read as the time module has them (day 1 and the day's start before they are set)
       const n = cmp.name === "time" && Cutaway.time ? Cutaway.time.now.minutes : cmp.name === "day" && Cutaway.time ? Cutaway.time.now.day : Number(s.flags[cmp.name]) || 0;
+      if (watcher) seen("flag", cmp.name, s.flags[cmp.name]);
       switch (cmp.op) {
         case "=": return n === v;
         case ">=": return n >= v;
@@ -70,20 +78,20 @@ Cutaway.state = (function () {
     const colon = str.indexOf(":");
     if (colon < 0) {
       const eq = str.indexOf("=");
-      if (eq < 0) return !!s.flags[str];
-      return String(s.flags[str.slice(0, eq)] ?? "") === str.slice(eq + 1);
+      if (eq < 0) return isSet(str);
+      return String(flag(str.slice(0, eq)) ?? "") === str.slice(eq + 1);
     }
     const kind = str.slice(0, colon), arg = str.slice(colon + 1);
     switch (kind) {
       case "has": return has(arg);
-      case "visited": return !!s.visited[arg];
+      case "visited": return !!seen("visited", arg, !!s.visited[arg]);
       case "is": return activeId() === arg;
       case "hidden": return isHidden(arg);
       case "state": { const [id, v] = arg.split("="); return objState(id) === v; }
-      case "at": { const [who, room] = arg.split("="); return Cutaway.actors.get(who)?.room === room; }
+      case "at": { const [who, room] = arg.split("="); return seen("at", who, Cutaway.actors.get(who)?.room) === room; }
       case "setting": { const [k, v] = arg.split("="); return String(Cutaway.settings?.get(k) ?? "") === v; }
-      case "moment": return !!s.flags[`~moment.${arg}`];
-      case "seen": return s.flags[`~moment.${arg}`] === "seen";
+      case "moment": return isSet(`~moment.${arg}`);
+      case "seen": return flag(`~moment.${arg}`) === "seen";
     }
     throw new Error(`Cutaway: unknown condition "${str}"`);
   }
@@ -108,9 +116,9 @@ Cutaway.state = (function () {
   }
 
   /** @param {string} id */
-  function objState(id) { return s.obj[key(id)] ?? ""; }
+  function objState(id) { const k = key(id), v = s.obj[k] ?? ""; return watcher ? seen("obj", k, v) : v; }
   /** Hidden by a script, or else by the room data (`fallback`). @param {string} id @param {boolean} [fallback] */
-  function isHidden(id, fallback = false) { return s.hidden[key(id)] ?? fallback; }
+  function isHidden(id, fallback = false) { const k = key(id), v = s.hidden[k] ?? fallback; return watcher ? seen("hidden", k, v) : v; }
 
   /** flags that only say what is shown (a window open, a page): saved, but no part of the game's state for the solver */
   const viewFlags = new Set();
@@ -124,6 +132,14 @@ Cutaway.state = (function () {
      * @param {...string} names
      */
     view(...names) { for (const n of names) viewFlags.add(n); },
+    /**
+     * Be told of every read of the state while playing (a tool's question: what does this move depend on?):
+     * `fn(kind, name, value)` with kind "flag" (a condition that only asks whether it is set hears true or
+     * false, not its value), "item" (carried by whoever plays), "obj" (an object's state,
+     * "room/id"), "hidden" ("room/id"), "visited" (a room) or "at" (an actor's room); null stops it.
+     * @param {((kind: string, name: string, value: any) => void) | null} fn
+     */
+    watch(fn) { watcher = fn; },
     /** The view flags. */
     views() { return [...viewFlags]; },
     /** @param {string} name @param {any} [value] */
@@ -152,7 +168,7 @@ Cutaway.state = (function () {
     /** @param {string} id @param {boolean} hidden */
     setHidden(id, hidden) { s.hidden[key(id)] = hidden; },
     /** @param {string} room */
-    visited(room) { return !!s.visited[room]; },
+    visited(room) { return !!seen("visited", room, !!s.visited[room]); },
     /** @param {string} room */
     visit(room) { s.visited[room] = true; },
     /** Has this once-only step run before? Marks it as run. @param {string} k */

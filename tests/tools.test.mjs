@@ -1,8 +1,9 @@
 // The game tools on the demo: validate passes, broken references fail; solve finds the end, an
-// unsolvable variant fails and a soft-lock is found.
+// unsolvable variant fails and a soft-lock is found; graph traces the moves (what each needs and brings about).
 import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
 import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
+import { buildGraph } from "../tools/lib/graph.mjs";
 
 async function demo(patch) {
   const g = loadGame("demo/index.html");
@@ -99,4 +100,23 @@ export default async function (t) {
   const s3 = await makeSolver(await demo((C) => { C.room.get("yard").hotspots.lamp.with.bulb = [{ remove: "bulb" }, "Oops. It broke."]; }));
   const r3 = await s3.search({ full: true });
   t.ok("solve: a soft-lock is found", r3.solved && r3.softlocks.length > 0, `${r3.softlocks.length} soft-locks`);
+
+  // state.watch hears reads; a traced search gives the steps, the way and the state budget
+  const g0 = await demo();
+  await boot(g0, { instant: true });
+  const heard = [];
+  g0.C.state.watch((k, n) => heard.push(`${k}:${n}`));
+  for (const c of ["door_open", "has:key", "visited:yard"]) g0.C.state.test(c);
+  g0.C.state.watch(null);
+  g0.C.state.test("got_key");
+  t.ok("state.watch: hears flags, items and rooms read, nothing once stopped", heard.join(" ") === "flag:door_open item:key visited:yard", heard.join(" "));
+  const tr = await (await makeSolver(loadFor(setup), { workers: 2, setup, trace: true })).search({ full: true });
+  const G = buildGraph(/** @type {any} */ (tr), []);
+  const door = G.moves.find((m) => m.move === "use key on door");
+  t.ok("graph: the key opens the door (needs has:key, brings door_open)", !!door && door.reads.some(([f, s]) => f === "has:key" && s === 1) && door.writes.includes("door_open"), JSON.stringify(door));
+  const box = G.moves.filter((m) => m.room === "yard" && m.move === "act mailbox");
+  t.ok("graph: one click, a step per outcome (the mailbox opens, gives the bulb, closes)", box.length === 3, box.map((m) => m.writes.join(",")).join(" | "));
+  t.ok("graph: combining is the same step in every room", G.moves.filter((m) => m.move.startsWith("combine")).length === 1);
+  t.ok("graph: the winning way runs through the steps and ends with the end", G.way.length > 3 && G.way.every((id) => G.moves.some((m) => m.id === id)) && !!G.moves.find((m) => m.id === G.way[G.way.length - 1])?.wins, G.way.join(" > "));
+  t.ok("graph: the state budget names the once-mark that doubles the states", G.factors.some((f) => f.part === "once:hall.crate.use.0" && Math.abs(f.factor - 2) < 0.01), JSON.stringify(G.factors.slice(0, 3)));
 }

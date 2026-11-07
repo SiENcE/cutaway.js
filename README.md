@@ -64,7 +64,8 @@ font; `tools/music-lab.html` plays the demo's music.
   picture (pixel-perfect or filling the window, scanlines or an old CRT, no shake or flicker) and the
   controls (swapped mouse buttons, always run, the touch hold time, the screen buttons, the hint button).
 - **Tools:** a validator, a solver (proves the game can be finished, finds soft-locks, checks every
-  hint), a headless playthrough with real clicks or taps, screenshots, an atlas packer, offline music
+  hint), a headless playthrough with real clicks or taps, the game's connections as a puzzle dependency
+  chart and a state budget (what multiplies the states), screenshots, an atlas packer, offline music
   renders, and the studio (a local server for the editor).
 
 ## A room in a few lines
@@ -144,6 +145,7 @@ node tests/run.mjs       # unit, tool and browser tests: "all passed"
 npm run validate         # the demo's data
 npm run solve            # prove the demo can be finished, find soft-locks, check its hints
 npm run play             # play it through in headless Chrome (add --touch: as a phone)
+node tools/graph.mjs demo/index.html   # the demo's connections: open the graph.html link it prints
 node tools/build-editor-help.mjs   # after changing docs/editor.md or docs/reference.md
 ```
 

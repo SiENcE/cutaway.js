@@ -10,10 +10,14 @@
 // With `workers` (and a `setup` to load the game again), worker threads expand the states
 // (solver-worker.mjs), level by level, merged in a fixed order: the same states, paths and results as
 // one thread, many times faster on a big game.
+// With `trace`, every move played is watched (trace.mjs): what it read of the state and what it changed;
+// the search then returns that per move (`trace`), every state it found (`snaps`) and the winning way's
+// moves by room (`way`), for tools/graph.mjs.
 import { Worker } from "node:worker_threads";
 import { createHash } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { boot, loadGame } from "./game.mjs";
+import { makeTracer } from "./trace.mjs";
 
 /** A snapshot packed for keeping (JSON, deflated: a big game has hundreds of thousands). @param {any} snap */
 export const pack = (snap) => deflateRawSync(JSON.stringify(snap));
@@ -58,8 +62,9 @@ export function describe(m) {
 
 /**
  * @param {{C: any, options: any}} g a loaded game (loadGame, or loadFor(setup))
- * @param {{workers?: number, setup?: Parameters<typeof loadFor>[0]}} [opts]  workers: threads that
- *   expand states (each loads the game from `setup`, which must describe `g`); 0 or none: this thread
+ * @param {{workers?: number, setup?: Parameters<typeof loadFor>[0], trace?: boolean}} [opts]  workers: threads that
+ *   expand states (each loads the game from `setup`, which must describe `g`); 0 or none: this thread;
+ *   trace: watch every move (see the top)
  */
 export async function makeSolver(g, opts = {}) {
   const run = await boot(g, { instant: true });
@@ -69,6 +74,7 @@ export async function makeSolver(g, opts = {}) {
   const views = C.state.views?.() ?? [];
   /** a snapshot's views, as one string @param {any} snap */
   const viewSig = (snap) => JSON.stringify(views.map((v) => snap.state?.flags?.[v] ?? null));
+  const tracer = opts.trace ? makeTracer(C, views) : null;
 
   /**
    * A state's identity: rooms (not positions), who plays, the party and the game state. Canonical:
@@ -158,12 +164,14 @@ export async function makeSolver(g, opts = {}) {
     let error = null;
     const origError = console.error;
     console.error = (...a) => { error = a.map(String).join(" "); };
+    tracer?.begin(snap, m);
     try {
       await Promise.race([perform(m), flush().then(flush)]);
       await flush();
     } finally {
       console.error = origError;
       C.dialogs.setChooser(null);
+      tracer?.pause();
     }
     if (error) throw new Error(`${describe({ ...m, choices })}: ${error}`);
     if (dup) return [];
@@ -173,7 +181,9 @@ export async function makeSolver(g, opts = {}) {
       return out;
     }
     if (C.script.busy) throw new Error(`${describe({ ...m, choices })}: the script did not finish (waiting for something?)`);
-    return [{ move: { ...m, choices }, snap: C.save.capture(), ended: run.ended }];
+    const after = C.save.capture();
+    tracer?.end(snap, { ...m, choices }, after, run.ended);
+    return [{ move: { ...m, choices }, snap: after, ended: run.ended }];
   }
 
   /**
@@ -254,12 +264,13 @@ export async function makeSolver(g, opts = {}) {
     const waiting = new Map();
     /** @type {Worker[]} */
     const workers = await Promise.all(Array.from({ length: n }, () => new Promise((resolve, reject) => {
-      const w = new Worker(url, { workerData: { setup: opts.setup } });
+      const w = new Worker(url, { workerData: { setup: opts.setup, trace: !!opts.trace } });
       w.on("error", reject);
       w.on("message", (m) => {
         if (m.ready) { resolve(w); return; }
         const p = waiting.get(m.id);
         waiting.delete(m.id);
+        if (m.trace) tracer?.merge(m.trace);
         if (m.error) p?.reject(new Error(m.error)); else p?.resolve(m.out);
       });
     })));
@@ -366,7 +377,15 @@ export async function makeSolver(g, opts = {}) {
       if (C.hints.any()) hints = await checkHints(pool, nodes, dist, pathTo, depthOf);
       say("the hints done");
     }
-    return { solved: !!winKey, path: pathTo(winKey), states: nodes.size, complete, softlocks, hints };
+    const out = { solved: !!winKey, path: pathTo(winKey), states: nodes.size, complete, softlocks, hints };
+    if (!tracer) return out;
+    /** @type {string[]} the winning way's steps (tracer.stepOf; moves that changed nothing left out) */
+    const way = [];
+    for (let n = winKey ? nodes.get(winKey) : null; n && n.move; n = n.parent ? nodes.get(n.parent) : null) {
+      const { pre, ...m } = /** @type {any} */ (n.move), step = tracer.stepOf(unpack(/** @type {any} */ (nodes.get(/** @type {string} */ (n.parent))).snap), m, unpack(n.snap), n.win);
+      if (step) way.unshift(step);
+    }
+    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), way };
   }
 
   /**
@@ -411,5 +430,5 @@ export async function makeSolver(g, opts = {}) {
     return { uses, problems };
   }
 
-  return { C, start, moves, play, search, key, expandState };
+  return { C, start, moves, play, search, key, expandState, takeTrace: () => tracer?.take() ?? null };
 }
