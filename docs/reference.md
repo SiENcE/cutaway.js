@@ -41,7 +41,8 @@ Cutaway.start({
   own pause is `Cutaway.clock.paused`.
 - `intro` and `gate`: see "Sequences and the intro".
 - Query switches: `?manual` (the clock moves only on `Cutaway.clock.advance`), `?act=<id>` (begin an
-  act at once, no title or card, no intro), `?nointro` (leave the intro out), `?edit` (open the editor;
+  act at once, no title or card, no intro; with `&alone` that act is played alone, as a demo of it: where it
+  would go on to the next, the game ends, which is how `play.mjs --act` tests one act), `?nointro` (leave the intro out), `?edit` (open the editor;
   no intro either), `?debug`, `?lang=de`, `?scale=3`.
 
 ## Rooms

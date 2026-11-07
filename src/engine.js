@@ -1,7 +1,8 @@
 // Cutaway.js start-up: wires the modules into the loop. Load this file last.
 //   Cutaway.start({ width: 320, height: 180, room: "hall", actor: "pip" })
 // A game with acts (Cutaway.act) starts with its title screen (`title`), or else begins its first act;
-// ?act=<id> begins that act at once, without its card (also `act`). Without acts it shows `room`.
+// ?act=<id> begins that act at once, without its card (also `act`); with ?alone it is played alone, as a demo of
+// that act: where it would go on to the next, the game ends (the tools test one act so). Without acts it shows `room`.
 // Before that, the opening: the audio gate (`gate`, where sound needs a click first) and the intro
 // (`intro`: a sequence, the first time only, or on every start with `introAlways`); ?act=, ?nointro and
 // ?edit leave the intro out.
@@ -133,11 +134,11 @@ Cutaway.start = async function (o = {}) {
   Cutaway.party.set(o.party ?? (o.actor ? [o.actor] : []));
   Cutaway.party.setFollow(!!o.follow);
   if (o.inventory === "shared") Cutaway.state.share(Cutaway.party.members());
+  const act = (dev && params.get("act")) || o.act;
   // an act's prologue plays where the intro may (not with ?nointro or ?edit; ?act= begins without it)
-  Cutaway.acts.configure({ id: o.id, title: o.title, demo: o.demo, quit: o.quit, intro: o.intro,
+  Cutaway.acts.configure({ id: o.id, title: o.title, demo: dev && act && params.has("alone") ? { acts: [act] } : o.demo, quit: o.quit, intro: o.intro,
     prologues: !params.has("nointro") && !(dev && params.has("edit")) });
   // these run in the background (the opening, the first room's enter script, the title screen)
-  const act = (dev && params.get("act")) || o.act;
   const begin = () => {
     if (Cutaway.acts.first() && o.title) Cutaway.acts.showTitle({ splash: !params.has("nointro") && !(dev && params.has("edit")) });
     else if (Cutaway.acts.first()) Cutaway.acts.begin(/** @type {string} */ (Cutaway.acts.first()), { fresh: true });

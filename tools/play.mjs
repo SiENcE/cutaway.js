@@ -81,7 +81,8 @@ const click = async (p, kind = "click") => {
 };
 
 try {
-  await chrome.open(pathToFileURL(resolve(page)).href + "?manual" + (intro ? "" : "&nointro") + (act ? `&act=${act}` : ""));
+  // one act alone, in the page as in the solver: where it would go on to the next, the game ends (?alone)
+  await chrome.open(pathToFileURL(resolve(page)).href + "?manual" + (intro ? "" : "&nointro") + (act ? `&act=${act}&alone` : ""));
   await chrome.ev(HELPERS);
   // the opening may take a moment (the audio gate asks the browser first)
   const shown = "Cutaway.acts.titleOpen || !!Cutaway.sequence.playing() || (!!Cutaway.scene.room && !Cutaway.sequence.gated())";
