@@ -1117,6 +1117,16 @@ Cutaway.editor = (function () {
    */
   async function runTask(task, vars) {
     if (!studio.available) { setStatus("the tasks run in the studio (tools/studio.mjs)"); return { code: -1, output: "" }; }
+    // a task with {name} parts run without them (from the Tools menu, the Checks tab): ask for each (a room: the one open)
+    const need = [...new Set(((studio.config?.tasks?.[task] ?? []).join(" ").match(/\{(\w+)\}/g) ?? []).map((/** @type {string} */ m) => m.slice(1, -1)))].filter((k) => !vars?.[k]);
+    if (need.length) {
+      vars = { ...(vars ?? {}) };
+      for (const k of need) {
+        const v = (prompt(`${task}: ${k}?`, k === "room" ? Cutaway.scene.room?.id ?? "" : "") ?? "").trim();
+        if (!v) { setStatus(`${task}: not run (no ${k})`); return { code: -1, output: "" }; }
+        vars[k] = v;
+      }
+    }
     setLayout("output", true);
     setStatus(`${task} ...`);
     try {

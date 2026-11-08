@@ -23,7 +23,7 @@ export default async function (t) {
       E.roomNote((id) => (id === "yard" ? "The yard's shapes are made elsewhere." : null));
       E.modules.help.addBook({ id: "mine", title: "My guide", file: "mine.md", md: "# Mine\\n\\nWhat it is.\\n\\n## How\\n\\nHow it goes." }, { mytab: "how" });
     })();`);
-  writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { edits: "layers/edits.js" }, editor: ["mytab.js"], tasks: {} }));
+  writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { edits: "layers/edits.js" }, editor: ["mytab.js"], tasks: { where: ["node", "-e", "console.log('in ' + process.argv[1])", "{room}"] } }));
   const s = await studio(page, { quiet: true }).start(0);
   const chrome = await launch({ width: 1400, height: 800 });
   const E = "Cutaway.editor";
@@ -47,6 +47,9 @@ export default async function (t) {
     await chrome.ev(`${E}.modules.help.open("mytab"); 1`);
     await sleep(200);
     t.ok("editor: F1 on a game's tab opens its guide at its section", JSON.stringify(await chrome.ev(`${E}.modules.help.at`)) === '["mine","how"]' && /How it goes/.test(await chrome.ev("document.body.textContent")));
+    // a task with a {room} part run without it asks, the open room offered
+    const asked = await chrome.ev(`(async () => { let offered = ""; window.prompt = (q, d) => { offered = d; return d; }; const r = await ${E}.runTask("where"); return { offered, out: r.output.trim() }; })()`);
+    t.ok("editor: a task's {room} left open is asked for, the room open offered", asked.offered === "hall" && asked.out === "in hall", JSON.stringify(asked));
     // the Map tab
     await chrome.ev(`${E}.show("map"); 1`);
     await sleep(400);

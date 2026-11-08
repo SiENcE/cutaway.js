@@ -355,7 +355,7 @@ add themselves with `Cutaway.editor.tab({ id, label, build, view, render, pick, 
 phase, e)` gets the pointer on the room picture: "down" first (return true to take the drag), then each
 "move" and the "up", in room pixels. A task's `{name}` parts are filled when the tab runs it:
 `Cutaway.editor.runTask("art: room", { room: "hall" })` for `"art: room": ["sh", "tools/build_art.sh",
-"room", "{room}"]` (plain names only: letters, digits, `_ . -`). `Cutaway.editor.modules.things.reveal(room,
+"room", "{room}"]` (plain names only: letters, digits, `_ . -`); run from the Tools menu or the Checks tab, the editor asks for each part (a room: the one open is offered). `Cutaway.editor.modules.things.reveal(room,
 key, path)` shows a thing and its script, `modules.art.openSource(path, line)` a pxl source at a line.
 A game's tabs are listed in the Tools menu under "The game's tabs", and the game can bring its own guide
 for them: `Cutaway.editor.modules.help.addBook({ id, title, file, md }, { <tab>: "<section>" })` adds a book
