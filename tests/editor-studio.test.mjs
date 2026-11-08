@@ -94,6 +94,15 @@ export default async function (t) {
     await chrome.ev("Cutaway.editor.modules.issues.check()");
     const issues = await chrome.ev("Cutaway.editor.modules.issues.issues");
     t.ok("issues: the validator runs in the page", Array.isArray(issues), String(issues));
+    // with the game's start options: a room without a walk area is fine as the title's still (as the Node tools see it)
+    const still = await chrome.ev(`(async () => {
+      Cutaway.room("still_test", { name: "Still", background: "hall_bg" });
+      const walkless = () => Cutaway.editor.modules.issues.issues.some((i) => /still_test/.test(JSON.stringify(i)) && /no walkable area/.test(i.text ?? i.message ?? JSON.stringify(i)));
+      await Cutaway.editor.modules.issues.check(); const before = walkless();
+      Cutaway.started.title = { ...Cutaway.started.title, splash: { room: "still_test" } };
+      await Cutaway.editor.modules.issues.check(); const after = walkless();
+      return { before, after }; })()`);
+    t.ok("issues: the game's start options count (a title's still needs no walk area)", still.before && !still.after, JSON.stringify(still));
     // State: go to another room with the active actor
     await chrome.ev(`Cutaway.editor.show("state"); 1`);
     await sleep(200);

@@ -20,7 +20,8 @@
         try { mod = await import(u); break; } catch { /* the next */ }
       }
       if (!mod) throw new Error("tools/lib/validate.mjs isn't beside the engine");
-      issues = mod.validate(Cutaway, { languages: Cutaway.menu.languages }).issues;
+      // with the game's start options, as the Node tools validate it: its title, splash and gate rooms are stills, its intro and demo checked
+      issues = mod.validate(Cutaway, { ...(Cutaway.started ?? {}), languages: Cutaway.started?.languages ?? Cutaway.menu.languages }).issues;
       E.setStatus(`${issues?.filter((i) => i.level === "error").length} errors, ${issues?.filter((i) => i.level === "warning").length} warnings`);
     } catch (e) {
       issues = null;

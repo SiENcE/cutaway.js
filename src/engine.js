@@ -60,11 +60,15 @@ Cutaway.openEditor = async function () {
   C.editor.open();
 };
 
+/** @type {Record<string, any> | null} the options the game started with (the editor's Issues tab validates with them, as the tools do) */
+Cutaway.started = null;
+
 /**
  * Start the engine. Resolves once assets are loaded and the first frame is drawn.
  * @param {StartOptions} [o]
  */
 Cutaway.start = async function (o = {}) {
+  Cutaway.started = o;
   const params = new URLSearchParams(location.search);
   const forced = Number(params.get("scale")) || o.scale || 0;
   Cutaway.display.init({ width: o.width, height: o.height, parent: o.parent, border: o.border, scale: forced });
