@@ -159,6 +159,9 @@
       setTimeout(() => { const s2 = /** @type {HTMLInputElement | null} */ (box.ownerDocument.querySelector(".cw-help input[type=search]")); s2?.focus(); s2?.setSelectionRange(pos, pos); }, 30);
     });
     const help = el("div", { className: "cw-help" });
+    // without the studio a game's own tabs and their guides aren't there: say how to get them
+    if (!E.studio.available) help.append(el("div", { style: { color: "#ffd27a", margin: "2px 0 6px" } }, [
+      "A game's own tabs and their guides (studio.json \"editor\") come with the studio: start it in the game's folder with node lib/cutaway/tools/studio.mjs (it opens the game with the editor)."]));
     help.append(el("div", { className: "bar" }, [
       ...all.map((b) => el("button", { textContent: b.title + (q ? ` (${(b.secs ?? []).reduce((n, s) => n + (s.title + "\n" + s.md).toLowerCase().split(q).length - 1, 0)})` : ""),
         onclick: () => { bookId = b.id; at = "intro"; E.refresh(); },

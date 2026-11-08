@@ -360,7 +360,7 @@ key, path)` shows a thing and its script, `modules.art.openSource(path, line)` a
 A game's tabs are listed in the Tools menu under "The game's tabs", and the game can bring its own guide
 for them: `Cutaway.editor.modules.help.addBook({ id, title, file, md }, { <tab>: "<section>" })` adds a book
 beside the editor guide and the reference (Markdown, cut at its `##` headings; in the Help menu too), and F1
-on one of those tabs opens it at its section (`"intro"`: the top).
+on one of those tabs opens it at its section (`"intro"`: the top). A game's tabs and guides come only with the studio (its `studio.json` lists them); opened without it (F10, `?edit`), the editor has the engine's tabs alone, and the Help tab says so.
 `Cutaway.editor.roomNote((room) => text | null)` says something about rooms in the Room tab: shown on top of
 its panel there, and once at the first change (a room whose shapes a game bakes from a map says where to
 change them, as the next bake would undo a change made here).
