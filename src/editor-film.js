@@ -627,6 +627,7 @@
   // ---- the room's map: the camera's frames and a moved prop's goal
 
   const map = /** @type {HTMLCanvasElement} */ (el("canvas", { width: 320, height: 180, title: "the whole room: drag the picked camera step's frame (or a moved prop's goal)", style: { width: "100%", imageRendering: "pixelated", background: "#000", cursor: "crosshair", display: "block", marginTop: "4px" } }));
+  const mapNote = el("div", { className: "cw-dim", style: { display: "none" } }, ["This room has no picture of its own (the game draws it over the scene): no map to place the camera on."]);
   /** @type {HTMLCanvasElement | null} */ let whole = null;
   /** @type {{kind: "camera" | "prop", path: string, dx: number, dy: number, at: [number, number]} | null} */ let mapDrag = null;
   /** The camera steps of the shot the playhead is in, in order. */
@@ -647,7 +648,7 @@
     if (!r || !map.isConnected) return;
     const W = Cutaway.display.width, H = Cutaway.display.height, [rw, rh] = r.size ?? [W, H];
     if (!whole || whole.width !== rw || whole.height !== rh) { whole = document.createElement("canvas"); whole.width = rw; whole.height = rh; }
-    const g = /** @type {CanvasRenderingContext2D} */ (whole.getContext("2d")), cam = Cutaway.scene.camera;
+    const g = /** @type {CanvasRenderingContext2D} */ (whole.getContext("2d", { willReadFrequently: true })), cam = Cutaway.scene.camera;
     g.imageSmoothingEnabled = false;
     g.fillStyle = "#000"; g.fillRect(0, 0, rw, rh);
     g.save(); g.translate(Math.round(cam.x), Math.round(cam.y)); Cutaway.scene.render(g); g.restore();
@@ -677,6 +678,13 @@
       }
     }
     map.dataset.k = String(k);
+    // a room without a picture of its own (the game draws it over the scene): no map to place anything on
+    const d = g.getImageData(0, 0, rw, rh).data, flat = [...Array(64)].every((_, i) => {
+      const x = Math.floor(((i % 8) + 0.5) * rw / 8), y = Math.floor((Math.floor(i / 8) + 0.5) * rh / 8), o = (y * rw + x) * 4;
+      return d[o] === d[0] && d[o + 1] === d[1] && d[o + 2] === d[2];
+    });
+    map.style.display = flat ? "none" : "block";
+    mapNote.style.display = flat ? "" : "none";
   }
   /** A pointer on the map in room pixels. @param {PointerEvent} e */
   function mapAt(e) { const b = map.getBoundingClientRect(), k = Number(map.dataset.k) || 1, sx = map.width / b.width; return { x: ((e.clientX - b.left) * sx - 2) / k, y: ((e.clientY - b.top) * sx - 2) / k }; }
@@ -785,14 +793,10 @@
         button("Take it out", del, "Delete: its time stays as a wait")]));
       if (s && typeof s === "object" && "caption" in s) panel.append(el("div", { className: "cw-dim" }, ["A click on the picture puts it in that corner (the middle: in the middle)."]));
     }
-    const rm = Cutaway.scene.room;
-    if (rm && !rm.background && !rm.color && !(rm.props ?? []).length) {
-      mapRoom = rm.id;
-      panel.append(el("div", { className: "cw-sec cw-h" }, [`the room: ${rm.id}`]), el("div", { className: "cw-dim" }, ["It has no picture of its own (the game draws it): no map to place the camera on."]));
-    } else if (Cutaway.scene.room) {
+    if (Cutaway.scene.room) {
       mapRoom = Cutaway.scene.room.id;
       panel.append(el("div", { className: "cw-sec cw-h" }, [`the room: ${Cutaway.scene.room.id}`]));
-      panel.append(map);
+      panel.append(map, mapNote);
       panel.append(el("div", { className: "cw-dim" }, ["White: the camera now. Cyan: the camera steps of this shot (a click picks one, drag it: its goal). Yellow: the picked one; a moved prop's goal as a square."]));
       requestAnimationFrame(mapDraw);
     }
