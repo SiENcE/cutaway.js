@@ -9,7 +9,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  const NAME_W = 150, TW = 20, ROW = 18, HEAD = 22;
+  const NAME_W = 150, TW = 26, ROW = 18, HEAD = 22;
   const COL = { ground: "#100d18", grid: "#221c30", hour: "#3a3150", stop: "rgba(255, 225, 74, 0.35)", now: "#ff5ad8", sel: "#ffe14a", nowhere: "#3a3450" };
   /** @type {number | null} the day shown (null: today's) */
   let shownDay = null;
