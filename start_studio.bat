@@ -1,1 +1,1 @@
-node lib/cutaway/tools/studio.mjs
+node tools/studio.mjs demo/index.html --root .
