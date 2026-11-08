@@ -1,13 +1,13 @@
-// Cutaway.js film: a sequence as a film to look at, for the editor's Film tab (not in a game's load order;
-// the editor loads it). A film run plays the sequence silently on the game's clock, stepped by hand: one
+// Cutaway.js timeline: a sequence to look at moment by moment, for the editor's Sequences tab (not in a game's load order;
+// the editor loads it). A run plays the sequence silently on the game's clock, stepped by hand: one
 // logic step, then the promise chains go on, then the next, so where it stands is a pure function of the
 // time since its start. The game is put back as it was before each run, and the clock set back to the
 // same start, so whatever draws by the clock looks the same at the same moment.
-//   await Cutaway.film.trace("intro")      // runs it to the end: when each step starts and ends, the rooms, the shots
-//   await Cutaway.film.seek("intro", 7250) // the picture 7.25 s in, held there
-//   Cutaway.film.play() / pause()          // on from there in real time (the sound too), and held again
-//   await Cutaway.film.close()             // the game as it was before
-// Seeking on from where a run stands only plays on; back, it runs again from the start (a film of two
+//   await Cutaway.timeline.trace("intro")      // runs it to the end: when each step starts and ends, the rooms, the shots
+//   await Cutaway.timeline.seek("intro", 7250) // the picture 7.25 s in, held there
+//   Cutaway.timeline.play() / pause()          // on from there in real time (the sound too), and held again
+//   await Cutaway.timeline.close()             // the game as it was before
+// Seeking on from where a run stands only plays on; back, it runs again from the start (a sequence of two
 // minutes is some 7200 logic steps with nothing drawn). While it seeks the sound is quiet (Cutaway.audio
 // .quiet): the music and the rooms' loops follow what they are told, so playing from there sounds close.
 // What waits for the player counts as if read: a line waiting for a click goes on when its time is up, a
@@ -15,39 +15,39 @@
 "use strict";
 
 /**
- * A step as the film saw it run.
- * @typedef {object} FilmStep
+ * A step as the sequence saw it run.
+ * @typedef {object} TimelineStep
  * @property {string} path      the script runner's path ("sequence.intro.7"; inside an if: "sequence.intro.7.0")
  * @property {any} step         the step itself
  * @property {string} kind      the action it runs ("wait", "camera", "say" for a line, "if", "once", a game's own)
- * @property {number} start     ms from the film's start
- * @property {number} end       when the film went on after it
+ * @property {number} start     ms from the sequence's start
+ * @property {number} end       when the sequence went on after it
  * @property {number} until     when what it started (a tween, a walk that goes on) had finished: at least `end`
  * @property {string} [branch]  an if's or a once's: the branch it took ("then", "else", "once")
  * @property {number} depth     how deep in branches it is (0: the sequence's own list)
  */
 /**
- * @typedef {object} FilmTrace
+ * @typedef {object} TimelineTrace
  * @property {string} id
  * @property {number} ms                      how long it runs
- * @property {FilmStep[]} steps               in the order they started
+ * @property {TimelineStep[]} steps               in the order they started
  * @property {{t: number, name: string}[]} shots
  * @property {{t: number, id: string, path: string}[]} rooms   each room shown (path: the step that showed it)
  * @property {{t: number, music: any, path: string}[]} music   what the music was told (the rooms' music too)
  * @property {string} waits                   "" when it ran to its end; "choice" (a dialogue waits), "cap" (too long)
  */
 
-Cutaway.film = (function () {
+Cutaway.timeline = (function () {
   const STEP = Cutaway.clock.STEP, CARD_MS = 3000;
   /**
-   * The game as it was before the film (put back before each run and at the end), and the clock's start.
+   * The game as it was before the sequence (put back before each run and at the end), and the clock's start.
    * @type {{state: StateData, party: any, active: string | null, actors: Record<string, {room: string | null, x: number, y: number, facing: Facing}>,
    *   room: string | null, backdrop: [number, number] | null, fade: number, base: number, quiet: boolean} | null}
    */
   let before = null;
   /**
    * The run under way: its sequence, the time it stands at (ms from its start), whether it has ended, what it saw.
-   * @type {{id: string, t: number, ended: boolean, trace: FilmTrace, open: Map<string, FilmStep[]>, stop: () => void, done: Promise<boolean>} | null}
+   * @type {{id: string, t: number, ended: boolean, trace: TimelineTrace, open: Map<string, TimelineStep[]>, stop: () => void, done: Promise<boolean>} | null}
    */
   let run = null;
   let busy = 0, playing = false, raf = 0, lastFrame = -1, cap = 600000;
@@ -113,17 +113,17 @@ Cutaway.film = (function () {
     await stopRun();
     if (!before) {
       if (Cutaway.sequence.playing()) throw new Error(`Cutaway: "${Cutaway.sequence.playing()}" is playing`);
-      // a script of the game under way (a line, a walk) runs to its end first: the film can't run beside it
+      // a script of the game under way (a line, a walk) runs to its end first: the sequence can't run beside it
       if (Cutaway.script.busy) await Cutaway.debug.settle(60000);
-      if (Cutaway.script.busy) throw new Error("Cutaway: a script of the game is still running (the film begins when it is done)");
+      if (Cutaway.script.busy) throw new Error("Cutaway: a script of the game is still running (the sequence begins when it is done)");
       before = freeze();
     }
     Cutaway.audio.quiet = true;
     await thaw();
     const base = Cutaway.clock.time, now = () => Cutaway.clock.time - base;
-    /** @type {FilmTrace} */
+    /** @type {TimelineTrace} */
     const trace = { id, ms: 0, steps: [], shots: [], rooms: [], music: [], waits: "" };
-    /** @type {Map<string, FilmStep[]>} steps begun and not ended, by path */
+    /** @type {Map<string, TimelineStep[]>} steps begun and not ended, by path */
     const open = new Map();
     /** @type {Map<string, number>} how deep each running path is */
     const depth = new Map();
@@ -131,7 +131,7 @@ Cutaway.film = (function () {
       if (e.phase === "start") {
         const parent = [...open.keys()].filter((p) => e.path.startsWith(p + ".")).sort((a, b) => b.length - a.length)[0];
         const d = parent !== undefined ? (depth.get(parent) ?? 0) + 1 : 0;
-        /** @type {FilmStep} */
+        /** @type {TimelineStep} */
         const st = { path: e.path, step: e.step, kind: kindOf(e.step), start: now(), end: now(), until: now(), depth: d };
         trace.steps.push(st);
         open.set(e.path, [...(open.get(e.path) ?? []), st]);
@@ -192,7 +192,7 @@ Cutaway.film = (function () {
   /**
    * Run a sequence to its end (or to where it waits for the player, or the cap) and say what ran when. The
    * picture stays at its end; seek to look at a moment.
-   * @param {string} id @returns {Promise<FilmTrace>}
+   * @param {string} id @returns {Promise<TimelineTrace>}
    */
   function trace(id) {
     return queued(async () => {
@@ -207,7 +207,7 @@ Cutaway.film = (function () {
   }
 
   /**
-   * Show the film at `ms` from its start, held there (on from where the run stands, else from the start).
+   * Show the sequence at `ms` from its start, held there (on from where the run stands, else from the start).
    * @param {string} id @param {number} ms @returns {Promise<number>} the time it stands at
    */
   function seek(id, ms) {
@@ -257,7 +257,7 @@ Cutaway.film = (function () {
     Cutaway.audio.quiet = true;
   }
 
-  /** Put the game back as it was before the film and end it. */
+  /** Put the game back as it was before the sequence and end it. */
   function close() {
     return queued(async () => {
       await stopRun();
@@ -268,18 +268,18 @@ Cutaway.film = (function () {
     });
   }
 
-  // ---- changing a film's timing: pure functions on a copy of its steps, guided by a trace. Each takes the
+  // ---- changing a sequence's timing: pure functions on a copy of its steps, guided by a trace. Each takes the
   // steps, the trace and a step's path (the trace's), and gives the changed steps (or null: it can't).
 
   /** @param {any} v */
   const clone = (v) => JSON.parse(JSON.stringify(v));
   const isWait = (/** @type {any} */ s) => !!s && typeof s === "object" && Object.keys(s).length === 1 && typeof s.wait === "number";
-  /** The steps of the trace by path (the last run of each). @param {FilmTrace} tr */
-  function byPath(tr) { const m = new Map(); for (const s of tr.steps) m.set(s.path, s); return /** @type {Map<string, FilmStep>} */ (m); }
+  /** The steps of the trace by path (the last run of each). @param {TimelineTrace} tr */
+  function byPath(tr) { const m = new Map(); for (const s of tr.steps) m.set(s.path, s); return /** @type {Map<string, TimelineStep>} */ (m); }
 
   /**
    * Where a path's step is in a sequence's steps: its list (a branch's, as the trace saw it taken) and index.
-   * @param {any[]} steps @param {FilmTrace} tr @param {string} path
+   * @param {any[]} steps @param {TimelineTrace} tr @param {string} path
    * @returns {{list: any[], index: number, base: string} | null}  base: the list's own path
    */
   function locate(steps, tr, path) {
@@ -321,9 +321,9 @@ Cutaway.film = (function () {
   }
 
   /**
-   * Put a step into a list at the film's time T: in the middle of a wait it splits the wait, between steps it
+   * Put a step into a list at the sequence's time T: in the middle of a wait it splits the wait, between steps it
    * goes between them, after the last a wait leads up to it. Times are the trace's (nothing before it moves).
-   * @param {any[]} list @param {string} base @param {Map<string, FilmStep>} m @param {number} T @param {any} step @param {number} [skip] an index whose step isn't counted (it is moving)
+   * @param {any[]} list @param {string} base @param {Map<string, TimelineStep>} m @param {number} T @param {any} step @param {number} [skip] an index whose step isn't counted (it is moving)
    * @returns {number} where it went
    */
   function putAt(list, base, m, T, step, skip = -1) {
@@ -338,7 +338,7 @@ Cutaway.film = (function () {
         return j + 1;
       }
       if (T <= r.start + 0.5) { list.splice(j, 0, step); return j; }
-      // inside a step the film waits for (a drive, a line): before it or after it, whichever is nearer
+      // inside a step the sequence waits for (a drive, a line): before it or after it, whichever is nearer
       if (T < r.end - 0.5) { const k = T - r.start < r.end - T ? j : j + 1; list.splice(k, 0, step); return k; }
       end = r.end;
     }
@@ -352,7 +352,7 @@ Cutaway.film = (function () {
     locate, lengthKey,
     /**
      * Its length: a wait's, a tween's `ms`, a dissolve's (ms, whole; the steps after it move with it).
-     * @param {any[]} steps @param {FilmTrace} tr @param {string} path @param {number} ms
+     * @param {any[]} steps @param {TimelineTrace} tr @param {string} path @param {number} ms
      */
     length(steps, tr, path, ms) {
       const out = clone(steps), at = locate(out, tr, path), s = at?.list[at.index];
@@ -363,16 +363,16 @@ Cutaway.film = (function () {
       return out;
     },
     /**
-     * Move a step that takes no time in the film's flow (it goes on at once: wait: false, a sound, a flag) to
+     * Move a step that takes no time in the sequence's flow (it goes on at once: wait: false, a sound, a flag) to
      * the time T: the waits round where it was join, the wait where it goes splits, so nothing else moves.
-     * @param {any[]} steps @param {FilmTrace} tr @param {string} path @param {number} T
+     * @param {any[]} steps @param {TimelineTrace} tr @param {string} path @param {number} T
      */
     move(steps, tr, path, T) {
       const out = clone(steps), at = locate(out, tr, path), m = byPath(tr), r = m.get(path);
       if (!at || !r) return null;
       const [step] = at.list.splice(at.index, 1);
       // the times the trace gave the rest of the list: with this step taken out, the indices after it shift
-      /** @type {Map<string, FilmStep>} */
+      /** @type {Map<string, TimelineStep>} */
       const shifted = new Map(m);
       for (let j = at.index; j < at.list.length; j++) { const q = m.get(`${at.base}.${j + 1}`); if (q) shifted.set(`${at.base}.${j}`, q); else shifted.delete(`${at.base}.${j}`); }
       shifted.delete(`${at.base}.${at.list.length}`);
@@ -392,7 +392,7 @@ Cutaway.film = (function () {
     /**
      * Move a step and everything after it in its list by d ms (ripple): the wait before it grows or shrinks
      * (one is made when there is none; it can't shrink below nothing).
-     * @param {any[]} steps @param {FilmTrace} tr @param {string} path @param {number} d
+     * @param {any[]} steps @param {TimelineTrace} tr @param {string} path @param {number} d
      */
     ripple(steps, tr, path, d) {
       const out = clone(steps), at = locate(out, tr, path);
@@ -406,9 +406,9 @@ Cutaway.film = (function () {
       return out;
     },
     /**
-     * A new step at the film's time T, in the sequence's own list: in a wait it splits the wait (nothing after
+     * A new step at the sequence's time T, in the sequence's own list: in a wait it splits the wait (nothing after
      * moves), else it goes after the step running then.
-     * @param {any[]} steps @param {FilmTrace} tr @param {number} T @param {any} step
+     * @param {any[]} steps @param {TimelineTrace} tr @param {number} T @param {any} step
      */
     insert(steps, tr, T, step) {
       const out = clone(steps), m = byPath(tr), base = `sequence.${tr.id}`;
@@ -422,7 +422,7 @@ Cutaway.film = (function () {
     },
     /**
      * Take a step out. The time it took in the flow stays as a wait, so what comes after doesn't jump.
-     * @param {any[]} steps @param {FilmTrace} tr @param {string} path
+     * @param {any[]} steps @param {TimelineTrace} tr @param {string} path
      */
     remove(steps, tr, path) {
       const out = clone(steps), at = locate(out, tr, path), r = byPath(tr).get(path);
@@ -445,7 +445,7 @@ Cutaway.film = (function () {
     get ended() { return !!run?.ended; },
     /** What the run under way has seen so far (a trace while it is made). */
     get seen() { return run?.trace ?? null; },
-    /** Is a film on (the game waits to be put back)? */
+    /** Is a timeline on (the game waits to be put back)? */
     get active() { return !!before; },
     /** Is it seeking or tracing now (the editor ignores the rooms it shows meanwhile)? */
     get busy() { return busy > 0; },

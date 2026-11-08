@@ -1,8 +1,9 @@
-# Proposal: the Film tab, a timeline for sequences
+# Proposal: the Sequences tab, a timeline for sequences
 
-Status: built, stages 1 to 4 (docs/editor.md "Film", docs/reference.md "The film"); of stage 5 only the
+Status: built, stages 1 to 4, as the tab **Sequences** (it was to be called Film: docs/editor.md "Sequences",
+docs/reference.md "The timeline", `Cutaway.timeline` in src/timeline.js, the tab src/editor-sequences.js); of stage 5 only the
 music's state when playing from the playhead. Where it went another way than written here:
-- `Cutaway.film` (`src/film.js`, loaded by the editor) holds `trace`, `seek`, `play`, `close` and the step
+- `Cutaway.timeline` (`src/timeline.js`, loaded by the editor) holds `trace`, `seek`, `play`, `close` and the step
   changes (`edits`), not `Cutaway.sequence`; the sequence gives `abort()` and `source(id)`.
 - No checkpoints at the shot marks: a running script can't be copied, and a game's own state (a drawer's
   progress) isn't in any snapshot. A seek plays on from where the run stands, and back it runs again from the
@@ -15,7 +16,7 @@ music's state when playing from the playhead. Where it went another way than wri
   go into the edits layer, said in the status line), the music's sections and the ambience as bands, sfx
   waveforms.
 
-Was: proposal, nothing built yet. Scope: the editor (`editor-film.js`, a new tab) and small hooks in
+Was: proposal, nothing built yet. Scope: the editor (`editor-sequences.js`, a new tab) and small hooks in
 `script.js`, `sequence.js` and `core.js`. No change to how a game writes a sequence.
 
 ## Why
@@ -219,7 +220,7 @@ its section in `docs/editor.md` (the Help tab).
 
 1. **Watch.**
    - `script.step` events; `sequence.trace` and `sequence.seek`; checkpoints at shot marks.
-   - The Film tab: lanes, ruler, zoom, the playhead, play and pause, in/out and loop.
+   - The Sequences tab: lanes, ruler, zoom, the playhead, play and pause, in/out and loop.
    - Picking a bar picks the step in the inspector and in the Things tab.
 
    Tests use the demo's intro:

@@ -5,7 +5,7 @@
 // While a script runs the player can't start another one (clicks skip the current line instead).
 // A script can be stopped between steps (`cancel` in its context: a skipped sequence). In fast mode (a
 // sequence skipping ahead) lines, sounds and waits are passed over at once.
-// The editor's film watches the steps (Cutaway.script.watch): when each starts and ends, which branch an
+// The editor's timeline (the Sequences tab) watches the steps (Cutaway.script.watch): when each starts and ends, which branch an
 // `if` or a `once` took, and what a step that goes on at once (wait: false) still runs (its promise,
 // Cutaway.script.goOn). Nobody watching costs one check per step.
 "use strict";
@@ -32,7 +32,7 @@ Cutaway.script = (function () {
   /** @type {Map<string, {sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]}>} what games' actions tell the tools */
   const metas = new Map();
   let busy = 0, fast = false;
-  /** @type {((e: ScriptEvent) => void) | null} the editor's film, hearing every step */
+  /** @type {((e: ScriptEvent) => void) | null} the editor's timeline, hearing every step */
   let watcher = null;
   /** the path of the step whose action is being called (its synchronous part): what it starts is its own */
   let current = "";
@@ -329,7 +329,7 @@ Cutaway.script = (function () {
   return {
     run, exec, sleep, speaks, goOn,
     /**
-     * Hear every step (the editor's film): when it starts and ends, which branch an `if` or a `once`
+     * Hear every step (the editor's timeline): when it starts and ends, which branch an `if` or a `once`
      * takes, what a step that goes on at once still runs, and the tweens a step starts. One at a time;
      * returns the function that stops it.
      * @param {(e: ScriptEvent) => void} fn

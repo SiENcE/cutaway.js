@@ -1,20 +1,20 @@
-// Cutaway.js editor, Film tab: a sequence on a timeline. The steps stay what the game is written in; the tab
-// runs the sequence silently (Cutaway.film: a trace, then seeks) and shows when each step happens, in lanes
-// under the game picture: the shots, the rooms, the story (what the film waits for: waits, lines), the
+// Cutaway.js editor, Sequences tab: a sequence on a timeline. The steps stay what the game is written in; the tab
+// runs the sequence silently (Cutaway.timeline: a trace, then seeks) and shows when each step happens, in lanes
+// under the game picture: the shots, the rooms, the story (what the sequence waits for: waits, lines), the
 // camera, each prop and actor, the screen (letterbox, fades, captions), the sound, the state, a game's own
-// actions. The playhead goes to any moment and the picture shows the film there, still; Space plays from it.
-// Changing the timing is changing the steps (Cutaway.film.edits): a bar's end drags its length, a step that
+// actions. The playhead goes to any moment and the picture shows the sequence there, still; Space plays from it.
+// Changing the timing is changing the steps (Cutaway.timeline.edits): a bar's end drags its length, a step that
 // goes on at once drags along its waits (nothing else moves), Alt+drag moves it and everything after it, a
 // step is added at the playhead or taken out (its time stays as a wait). On the room's map in the inspector
 // the camera's frame of a camera step and a moved prop's goal drag to where they should be; a click on the
 // picture puts a picked caption in that corner. Every change goes into the game at once and into the edits
-// layer (File > Save, with the Things tab's), with undo and redo; the film is traced again and the picture
+// layer (File > Save, with the Things tab's), with undo and redo; the sequence is traced again and the picture
 // stays at its moment. New makes a sequence of its own (in the edits layer).
 "use strict";
 
 (function () {
-  const E = Cutaway.editor, el = E.el, button = E.button, F = () => Cutaway.film;
-  const NAME_W = 92, ROW = 18, HEAD = 20, KEY = "cutaway.editor.film:" + location.pathname, STEP = Cutaway.clock.STEP;
+  const E = Cutaway.editor, el = E.el, button = E.button, F = () => Cutaway.timeline;
+  const NAME_W = 92, ROW = 18, HEAD = 20, KEY = "cutaway.editor.sequences:" + location.pathname, STEP = Cutaway.clock.STEP;
   const COL = { ground: "#100d18", grid: "#221c30", sec: "#3a3150", head: "#9a92b4", play: "#ff5ad8", sel: "#ffe14a", inout: "rgba(122, 216, 255, 0.12)" };
   const LANE_COL = { shots: "#6a5acd", rooms: "#3a6a8a", story: "#8a6a3a", camera: "#2f8f6f", prop: "#7a5a9a", actor: "#9a5a6a", screen: "#4a6aa0", sound: "#a08a3a", state: "#5a7a4a", other: "#6a6a6a" };
   /** px a second (the wheel, + and - zoom it; kept for this game) */
@@ -22,8 +22,8 @@
   try { pps = Number(localStorage.getItem(KEY)) || 60; } catch { /* none kept */ }
 
   /** @type {string | null} the sequence on the timeline */ let seq = null;
-  /** @type {FilmTrace | null} */ let tr = null;
-  /** the playhead (ms from the film's start) */ let T = 0;
+  /** @type {TimelineTrace | null} */ let tr = null;
+  /** the playhead (ms from the sequence's start) */ let T = 0;
   /** @type {string | null} the picked step's path */ let sel = null;
   /** @type {[number, number] | null} in and out points */ let io = null;
   let loop = false, tracing = false;
@@ -45,11 +45,11 @@
   // ---- the lanes
 
   /**
-   * @typedef {{from: number, to: number, label: string, title: string, color: string, rec?: FilmStep, shot?: string, room?: string}} Bar
+   * @typedef {{from: number, to: number, label: string, title: string, color: string, rec?: TimelineStep, shot?: string, room?: string}} Bar
    * @typedef {{id: string, label: string, rows: Bar[][]}} Lane
    */
 
-  /** Which lane a step goes in, and its name. @param {FilmStep} r @returns {[string, string, string] | null} [lane id, label, colour] */
+  /** Which lane a step goes in, and its name. @param {TimelineStep} r @returns {[string, string, string] | null} [lane id, label, colour] */
   function laneOf(r) {
     const s = r.step, k = r.kind;
     if (k === "if" || k === "once" || k === "shot" || k === "goto") return null;
@@ -66,7 +66,7 @@
     if (["set", "unset", "inc", "give", "take", "remove", "state", "bag"].includes(k)) return ["state", "state", LANE_COL.state];
     return [`own:${k}`, k, LANE_COL.other];
   }
-  /** A step's words on its bar. @param {FilmStep} r */
+  /** A step's words on its bar. @param {TimelineStep} r */
   function labelOf(r) {
     const s = r.step, k = r.kind, j = (/** @type {any} */ v) => (typeof v === "string" ? v : JSON.stringify(v));
     if (typeof s === "string") return `“${s}”`;
@@ -92,7 +92,7 @@
     }
     return out.length ? out : [[]];
   }
-  /** The film's lanes, from the trace. @returns {Lane[]} */
+  /** The sequence's lanes, from the trace. @returns {Lane[]} */
   function lanes() {
     if (!tr) return [];
     /** @type {Lane[]} */
@@ -110,7 +110,7 @@
       if (!l) continue;
       const [id, label, color] = l;
       if (!by.has(id)) by.set(id, { label, bars: [] });
-      by.get(id)?.bars.push({ from: r.start, to: r.until, label: labelOf(r), title: `${labelOf(r)}\n${fmt(r.start)} to ${fmt(r.until)}${r.until > r.end + 1 ? ` (the film goes on at ${fmt(r.end)})` : ""}\n${r.path}`, color, rec: r });
+      by.get(id)?.bars.push({ from: r.start, to: r.until, label: labelOf(r), title: `${labelOf(r)}\n${fmt(r.start)} to ${fmt(r.until)}${r.until > r.end + 1 ? ` (the sequence goes on at ${fmt(r.end)})` : ""}\n${r.path}`, color, rec: r });
     }
     const ids = [...by.keys()].sort((a, b) => {
       const ia = order.findIndex((o) => (o.endsWith(":") ? a.startsWith(o) : a === o)), ib = order.findIndex((o) => (o.endsWith(":") ? b.startsWith(o) : b === o));
@@ -139,7 +139,7 @@
       button("[", () => setIO(0), "the in point at the playhead ([)"), button("]", () => setIO(1), "the out point at the playhead (])"), loopBtn,
       ...(io ? [button("×", () => { io = null; drawBar(); draw(); }, "no in and out points")] : []),
       el("span", { style: { width: "10px" } }), button("−", () => zoom(1 / 1.5), "narrower (-, or the wheel)"), button("+", () => zoom(1.5), "wider (+, or the wheel round the pointer)"),
-      button("Fit", fit, "the whole film in view (0, or a double click on the ruler)"),
+      button("Fit", fit, "the whole sequence in view (0, or a double click on the ruler)"),
       el("span", { className: "cw-dim", style: { marginLeft: "8px" } }, [tracing ? "tracing…" : seq ? `${seq}: ${fmt(tr?.ms ?? 0)}${tr?.waits === "choice" ? " (stops: a dialogue waits for a choice)" : tr?.waits === "cap" ? " (stops at the cap: something runs on and on)" : ""}` : "pick a sequence (left)"]));
     loopBtn.classList.toggle("on", loop);
     loopBtn.style.color = loop ? "#ffe14a" : "";
@@ -222,7 +222,7 @@
     return d;
   }
 
-  /** @type {{rec: FilmStep, el: HTMLElement, x0: number, left: number, width: number, mode: "len" | "body", d: number, alt: boolean} | null} */
+  /** @type {{rec: TimelineStep, el: HTMLElement, x0: number, left: number, width: number, mode: "len" | "body", d: number, alt: boolean} | null} */
   let drag = null;
   let scrub = false;
   box.addEventListener("pointermove", (e) => {
@@ -249,13 +249,13 @@
     let next = null, what = "";
     if (g.mode === "len") {
       const key = ed.lengthKey(r.step), s = stepAt(r.path), now = typeof s?.[key ?? ""] === "number" ? s[key ?? ""] : key === "dissolve" ? 800 : "fade" in (s ?? {}) ? 400 : 0;
-      next = ed.length(S, /** @type {FilmTrace} */ (tr), r.path, Math.max(0, now + g.d)); what = `length ${Math.round(Math.max(0, now + g.d))} ms`;
-    } else if (instant(r) && !g.alt) { next = ed.move(S, /** @type {FilmTrace} */ (tr), r.path, r.start + g.d); what = `moved to ${fmt(r.start + g.d)}`; }
-    else { next = ed.ripple(S, /** @type {FilmTrace} */ (tr), r.path, g.d); what = `${g.d > 0 ? "later" : "earlier"} by ${Math.abs(Math.round(g.d))} ms, and all after it`; }
-    if (!next) { E.setStatus("film: that can't change so (no wait before it to take from)"); draw(); return; }
+      next = ed.length(S, /** @type {TimelineTrace} */ (tr), r.path, Math.max(0, now + g.d)); what = `length ${Math.round(Math.max(0, now + g.d))} ms`;
+    } else if (instant(r) && !g.alt) { next = ed.move(S, /** @type {TimelineTrace} */ (tr), r.path, r.start + g.d); what = `moved to ${fmt(r.start + g.d)}`; }
+    else { next = ed.ripple(S, /** @type {TimelineTrace} */ (tr), r.path, g.d); what = `${g.d > 0 ? "later" : "earlier"} by ${Math.abs(Math.round(g.d))} ms, and all after it`; }
+    if (!next) { E.setStatus("sequences: that can't change so (no wait before it to take from)"); draw(); return; }
     commit(next, what);
   });
-  /** Takes it no time in the film's flow (it goes on at once)? @param {FilmStep} r */
+  /** Takes it no time in the sequence's flow (it goes on at once)? @param {TimelineStep} r */
   const instant = (r) => r.end - r.start < STEP / 2;
   /** A time snapped: to 50 ms; Shift: not at all; Ctrl: to the bars' edges and the shot marks near it. @param {number} ms @param {{shiftKey: boolean, ctrlKey: boolean}} e */
   function snap(ms, e) {
@@ -296,13 +296,13 @@
     seekTo(snap(msAt(x), e));
   });
 
-  // ---- the film: traced, sought, played
+  // ---- the sequence: traced, sought, played
 
   /** @type {string | null} the room the inspector's map shows */
   let mapRoom = null;
   /** @type {number | null} the latest moment asked for while a seek was under way */
   let wanted = null, seeking = false;
-  /** Show the film at ms (a drag asks often: only the latest is sought). @param {number} ms */
+  /** Show the sequence at ms (a drag asks often: only the latest is sought). @param {number} ms */
   async function seekTo(ms) {
     if (!seq || !tr) return;
     if (F().playing) { F().pause(); drawBar(); }
@@ -312,7 +312,7 @@
     seeking = true;
     try {
       while (wanted !== null) { const m = wanted; wanted = null; T = await F().seek(seq, m); }
-    } catch (e) { E.setStatus("film: " + /** @type {any} */ (e).message); }
+    } catch (e) { E.setStatus("sequences: " + /** @type {any} */ (e).message); }
     seeking = false;
     placeHead();
     keepInView();
@@ -321,7 +321,7 @@
   }
   function keepInView() { const x = px(T); if (x < box.scrollLeft + NAME_W || x > box.scrollLeft + box.clientWidth - 20) box.scrollLeft = Math.max(0, x - NAME_W - 40); }
 
-  /** Trace the film again (after a change, or picked) and show it at the moment it stood at. */
+  /** Trace the sequence again (after a change, or picked) and show it at the moment it stood at. */
   async function retrace() {
     if (!seq) return;
     const id = seq;
@@ -330,7 +330,7 @@
       E.pause(true);
       tr = await F().trace(id);
       note = "";
-    } catch (e) { tr = null; note = /** @type {any} */ (e).message; E.setStatus("film: " + note); }
+    } catch (e) { tr = null; note = /** @type {any} */ (e).message; E.setStatus("sequences: " + note); }
     tracing = false;
     if (seq !== id) return;
     if (tr) { T = Math.min(T, tr.ms); await seekTo(T); }
@@ -354,7 +354,7 @@
     mapDraw();
   }
 
-  /** Pick a sequence: its film traced from the start. @param {string} id */
+  /** Pick a sequence: traced from the start. @param {string} id */
   async function pick(id) {
     if (seq === id && tr) return;
     if (F().active && seq !== id) await F().close();
@@ -366,12 +366,12 @@
 
   /** The tab was left (or the editor closed): the game as it was. */
   async function leave() { if (F()?.active) { await F().close(); } }
-  setInterval(() => { if (F()?.active && !F().busy && (!E.isOpen || E.activeTab !== "film")) leave(); }, 300);
+  setInterval(() => { if (F()?.active && !F().busy && (!E.isOpen || E.activeTab !== "sequences")) leave(); }, 300);
 
   // ---- changes: into the game, and into the game's file where the sequence is written (only the steps that
   // changed; its comments and layout stay), else into the edits layer; undo and redo
 
-  /** @typedef {{id: string, before: string, after: string, file?: {path: string, before: string, after: string}}} FilmEdit */
+  /** @typedef {{id: string, before: string, after: string, file?: {path: string, before: string, after: string}}} SequenceEdit */
   /** @type {Map<string, {src: string, saved: string}>} the game's files touched: as they are now, as saved */
   const files = new Map();
   const L = () => E.modules.literal;
@@ -516,7 +516,7 @@
     if (!seq) return;
     const id = seq, before = JSON.stringify(steps()), after = JSON.stringify(next);
     if (before === after) { draw(); return; }
-    /** @type {FilmEdit} */
+    /** @type {SequenceEdit} */
     const ed = { id, before, after };
     const path = where(id);
     let why = !E.studio.available ? "no studio" : !path ? "it isn't written in a file of the game" : Cutaway.edits.changed("sequences", id, ["steps"]) ? "the edits layer has its steps" : "";
@@ -530,9 +530,9 @@
     undo.push(ed); if (undo.length > 200) undo.shift();
     redo = [];
     put(ed, true);
-    E.setStatus(`film: ${id}: ${what} ${ed.file ? `in ${ed.file.path}` : `in the edits layer${why ? ` (${why})` : ""}`} (not saved: Ctrl+S)`);
+    E.setStatus(`sequences: ${id}: ${what} ${ed.file ? `in ${ed.file.path}` : `in the edits layer${why ? ` (${why})` : ""}`} (not saved: Ctrl+S)`);
   }
-  /** An edit done (true) or undone. @param {FilmEdit} ed @param {boolean} on */
+  /** An edit done (true) or undone. @param {SequenceEdit} ed @param {boolean} on */
   function put(ed, on) {
     const v = JSON.parse(on ? ed.after : ed.before);
     if (ed.file) {
@@ -548,7 +548,7 @@
     if (seq !== ed.id) { pick(ed.id); return; }
     retrace();
   }
-  /** @param {FilmEdit[]} from @param {FilmEdit[]} to @param {boolean} fwd */
+  /** @param {SequenceEdit[]} from @param {SequenceEdit[]} to @param {boolean} fwd */
   function step(from, to, fwd) { const u = from.pop(); if (!u) return; to.push(u); put(u, fwd); }
   const unsavedFiles = () => [...files.values()].filter((f) => f.src !== f.saved).length;
   async function save() {
@@ -556,9 +556,9 @@
     for (const [path, f] of files) if (f.src !== f.saved) { out.push(await E.saveFile(path, f.src)); f.saved = f.src; }
     if (dirty) {
       const th = E.modules.things;
-      if (th?.save) { await th.save(); dirty = false; out.push("the edits layer"); } else E.setStatus("film: saving the edits layer needs the Things tab");
+      if (th?.save) { await th.save(); dirty = false; out.push("the edits layer"); } else E.setStatus("sequences: saving the edits layer needs the Things tab");
     }
-    E.setStatus(out.length ? `film: saved ${out.join(", ")}` : "film: nothing to save");
+    E.setStatus(out.length ? `sequences: saved ${out.join(", ")}` : "sequences: nothing to save");
     E.refresh();
   }
   /** Replace the picked step with these (none: it goes). @param {string} path @param {any[]} list */
@@ -594,18 +594,18 @@
     const actor = Cutaway.scene.active?.id ?? Cutaway.actors.all()[0]?.id ?? "";
     /** @type {[string, string, () => any][]} */
     const out = [
-      ["caption", "a caption in a corner, held 2.5 s (the film goes on meanwhile)", () => ({ caption: "…", at: "bl", ms: 2500, wait: false })],
+      ["caption", "a caption in a corner, held 2.5 s (the sequence goes on meanwhile)", () => ({ caption: "…", at: "bl", ms: 2500, wait: false })],
       ["sound", "a sound", () => ({ sfx: Cutaway.sfx.names().find((n) => !n.startsWith("_")) ?? "" })],
-      ["camera", "the camera drives from where it is now, 2 s (the film goes on meanwhile)", () => ({ camera: [Math.round(cam.x), Math.round(cam.y)], ms: 2000, ease: "inOut", wait: false })],
+      ["camera", "the camera drives from where it is now, 2 s (the sequence goes on meanwhile)", () => ({ camera: [Math.round(cam.x), Math.round(cam.y)], ms: 2000, ease: "inOut", wait: false })],
       ...(prop ? /** @type {[string, string, () => any][]} */ ([["move prop", `move ${prop} by 20 px over 1 s`, () => ({ move: prop, by: [20, 0], ms: 1000, wait: false })]]) : []),
       ["fade", "the screen to black over 0.6 s", () => ({ fade: "out", ms: 600, wait: false })],
       ["letterbox", "the bars in over 0.6 s", () => ({ letterbox: true, ms: 600, wait: false })],
       ["shot", "a shot mark (Space skips to it)", () => ({ shot: `shot${(tr?.shots.length ?? 0) + 1}` })],
       ["room", "cut to a room (this one)", () => ({ goto: room?.id ?? "", transition: false })],
-      ...(actor ? /** @type {[string, string, () => any][]} */ ([["line", `a line of ${actor} (the film waits for it)`, () => ({ say: actor, text: "…" })]]) : []),
+      ...(actor ? /** @type {[string, string, () => any][]} */ ([["line", `a line of ${actor} (the sequence waits for it)`, () => ({ say: actor, text: "…" })]]) : []),
       ["wait", "a second more (everything after moves)", () => ({ wait: 1000 })],
       ["music", "the music: a theme", () => ({ music: { theme: Cutaway.score?.ids?.()[0] ?? "" } })],
-      ["JSON…", "any step, written as JSON (a game's own action too)", () => { const t = prompt("A step as JSON:", '{ "wait": 500 }'); if (!t) return null; try { return JSON.parse(t); } catch { E.setStatus("film: that isn't JSON"); return null; } }],
+      ["JSON…", "any step, written as JSON (a game's own action too)", () => { const t = prompt("A step as JSON:", '{ "wait": 500 }'); if (!t) return null; try { return JSON.parse(t); } catch { E.setStatus("sequences: that isn't JSON"); return null; } }],
     ];
     return out;
   }
@@ -613,14 +613,14 @@
   async function newSequence() {
     const id = prompt("The new sequence's id (letters, digits, _):", "cutscene");
     if (!id) return;
-    if (!/^[A-Za-z_][\w-]*$/.test(id)) { E.setStatus("film: an id of letters, digits, _ and -"); return; }
-    if (Cutaway.sequence.get(id)) { E.setStatus(`film: there is a sequence "${id}" already`); return; }
-    await leave();                                          // the room the game is in, not the film's
+    if (!/^[A-Za-z_][\w-]*$/.test(id)) { E.setStatus("sequences: an id of letters, digits, _ and -"); return; }
+    if (Cutaway.sequence.get(id)) { E.setStatus(`sequences: there is a sequence "${id}" already`); return; }
+    await leave();                                          // the room the game is in, not the sequence's
     seq = null; tr = null;
     const room = Cutaway.scene.room?.id ?? Cutaway.room.ids()[0];
     Cutaway.edits.change("sequences", id, { steps: [{ shot: "a" }, { goto: room, transition: false }, { letterbox: true, ms: 600 }, { wait: 2000 }, { letterbox: false, ms: 600 }] });
     dirty = true; E.modules.things?.touch?.();
-    E.setStatus(`film: the sequence "${id}" made (in the edits layer; File > Save keeps it). Play it with { sequence: "${id}" }`);
+    E.setStatus(`sequences: the sequence "${id}" made (in the edits layer; File > Save keeps it). Play it with { sequence: "${id}" }`);
     pick(id);
   }
 
@@ -763,24 +763,24 @@
       items.push({ key: `seq:${id}`, label: id, group: "sequences", mark: Cutaway.edits.changed("sequences", id) ? "●" : "" });
       if (id === seq && tr) for (const s of tr.shots) items.push({ key: `shot:${s.name}`, label: `${s.name}   ${fmt(s.t)}`, group: `shots of ${id}`, title: `go to the shot "${s.name}"` });
     }
-    left.append(E.fold("left.film", "SEQUENCES", () => [E.list({ id: "film.left", items, selected: seq ? `seq:${seq}` : undefined, empty: "this game has no sequence (New in the inspector)",
+    left.append(E.fold("left.sequences", "SEQUENCES", () => [E.list({ id: "sequences.left", items, selected: seq ? `seq:${seq}` : undefined, empty: "this game has no sequence (New in the inspector)",
       pick: (k) => { if (k.startsWith("seq:")) pick(k.slice(4)); else { const s = tr?.shots.find((x) => `shot:${x.name}` === k); if (s) seekTo(s.t); } } })]));
   }
 
   /** @param {HTMLElement} panel */
   function build(panel) {
-    if (!F()) { panel.append(el("div", { className: "cw-dim" }, ["film.js isn't loaded (the editor loads it next to editor.js)."])); return; }
+    if (!F()) { panel.append(el("div", { className: "cw-dim" }, ["timeline.js isn't loaded (the editor loads it next to editor.js)."])); return; }
     panel.append(el("div", { style: { margin: "4px 0" } }, [
       button("New sequence", newSequence, "a sequence of its own, in the edits layer: a shot in this room"),
-      ...(seq ? [button("▶ Play in the game", () => { leave().then(() => E.playSequence(/** @type {string} */ (seq))); }, "as the player sees it (the film's picture goes back first)"),
+      ...(seq ? [button("▶ Play in the game", () => { leave().then(() => E.playSequence(/** @type {string} */ (seq))); }, "as the player sees it (the sequence's picture goes back first)"),
         button("Things", () => { E.modules.things?.reveal?.("", `seq:${seq}`, ["steps"]); E.show("things"); }, "its steps as blocks in the Things tab")] : []),
       ...(dirty || unsavedFiles() || undo.length ? [button(`Save${dirty || unsavedFiles() ? " *" : ""}`, () => { save(); }, "write the edits layer (Ctrl+S)"), button("Undo", () => step(undo, redo, false), "Ctrl+Z"), button("Redo", () => step(redo, undo, true), "Ctrl+Y")] : [])]));
     if (!seq) {
-      panel.append(el("div", { className: "cw-dim" }, ["A sequence on a timeline: pick one on the left. The picture shows the film at the playhead; Space plays from there. Drag a bar's end for its length, a bar to move it (with Alt: and all after it); add steps at the playhead here."]));
+      panel.append(el("div", { className: "cw-dim" }, ["A sequence on a timeline: pick one on the left. The picture shows the sequence at the playhead; Space plays from there. Drag a bar's end for its length, a bar to move it (with Alt: and all after it); add steps at the playhead here."]));
       return;
     }
     if (note) panel.append(el("div", { style: { color: "#ff9a6a", margin: "4px 0" } }, [note]));
-    if (tr?.waits) panel.append(el("div", { style: { color: "#ffd27a", margin: "4px 0" } }, [tr.waits === "choice" ? "The film stops where a dialogue waits for the player's choice: what comes after isn't traced." : "The film stops at the cap (10 minutes): something runs on and on (a loop, a wait for an event)."]));
+    if (tr?.waits) panel.append(el("div", { style: { color: "#ffd27a", margin: "4px 0" } }, [tr.waits === "choice" ? "The sequence stops where a dialogue waits for the player's choice: what comes after isn't traced." : "The sequence stops at the cap (10 minutes): something runs on and on (a loop, a wait for an event)."]));
     panel.append(el("div", { className: "cw-sec cw-h" }, [`add at ${fmt(T)}`]));
     panel.append(el("div", { style: { display: "flex", flexWrap: "wrap", gap: "2px" } }, addable().map(([label, title, make]) => button(label, () => { const s = make(); if (s) add(s); }, title))));
     const r = recOf(sel), s = stepAt(sel);
@@ -788,7 +788,7 @@
       panel.append(el("div", { className: "cw-sec cw-h" }, [`${r.kind}  ${r.path}`]));
       panel.append(el("div", { className: "cw-dim" }, [`from ${fmt(r.start)} to ${fmt(r.end)}${r.until > r.end + 1 ? `, running on to ${fmt(r.until)}` : ""} (${Math.round(r.until - r.start)} ms)${r.branch ? `; took "${r.branch}"` : ""}`]));
       const S = E.modules.script;
-      if (S) panel.append(S.blocks({ id: `film:${seq}:${sel}`, value: [s], change: (/** @type {any[]} */ v) => { const p = sel; if (p) replace(p, v); } }).el);
+      if (S) panel.append(S.blocks({ id: `sequences:${seq}:${sel}`, value: [s], change: (/** @type {any[]} */ v) => { const p = sel; if (p) replace(p, v); } }).el);
       panel.append(el("div", { style: { margin: "4px 0" } }, [button("Go to its start", () => seekTo(r.start), "the playhead to where it begins (or a double click on its bar)"),
         button("Take it out", del, "Delete: its time stays as a wait")]));
       if (s && typeof s === "object" && "caption" in s) panel.append(el("div", { className: "cw-dim" }, ["A click on the picture puts it in that corner (the middle: in the middle)."]));
@@ -805,7 +805,7 @@
   }
 
   E.tab({
-    id: "film", label: "Film", build, browse, render, pick: (p) => pickOn(p),
+    id: "sequences", label: "Sequences", build, browse, render, pick: (p) => pickOn(p),
     dock: () => { if (!offTimeSet) { offTime = F()?.onTime(onTime) ?? offTime; offTimeSet = true; E.pause(true); if (!tr) { drawBar(); draw(); } } return dock; },
     save: () => save(), undo: () => step(undo, redo, false), redo: () => step(redo, undo, true), del,
     selectNone: () => { sel = null; E.refresh(); draw(); },
@@ -831,7 +831,7 @@
   let offTimeSet = false;
   void offTime;
 
-  E.modules.film = {
+  E.modules.sequences = {
     pick, seekTo, retrace, togglePlay, lanes, add, del, commit, save, leave, newSequence, replace,
     get seq() { return seq; }, get trace() { return tr; }, get time() { return T; }, get selected() { return sel; },
     select(/** @type {string | null} */ p) { sel = p; E.refresh(); draw(); },

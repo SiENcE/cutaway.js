@@ -20,13 +20,13 @@ export default async function (t) {
       ${body}
     })()`);
 
-    // a list: the workspaces, by keys (each pick builds the panels again)
+    // a list: the workspaces, by keys (each pick builds the panels again; the help isn't one: End is the last tab)
     const ws = await run(`await frame(); E.show("room"); await frame(); await frame();
       document.querySelector(".cw-left .cw-lst").focus();
       const seen = [];
       for (const k of ["ArrowDown", "ArrowDown", "End", "Home"]) { await key(k); seen.push(E.activeTab + "/" + document.activeElement?.dataset?.id); }
       return seen.join(" ");`);
-    t.ok("lists: the arrows pick, the focus stays in the list", ws === "texts/workspaces things/workspaces help/workspaces room/workspaces", ws);
+    t.ok("lists: the arrows pick, the focus stays in the list", ws === "texts/workspaces things/workspaces sequences/workspaces room/workspaces", ws);
     const fold = await run(`E.show("things"); await frame(); await frame();
       const l = [...document.querySelectorAll(".cw-left .cw-lst")].find((x) => x.dataset.id === "things.left");
       l.focus(); await key("ArrowDown"); await key("ArrowLeft"); await key("ArrowLeft");

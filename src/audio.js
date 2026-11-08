@@ -185,7 +185,7 @@ Cutaway.audio = (function () {
     /**
      * Quiet: what the game says to the sound is heard but nothing sounds that happens once (sounds, stingers,
      * lines' voices); the music and the rooms' loops still follow what they are told, to sound from there
-     * (the editor's film while it seeks).
+     * (the editor's timeline while it seeks).
      */
     get quiet() { return quiet; },
     /** @param {boolean} v */

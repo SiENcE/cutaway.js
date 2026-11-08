@@ -85,7 +85,7 @@ Cutaway.edits = (function () {
       const d = live("sequences", id);
       remember("sequences", id);
       if (d) merge(d, s);
-      else if (s && Array.isArray(s.steps)) Cutaway.sequence?.(id, clone(s));     // a sequence the editor made (the Film tab's New)
+      else if (s && Array.isArray(s.steps)) Cutaway.sequence?.(id, clone(s));     // a sequence the editor made (the Sequences tab's New)
     }
   }
 

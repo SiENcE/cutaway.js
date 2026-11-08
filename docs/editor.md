@@ -35,7 +35,8 @@ The editor docks around the game in its own page, like most editors:
 - **The menu bar** on top: File, Edit, View, Room, Art, Play, Tools, Help (below). On its right: the
   room to open, **▶ Play**, and whether the studio is connected.
 - **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
-  Issues, Checks, Connections, Map, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what
+  Issues, Checks, Connections, Map, Time, Sequences; a ● marks one with unsaved work; the help isn't one of them:
+  the Help menu and F1 open it), the **rooms** (click one to open it), and what
   is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
   Things (its properties and scripts; actors always, and anything while Things is open). In the Art
   workspace the list shows the sprites instead (click: select, double-click: paint), in Voices the
@@ -383,23 +384,23 @@ time now.
   whole day in view; zoomed in, the quarter hours get their labels too. The zoom is kept.
 - The table scrolls both ways (Shift+wheel across); the names and the hours stay.
 
-## Film
+## Sequences
 
 A sequence (an intro, a cutscene, an act's prologue) on a timeline, to see where everything happens in time,
-to look at any moment and to change its timing by hand. Tools > Film. The steps stay what the game is written
+to look at any moment and to change its timing by hand. Tools > Sequences. The steps stay what the game is written
 in: the timeline is a view of them and an editor over them.
 
 - **Pick a sequence** on the left (its shots are listed under it: a click goes there). The tab runs the
-  sequence silently to its end (a **trace**: a two-minute film takes well under a second) and shows its
+  sequence silently to its end (a **trace**: a two-minute sequence takes well under a second) and shows its
   **lanes** under the game picture: the **shots** (each mark to the next), the **room** shown (a room's
-  colour, as in the Time tab), the **story** (what the film waits for: waits as hollow bars, lines,
+  colour, as in the Time tab), the **story** (what the sequence waits for: waits as hollow bars, lines,
   dialogues), the **camera**, a lane for each **prop** and each **actor** that a step moves, the **screen**
   (letterbox, fades, dissolves, captions, the worn tape), the **sound** (music, stingers, sounds), the
   **state** (flags, items), and a lane for each of the game's own actions. A step that goes on at once
   (`wait: false`) runs as long as what it started (its tweens, a walk, a dissolve): its bar shows that, while
   the story goes on beside it. A mark (a diamond) is a step that takes no time.
-- **The playhead:** click or drag on the ruler or the empty timeline. The picture shows the film at that
-  moment, still: the game is put back as it was and the film run again on the game's clock (from the same
+- **The playhead:** click or drag on the ruler or the empty timeline. The picture shows the sequence at that
+  moment, still: the game is put back as it was and the sequence run again on the game's clock (from the same
   clock time, so whatever draws by the clock looks the same), silently. **Space** plays from the playhead (with
   its sound; the music starts from what it was told by then, close rather than exact) and pauses; **Home**
   and **End**, **←** and **→** a frame (Shift: a second), **PageUp** and **PageDown** the shots. **[** and
@@ -411,8 +412,8 @@ in: the timeline is a view of them and an editor over them.
     with it;
   - drag a step that **goes on at once** (a sound, a flag, a camera drive with `wait: false`): it moves
     between the steps it sits between; the wait it lands in splits, the waits where it was join, so
-    nothing else moves (landing inside a step the film waits for, it goes to that step's nearer edge);
-  - drag a step the film **waits for** (or any step with **Alt**): it and everything after it move (the wait
+    nothing else moves (landing inside a step the sequence waits for, it goes to that step's nearer edge);
+  - drag a step the sequence **waits for** (or any step with **Alt**): it and everything after it move (the wait
     before it grows or shrinks; one is made when there is none);
   - drags snap to 50 ms; **Shift**: not at all; **Ctrl**: to the other bars' edges and the shot marks. The
     status bar says the new time and the change;
@@ -421,7 +422,7 @@ in: the timeline is a view of them and an editor over them.
     any step as JSON, a game's own action too): in a wait it splits the wait, so nothing after moves; the
     new steps that move something go on at once (`wait: false`);
   - **Delete** takes the picked step out; the time it took stays as a wait.
-- **On the room's map** (the inspector shows the whole room the film is in at the playhead): white is the
+- **On the room's map** (the inspector shows the whole room the sequence is in at the playhead): white is the
   camera now, cyan the goals of the shot's camera steps (with their path), yellow the picked one. **Drag a
   frame** to set its camera step's goal (a click on another frame picks that step); a picked `move` step
   shows its prop's goal as a square to drag (`to`, or `by` from where the room's data puts the prop).
@@ -432,11 +433,11 @@ in: the timeline is a view of them and an editor over them.
   layout kept (a split wait becomes three steps on their own lines). Where that can't be (no studio, steps
   computed in code, steps the edits layer already holds), into the edits layer (`sequences`), as the Things
   tab's changes; the status line says which and why. **Save** (Ctrl+S) writes them; Ctrl+Z and Ctrl+Y undo
-  and redo. After each change the film is traced again and the picture stays at its moment.
+  and redo. After each change the sequence is traced again and the picture stays at its moment.
 - **New sequence** makes one of its own in the edits layer (a shot in the room the game is in, the bars in and
   out); play it from a script with `{ sequence: "id" }`, or from an act's `prologue`. **▶ Play in the game**
   plays it as the player sees it.
-- **Limits** (said where they apply): a dialogue's choices end the trace there (the film would wait for the
+- **Limits** (said where they apply): a dialogue's choices end the trace there (the sequence would wait for the
   player); something that runs on and on (a looping animation that is waited for) ends it at 10 minutes. An
   `if` shows the branch it took with the state the game is in. Leaving the tab puts the game back as it was.
 
@@ -467,7 +468,7 @@ change them, as the next bake would undo a change made here).
 |---|---|---|
 | room | `game/rooms/<id>.geo.js` | shapes: walk areas, holes, hotspot outlines, walk-to points, props' places (moved ones) and baselines, lamps, effect areas |
 | texts | `game/strings/<lang>.texts.js` | the texts as changed, per language |
-| edits | `game/edits.js` | properties of rooms, hotspots, props, lamps, effects, actors and items; their scripts; dialogues (whole); sequences' steps and after, and sequences made in the Film tab |
+| edits | `game/edits.js` | properties of rooms, hotspots, props, lamps, effects, actors and items; their scripts; dialogues (whole); sequences' steps and after, and sequences made in the Sequences tab |
 | sounds | `game/sounds.edit.js` | synthesised sounds made or changed |
 | audio | `assets/audio.js` | recorded sounds (embedded) |
 | voices | `assets/voices.<lang>.js` | recorded voices per line (embedded), one file per language |

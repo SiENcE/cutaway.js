@@ -100,7 +100,7 @@
  * @property {() => EditorView | null} [view]         while it returns a view, that view takes the centre
  * @property {(box: HTMLElement) => void} [browse]    its part of the left panel's browser (else the room's things)
  * @property {() => HTMLElement | null} [dock]         while it returns an element, that sits under the game picture (the picture
- *   fits above it; its top edge drags its height): the Film tab's timeline
+ *   fits above it; its top edge drags its height): the Sequences tab's timeline
  */
 
 /**
@@ -131,8 +131,8 @@
 
 Cutaway.editor = (function () {
   const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170, DOCK_H = 260, SPLIT = 6;
-  const MODULES = ["film.js", "editor-literal.js", "editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
-    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-timetable.js", "editor-film.js", "editor-help.js", "editor-guide.js"];
+  const MODULES = ["timeline.js", "editor-literal.js", "editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
+    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-timetable.js", "editor-sequences.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
   let isOpen = false, showHud = false;
   /** @type {string | null} */
@@ -1434,6 +1434,7 @@ Cutaway.editor = (function () {
         { label: "Connections", run: () => showTab("connections"), title: "the puzzle dependency chart and the state budget" },
         { label: "Map", run: () => showTab("map"), title: "every room and the ways between them" },
         { label: "Time", run: () => showTab("time"), title: "the game day as a timetable: who is where, the moments, the stops of the clock" },
+        { label: "Sequences", run: () => showTab("sequences"), title: "a sequence on a timeline: look at any moment, change its timing" },
         { label: "State (the developer's menu)", run: () => showTab("state") },
         ...(gameTabs.length ? [{ sep: true }, { head: "The game's tabs" }, ...gameTabs.map((id) => ({ label: tabs.find((t) => t.id === id)?.label ?? id, run: () => showTab(id) }))] : []),
       ]],
@@ -1759,7 +1760,8 @@ Cutaway.editor = (function () {
     const keep = box.scrollTop;
     box.replaceChildren(
       fold("left.ws", "WORKSPACES", () => [list({ id: "workspaces", selected: active, pick: showTab,
-        items: tabs.map((t) => ({ key: t.id, label: t.label, mark: unsavedOf(t) ? "●" : "", title: unsavedOf(t) ? "not saved" : t.label })) }),
+        // (the help isn't a workspace: the Help menu and F1 open it)
+        items: tabs.filter((t) => t.id !== "help").map((t) => ({ key: t.id, label: t.label, mark: unsavedOf(t) ? "●" : "", title: unsavedOf(t) ? "not saved" : t.label })) }),
         // without the studio: saves go through the browser and the game's own tabs are missing; how to get it
         ...(studio.available ? [] : [el("div", { style: { color: "#ffd27a", padding: "4px 6px", whiteSpace: "normal", lineHeight: "1.35", overflowWrap: "anywhere" }, title: studio.why },
           [`No studio: saves go through the browser, the game's own tabs are missing. ${location.protocol === "file:" ? "Start it in the game's folder: node lib/cutaway/tools/studio.mjs" : "Open the address the studio printed (…?edit&studio=…)."}`])])]),
@@ -2066,8 +2068,8 @@ Cutaway.editor = (function () {
     if (active === "room") render(ctx); else tabs.find((t) => t.id === active)?.render?.(ctx);
     ctx.restore();
   });
-  // (not the rooms a film shows while it seeks: the Film tab's picture is the film's)
-  Cutaway.events.on("room.enter", (/** @type {{id: string}} */ e) => { if (isOpen && e.id !== knownRoom && !Cutaway.film?.busy) roomChanged(); });
+  // (not the rooms a sequence shows while the Sequences tab seeks: its picture is the timeline's)
+  Cutaway.events.on("room.enter", (/** @type {{id: string}} */ e) => { if (isOpen && e.id !== knownRoom && !Cutaway.timeline?.busy) roomChanged(); });
   Cutaway.events.on("room.entered", () => { panelDirty = true; });
 
   const api = {

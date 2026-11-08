@@ -69,7 +69,7 @@
     "src/editor-timetable.js",
     "src/editor-literal.js",
     "src/editor-guide.js",
-    "src/film.js",
-    "src/editor-film.js"
+    "src/timeline.js",
+    "src/editor-sequences.js"
   ]
 }

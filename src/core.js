@@ -135,7 +135,7 @@ Cutaway.clock = (function () {
     wait(ms) { return new Promise((done) => timers.push({ at: time + ms, done })); },
     /**
      * Advance the clock by `ms` (in whole logic steps) and draw once: a manual clock, or a held one
-     * stepped by hand (the editor's Step). `draw: false` only steps (the editor's film, seeking).
+     * stepped by hand (the editor's Step). `draw: false` only steps (the editor's timeline, seeking).
      * @param {number} ms
      * @param {boolean} [draw]
      */
@@ -145,9 +145,9 @@ Cutaway.clock = (function () {
       if (draw) render();
     },
     /**
-     * Set the game time to `t` (back or on), as the editor's film does before each run so that whatever
+     * Set the game time to `t` (back or on), as the editor's timeline does before each run so that whatever
      * draws by the clock (animated sprites, a game's own drawers) looks the same at the same moment of
-     * the film. Waiting timers and running tweens keep what they have left. Meant for a scene at rest:
+     * the sequence. Waiting timers and running tweens keep what they have left. Meant for a scene at rest:
      * fades, lines and captions started before keep their absolute times.
      * @param {number} t
      */
@@ -223,7 +223,7 @@ Cutaway.tween = (function () {
       if (instant || ms <= 0) { o.step(1); done(undefined); return; }
       list.push({ key: o.key ?? "", start: Cutaway.clock.time, ms, ease: Cutaway.util.ease(o.ease), step: o.step, done: () => done(undefined) });
     }));
-    // the editor's film hears it: a step that goes on at once (wait: false) still runs as long as its tweens
+    // the editor's timeline hears it: a step that goes on at once (wait: false) still runs as long as its tweens
     if (watcher) watcher({ key: o.key ?? "", ms: instant ? 0 : Number(o.ms) || 0, done: p });
     return p;
   }
@@ -253,7 +253,7 @@ Cutaway.tween = (function () {
     /** Every tween arrives at once (tools, skipped cutscenes). @param {boolean} v */
     set instant(v) { instant = v; if (v) finish(); },
     /**
-     * Hear every tween as it starts (the editor's film: its key, its length, its promise); null stops.
+     * Hear every tween as it starts (the editor's timeline: its key, its length, its promise); null stops.
      * @param {((t: {key: string, ms: number, done: Promise<void>}) => void) | null} fn
      */
     watch(fn) { watcher = fn; },

@@ -247,7 +247,7 @@ Cutaway.fx = (function () {
     Cutaway.scene.render(g);
     dissolving = { old, temp, start: Cutaway.clock.time, ms };
     const done = Cutaway.clock.wait(ms);
-    Cutaway.script.goOn({ wait: false }, done);             // the step that began it still runs it (the editor's film)
+    Cutaway.script.goOn({ wait: false }, done);             // the step that began it still runs it (the editor's timeline)
     return done;
   }
 

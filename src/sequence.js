@@ -46,7 +46,7 @@ Cutaway.sequence = (function () {
    * The sequence playing: its steps stop once `cancel.stopped`; `skipping` is "shot" (to the next mark)
    * or "end" (all of it) while it hurries.
    * `until`: the shot mark a skip hurries to (none: the next one).
-   * `aborted`: stopped by the editor's film (no `after`, no fade back in: the film puts the game back itself).
+   * `aborted`: stopped by the editor's timeline (no `after`, no fade back in: it puts the game back itself).
    * @typedef {{id: string, cancel: {stopped: boolean}, skipping: "" | "shot" | "end", until: string, done: boolean, hurry: Promise<void> | null, aborted: boolean}} Playing
    * @type {Playing | null}
    */
@@ -57,7 +57,7 @@ Cutaway.sequence = (function () {
   let gateDef = null;
   let tweensWere = false, lastSkip = -1e9;
 
-  /** @type {Map<string, {file: string, line: number, col: number}>} where each sequence is written (the editor's Film tab writes there) */
+  /** @type {Map<string, {file: string, line: number, col: number}>} where each sequence is written (the editor's Sequences tab writes there) */
   const sources = new Map();
   /** Where the game's code called this (a script's address, line, column), or null (the edits layer made it). */
   function caller() {
@@ -109,7 +109,7 @@ Cutaway.sequence = (function () {
         if (!c.skipping || c.done) break;
         if (Cutaway.menu.card) Cutaway.menu.closeCard();
         if (Cutaway.ui.line) Cutaway.ui.skip();
-        // the editor's film stops one that waits for a choice: the last one (most often the way out)
+        // the editor's timeline stops one that waits for a choice: the last one (most often the way out)
         const asked = c.aborted ? Cutaway.dialogs?.choices : null;
         if (asked) Cutaway.dialogs.pick(asked.length - 1);
         Cutaway.clock.advance(250);
@@ -141,8 +141,8 @@ Cutaway.sequence = (function () {
   }
 
   /**
-   * Stop the sequence playing where it is, for the editor's film: its steps stop and what was waiting
-   * finishes at once, without `after` and without the screen going black (the film puts the game back as
+   * Stop the sequence playing where it is, for the editor's timeline: its steps stop and what was waiting
+   * finishes at once, without `after` and without the screen going black (the timeline puts the game back as
    * it was itself). Resolves when it has ended.
    */
   async function abort() {
