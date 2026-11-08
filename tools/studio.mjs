@@ -174,7 +174,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const open = `${s.url}${st.config().page}?edit&studio=${s.token}`;
   console.log(`Cutaway studio for ${st.root}
   ${open}
-  (Ctrl+C stops it)`);
+  (if the editor shows "studio ○", open this address as it is: the token after &studio= is the key; Ctrl+C stops it)`);
   if (!args.includes("--no-open")) {
     // cmd reads & in the address as the end of the command (the token after it was lost, and the editor opened without
     // the studio): its special characters are escaped with ^

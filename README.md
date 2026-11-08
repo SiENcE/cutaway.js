@@ -121,8 +121,11 @@ hand-written is overwritten). Its workspaces:
 
 Every list goes by keys (arrows, letters, Enter, / to filter) and folds its groups.
 
-Without the studio, F10 opens it too and saves through the browser. The guide:
-**[docs/editor.md](docs/editor.md)**.
+Without the studio, F10 opens it too and saves through the browser, and a game's own tabs are missing
+(the editor says so in its status bar and under the workspaces). The studio's indicator at the top right
+shows whether it is there: "studio ●" connected, "studio ○" not. The page must be opened at the address the
+studio prints, `…/index.html?edit&studio=<token>`: the token is its key, so a page without it (typed by
+hand, or opened as a file) gets no studio. The guide: **[docs/editor.md](docs/editor.md)**.
 
 ## Making a game
 

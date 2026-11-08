@@ -1590,7 +1590,10 @@ Cutaway.editor = (function () {
     const keep = box.scrollTop;
     box.replaceChildren(
       fold("left.ws", "WORKSPACES", () => [list({ id: "workspaces", selected: active, pick: showTab,
-        items: tabs.map((t) => ({ key: t.id, label: t.label, mark: unsavedOf(t) ? "●" : "", title: unsavedOf(t) ? "not saved" : t.label })) })]),
+        items: tabs.map((t) => ({ key: t.id, label: t.label, mark: unsavedOf(t) ? "●" : "", title: unsavedOf(t) ? "not saved" : t.label })) }),
+        // without the studio: saves go through the browser and the game's own tabs are missing; how to get it
+        ...(studio.available ? [] : [el("div", { style: { color: "#ffd27a", padding: "4px 6px", whiteSpace: "normal", lineHeight: "1.35" }, title: studio.why },
+          [`No studio: saves go through the browser, the game's own tabs are missing. ${location.protocol === "file:" ? "Start it in the game's folder: node lib/cutaway/tools/studio.mjs" : "Open the address the studio printed (…?edit&studio=…)."}`])])]),
       fold("left.rooms", "ROOMS", () => [list({ id: "rooms", selected: d?.id, pick: (id) => { openRoom(id); }, filter: Cutaway.room.ids().length > 12,
         height: Cutaway.room.ids().length > 12 ? "200px" : undefined,
         items: Cutaway.room.ids().map((id) => ({ key: id, label: id })) })], { note: String(Cutaway.room.ids().length) }));
@@ -1797,7 +1800,7 @@ Cutaway.editor = (function () {
   function open() {
     if (isOpen) return;
     isOpen = true;
-    studio.connect().then((ok) => { if (!ok && studio.why && location.protocol !== "file:") setStatus(studio.why); panelDirty = true; if (barEl) buildBar(); });
+    studio.connect().then((ok) => { if (!ok && studio.why) setStatus(studio.why); panelDirty = true; if (barEl) buildBar(); });
     loadModules().then(() => { if (barEl) buildBar(); });
     win = wantWindow ? popup() : null;
     ensureCss(document);

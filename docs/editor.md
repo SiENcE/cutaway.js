@@ -13,7 +13,11 @@ Help > Editor guide, with the engine's reference beside it (everything a game's 
   a small server on your computer only, opens the game in the browser with the editor, and lets the
   editor save straight into the game's folder and run the game's checks and builds.
 - **Without it**: F10 in the game (or `index.html?edit`). Saving then goes through the browser's file
-  picker, or downloads the file.
+  picker, or downloads the file, and a game's own tabs are missing; the status bar and a line under the
+  workspaces say why and how to get the studio.
+- **The indicator** at the top right: "studio ●" the studio is connected, "studio ○" it isn't. The studio
+  opens the page at `…/index.html?edit&studio=<token>` and prints that address: the token is its key, so a
+  page without it (typed by hand, opened as a file, an old tab) gets no studio. Open the printed address.
 - **Play** (the ▶ button, or F10) closes the editor and plays from where you are; F10 again opens it.
   F9 shows the debug overlay.
 - **The game is paused** while the editor is open: nobody walks, scripts and sequences wait, scrolling
