@@ -62,7 +62,7 @@ Cutaway.time = (function () {
   const sources = new Map();
   /**
    * Where the call that defines something was made: the first place on the stack outside this file (the
-   * game's data file, its line and column), or null when the stack doesn't say. For the editor's Time tab.
+   * game's data file, its line and column), or null when the stack doesn't say. For the editor's Schedule tab.
    */
   function caller() {
     for (const l of (new Error().stack ?? "").split("\n").slice(1)) {

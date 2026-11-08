@@ -1,4 +1,4 @@
-// Cutaway.js editor, Time tab: the game day as a timetable, day by day. Each actor with a routine is a row, its
+// Cutaway.js editor, Schedule tab: the game day as a timetable, day by day. Each actor with a routine is a row, its
 // entries bars from their start to their end, coloured and named by the room they put the actor in (an entry
 // under an `if` striped, its condition in the inspector; entries that hold at the same time under different
 // conditions lie in lanes of their own); each moment is a row too, its window a bar in its room's colour. The
@@ -15,7 +15,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  const NAME_W = 150, ROW = 18, HEAD = 22, TW_MIN = 6, TW_MAX = 320, KEY = "cutaway.editor.time:" + location.pathname;
+  const NAME_W = 150, ROW = 18, HEAD = 22, TW_MIN = 6, TW_MAX = 320, KEY = "cutaway.editor.schedule:" + location.pathname;
   /** the width of a quarter hour, px: the wheel, + and - zoom it (kept for this game in the browser) */
   let tw = 26;
   try { tw = Number(localStorage.getItem(KEY)) || 26; } catch { /* none kept */ }
@@ -318,16 +318,16 @@
    */
   async function change(kind, id, i, values) {
     const what = kind === "routine" ? `${id}'s entry ${i}` : `the moment ${id}`;
-    if (!E.studio.available) { E.setStatus("time: changing a time needs the studio (it writes the game's file)"); return false; }
+    if (!E.studio.available) { E.setStatus("schedule: changing a time needs the studio (it writes the game's file)"); return false; }
     const w = where(kind, id);
-    if (!w) { E.setStatus(`time: where ${what} is written isn't known: change it in the game's file`); return false; }
+    if (!w) { E.setStatus(`schedule: where ${what} is written isn't known: change it in the game's file`); return false; }
     const L = E.modules.literal;
-    if (!files.has(w.path)) { try { const t = await E.studio.read(w.path); files.set(w.path, { src: t, saved: t }); } catch (e) { E.setStatus(`time: ${w.path}: ${/** @type {any} */ (e).message}`); return false; } }
+    if (!files.has(w.path)) { try { const t = await E.studio.read(w.path); files.set(w.path, { src: t, saved: t }); } catch (e) { E.setStatus(`schedule: ${w.path}: ${/** @type {any} */ (e).message}`); return false; } }
     const f = /** @type {{src: string, saved: string}} */ (files.get(w.path));
     let src = f.src;
     for (const [key, v] of Object.entries(values)) {
       const o = locate(src, kind, w.line, i, id), n = o ? L.field(o, key) : null;
-      if (!o || n?.t === "code") { E.setStatus(`time: ${what} has its ${o ? key : "values"} computed in the code (${w.path}:${w.line}): change it there`); return false; }
+      if (!o || n?.t === "code") { E.setStatus(`schedule: ${what} has its ${o ? key : "values"} computed in the code (${w.path}:${w.line}): change it there`); return false; }
       src = v === undefined ? (n ? L.removeKey(src, o, key) : src) : L.setKey(src, o, key, lit(v));
     }
     /** @type {TimeEdit["live"]} */
@@ -340,7 +340,7 @@
     undo.push(ed); if (undo.length > 200) undo.shift();
     redo = [];
     put(ed, true);
-    E.setStatus(`time: ${what} ${Object.entries(values).map(([k, v]) => `${k} ${v === undefined ? "(every day)" : lit(v)}`).join(", ")} in ${w.path}:${w.line} (not saved)`);
+    E.setStatus(`schedule: ${what} ${Object.entries(values).map(([k, v]) => `${k} ${v === undefined ? "(every day)" : lit(v)}`).join(", ")} in ${w.path}:${w.line} (not saved)`);
     return true;
   }
   // ---- a moment's scripts as blocks in the centre
@@ -370,7 +370,7 @@
     const S = E.modules.script, m = T().moments.get(id);
     if (!S || !m) return;
     const at = await scriptAt(id, key);
-    if ("why" in at) { E.setStatus(`time: ${id}'s ${key}: ${at.why}`); if (at.w) E.modules.art?.openSource(at.w.path, at.w.line); return; }
+    if ("why" in at) { E.setStatus(`schedule: ${id}'s ${key}: ${at.why}`); if (at.w) E.modules.art?.openSource(at.w.path, at.w.line); return; }
     const view = S.view({ title: `moment ${id}: ${key} (${SCRIPT[key]})`, value: m[key] ?? [],
       change: (/** @type {any[] | null} */ v) => { changeScript(id, key, v ?? []); },
       close: () => { open = null; E.refresh(); draw(); } });
@@ -381,19 +381,19 @@
   async function changeScript(id, key, v) {
     const m = T().moments.get(id), at = await scriptAt(id, key), L = E.modules.literal;
     if (!m) return false;
-    if ("why" in at) { E.setStatus(`time: ${id}'s ${key}: ${at.why}`); return false; }
+    if ("why" in at) { E.setStatus(`schedule: ${id}'s ${key}: ${at.why}`); return false; }
     const now = m[key] === undefined ? [] : Array.isArray(m[key]) ? m[key] : [m[key]];
     /** @type {{text: string} | {why: string}} */
     let r;
     if (!at.n) r = { text: L.setKey(at.f.src, at.o, key, L.lit(v)) };
     else if (at.n.t !== "arr") r = { text: L.put(at.f.src, at.n, L.lit(v)) };
     else r = L.replaceList(at.f.src, at.n, now, v, (/** @type {string} */ text) => L.field(locate(text, "moment", at.w.line, 0, id), key) ?? null);
-    if (!("text" in r)) { E.setStatus(`time: ${id}'s ${key}: ${r.why}`); return false; }
+    if (!("text" in r)) { E.setStatus(`schedule: ${id}'s ${key}: ${r.why}`); return false; }
     const ed = { path: at.w.path, before: at.f.src, after: r.text, live: [{ o: m, key, before: m[key], after: JSON.parse(JSON.stringify(v)) }] };
     undo.push(ed); if (undo.length > 200) undo.shift();
     redo = [];
     put(ed, true);
-    E.setStatus(`time: ${id}'s ${key} (${v.length} steps) in ${at.w.path} (not saved)`);
+    E.setStatus(`schedule: ${id}'s ${key} (${v.length} steps) in ${at.w.path} (not saved)`);
     return true;
   }
 
@@ -425,16 +425,16 @@
     /** @param {string} key @param {string} v @param {string} title */
     const time = (key, v, title) => el("input", { value: v, title, style: { width: "52px" }, onchange: (/** @type {any} */ e) => {
       const x = String(e.target.value).trim(), m = t.parse(x);
-      if (!/^\d{1,2}:\d{2}$/.test(x) || !Number.isFinite(m)) { E.setStatus("time: a clock time, 22:15"); E.refresh(); return; }
+      if (!/^\d{1,2}:\d{2}$/.test(x) || !Number.isFinite(m)) { E.setStatus("schedule: a clock time, 22:15"); E.refresh(); return; }
       const from = key === "from" ? m : t.parse(o.from), to = key === "to" ? m : t.parse(o.to);
-      if (!(from < to)) { E.setStatus("time: it must end after it begins (on the game day: the morning comes after the evening)"); E.refresh(); return; }
-      if (m % 15) E.setStatus(`time: ${x} is off the quarter hours (the solver counts every stop of the clock)`);
+      if (!(from < to)) { E.setStatus("schedule: it must end after it begins (on the game day: the morning comes after the evening)"); E.refresh(); return; }
+      if (m % 15) E.setStatus(`schedule: ${x} is off the quarter hours (the solver counts every stop of the clock)`);
       change(kind, id, i, { [key]: t.format(m) });
     } });
     const dayText = o.day === undefined ? "" : Array.isArray(o.day) ? o.day.join(", ") : String(o.day);
     const day = el("input", { value: dayText, placeholder: "every day", title: "a day (2), several (2, 3), or empty: every day", style: { width: "70px" }, onchange: (/** @type {any} */ e) => {
       const x = String(e.target.value).trim(), list = x ? x.split(/[\s,]+/).map(Number) : [];
-      if (list.some((n) => !Number.isInteger(n) || n < 1)) { E.setStatus("time: days are whole numbers from 1 (2, or 2, 3; empty: every day)"); E.refresh(); return; }
+      if (list.some((n) => !Number.isInteger(n) || n < 1)) { E.setStatus("schedule: days are whole numbers from 1 (2, or 2, 3; empty: every day)"); E.refresh(); return; }
       change(kind, id, i, { day: list.length === 0 ? undefined : list.length === 1 ? list[0] : list });
     } });
     const w = where(kind, id), shared = sharing(kind, id);
@@ -483,8 +483,8 @@
     draw();
   }
 
-  E.tab({ id: "time", label: "Time", build, view: () => open?.view ?? view, selectNone: () => view.selectNone?.(), save: () => save(),
+  E.tab({ id: "schedule", label: "Schedule", build, view: () => open?.view ?? view, selectNone: () => view.selectNone?.(), save: () => save(),
     undo: () => step(undo, redo, false), redo: () => step(redo, undo, true), get unsaved() { return unsaved(); } });
-  E.modules.time = { table, days, zoom, fit, change, save, where, sharing, openScript, changeScript, get script() { return open; }, get unsaved() { return unsaved(); }, files, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
+  E.modules.schedule = { table, days, zoom, fit, change, save, where, sharing, openScript, changeScript, get script() { return open; }, get unsaved() { return unsaved(); }, files, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
     select(/** @type {any} */ s) { sel = s; E.refresh(); draw(); } };
 })();

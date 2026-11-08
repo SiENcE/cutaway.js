@@ -39,7 +39,7 @@
   const recOf = (/** @type {string | null} */ p) => (p && tr ? [...tr.steps].reverse().find((s) => s.path === p) ?? null : null);
   /** The step itself at a path (in its list), as the game has it now. @param {string | null} p */
   function stepAt(p) { if (!p || !tr) return undefined; const at = F().edits.locate(JSON.parse(JSON.stringify(steps())), tr, p); return at ? at.list[at.index] : undefined; }
-  /** A room's colour, the same every time (as the Time tab's). @param {string} room */
+  /** A room's colour, the same every time (as the Schedule tab's). @param {string} room */
   function roomColor(room) { let h = 0; for (const ch of room) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return `hsl(${h % 360} 45% 38%)`; }
 
   // ---- the lanes

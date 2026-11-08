@@ -27,7 +27,7 @@ export default async function (t) {
     })();`);
   mkdirSync(join(dir, "demo", "layers"), { recursive: true });
   writeFileSync(join(dir, "demo", "layers", "times.js"), `"use strict";
-// a guard and two cats: the Time tab's test
+// a guard and two cats: the Schedule tab's test
 Cutaway.time.configure({ start: "18:00", end: "02:00" });
 Cutaway.routine("guard", [
   { day: 1, from: "20:00", to: "22:00", room: "hall", at: [100, 140] },
@@ -141,26 +141,26 @@ Cutaway.time.mark("01:00");
     await sleep(300);
     const sel = await chrome.ev(`(() => { const a = [...document.querySelectorAll("textarea")].find((x) => x.value.length > 100); const lines = a.value.split("\\n"); return { at: a.selectionStart, end: a.selectionEnd, want: lines.slice(0, 4).join("\\n").length + 1, len: lines[4].length }; })()`);
     t.ok("art: a pxl source opens at a line, the line selected", sel.at === sel.want && sel.end === sel.want + sel.len, JSON.stringify(sel));
-    // the Time tab: the demo has no game time, so the test gives it a day, routines and a moment, in a file of its
+    // the Schedule tab: the demo has no game time, so the test gives it a day, routines and a moment, in a file of its
     // own (layers/times.js: where the studio may write), loaded now
     await chrome.ev(`new Promise((ok) => { const s = document.createElement("script"); s.src = "layers/times.js"; s.onload = ok; document.body.append(s); })`);
-    await chrome.ev(`(() => { Cutaway.state.set("day", 1); Cutaway.state.set("time", 21 * 60 + 15); ${E}.show("time"); return 1; })()`);
+    await chrome.ev(`(() => { Cutaway.state.set("day", 1); Cutaway.state.set("time", 21 * 60 + 15); ${E}.show("schedule"); return 1; })()`);
     await sleep(300);
-    const tt = await chrome.ev(`(() => { const d = ${E}.modules.time.table(1); return { days: ${E}.modules.time.days(), lanes: d.actors.map((a) => a.actor + ":" + a.lanes.length).join(), moments: d.moments.map((m) => m.id).join(),
+    const tt = await chrome.ev(`(() => { const d = ${E}.modules.schedule.table(1); return { days: ${E}.modules.schedule.days(), lanes: d.actors.map((a) => a.actor + ":" + a.lanes.length).join(), moments: d.moments.map((m) => m.id).join(),
       stops: d.stops.map((s) => Cutaway.time.format(s)).join(" "), span: Cutaway.time.format(d.t0) + "-" + Cutaway.time.format(d.t1),
       bars: [...${E}.centre.querySelectorAll("[title]")].filter((e) => /^(guard|cat_a|cat_b|bell):/.test(e.title)).length }; })()`);
-    t.ok("time: a day's table: the guard's two entries in two lanes (they overlap), the moment, the day's span", tt.lanes === "guard:2,cat_a:1,cat_b:1" && tt.moments === "bell" && tt.span === "18:00-02:00" && tt.days.join() === "1,2", JSON.stringify(tt));
-    t.ok("time: the stops of the clock are every start and end that day and the marks", tt.stops === "19:00 19:30 20:00 21:00 22:00 22:30 22:45 23:00 01:00", tt.stops);
-    t.ok("time: the bars drawn in the centre", tt.bars === 5, String(tt.bars));
-    await chrome.ev(`${E}.modules.time.select({ kind: "routine", actor: "guard", i: 1 }); 1`);
+    t.ok("schedule: a day's table: the guard's two entries in two lanes (they overlap), the moment, the day's span", tt.lanes === "guard:2,cat_a:1,cat_b:1" && tt.moments === "bell" && tt.span === "18:00-02:00" && tt.days.join() === "1,2", JSON.stringify(tt));
+    t.ok("schedule: the stops of the clock are every start and end that day and the marks", tt.stops === "19:00 19:30 20:00 21:00 22:00 22:30 22:45 23:00 01:00", tt.stops);
+    t.ok("schedule: the bars drawn in the centre", tt.bars === 5, String(tt.bars));
+    await chrome.ev(`${E}.modules.schedule.select({ kind: "routine", actor: "guard", i: 1 }); 1`);
     await sleep(150);
-    t.ok("time: a picked entry shows its room and its condition", /guard, entry 1/.test(await chrome.ev("document.body.textContent")) && /if door_open/.test(await chrome.ev("document.body.textContent")));
-    await chrome.ev(`${E}.modules.time.day = 2; 1`);
+    t.ok("schedule: a picked entry shows its room and its condition", /guard, entry 1/.test(await chrome.ev("document.body.textContent")) && /if door_open/.test(await chrome.ev("document.body.textContent")));
+    await chrome.ev(`${E}.modules.schedule.day = 2; 1`);
     await sleep(150);
-    t.ok("time: another day", (await chrome.ev(`${E}.modules.time.table(2).actors[0].lanes[0].length`)) === 1);
+    t.ok("schedule: another day", (await chrome.ev(`${E}.modules.schedule.table(2).actors[0].lanes[0].length`)) === 1);
     // the zoom: Fit puts the day in the view's width; the wheel zooms round the pointer, the time under it staying
     const zm = await chrome.ev(`(async () => {
-      const M = ${E}.modules.time, box = ${E}.centre.firstElementChild ?? ${E}.centre, d = M.table(2), q = (d.t1 - d.t0) / 15;
+      const M = ${E}.modules.schedule, box = ${E}.centre.firstElementChild ?? ${E}.centre, d = M.table(2), q = (d.t1 - d.t0) / 15;
       M.fit(); await new Promise((r) => setTimeout(r, 50));
       const fitted = Math.abs(150 + q * M.width + 12 - box.clientWidth) <= 2;
       const r = box.getBoundingClientRect(), px = 400, before = (box.scrollLeft + px - 150) / M.width;
@@ -169,21 +169,21 @@ Cutaway.time.mark("01:00");
       const after = (box.scrollLeft + px - 150) / M.width;
       return { fitted, wider: M.width > (box.clientWidth - 162) / q * 2, kept: Math.abs(after - before) < 0.05, w: M.width };
     })()`);
-    t.ok("time: Fit puts the day in the view; the wheel zooms round the pointer, the time there staying", zm.fitted && zm.wider && zm.kept, JSON.stringify(zm));
+    t.ok("schedule: Fit puts the day in the view; the wheel zooms round the pointer, the time there staying", zm.fitted && zm.wider && zm.kept, JSON.stringify(zm));
     // changing times: in the file where they are written (only that value), in the game at once; undo; save
-    const M = `${E}.modules.time`, file = join(dir, "demo", "layers", "times.js");
+    const M = `${E}.modules.schedule`, file = join(dir, "demo", "layers", "times.js");
     const src0 = readFileSync(file, "utf8");
-    t.ok("time: where a routine is written (its file and line)", JSON.stringify(await chrome.ev(`${M}.where("routine", "guard")`)) === '{"path":"layers/times.js","line":4}');
+    t.ok("schedule: where a routine is written (its file and line)", JSON.stringify(await chrome.ev(`${M}.where("routine", "guard")`)) === '{"path":"layers/times.js","line":4}');
     const ch = await chrome.ev(`(async () => { const ok = await ${M}.change("routine", "guard", 0, { from: "20:15" }); return { ok, live: Cutaway.time.routines.get("guard")[0].from, unsaved: ${M}.unsaved, text: ${M}.files.get("layers/times.js").src }; })()`);
-    t.ok("time: a time changed in the game and in the file's text, only that value, not saved yet", ch.ok && ch.live === "20:15" && ch.unsaved === 1 && ch.text === src0.replace('from: "20:00", to: "22:00"', 'from: "20:15", to: "22:00"'), JSON.stringify(ch).slice(0, 300));
+    t.ok("schedule: a time changed in the game and in the file's text, only that value, not saved yet", ch.ok && ch.live === "20:15" && ch.unsaved === 1 && ch.text === src0.replace('from: "20:00", to: "22:00"', 'from: "20:15", to: "22:00"'), JSON.stringify(ch).slice(0, 300));
     const cats = await chrome.ev(`(async () => { const ok = await ${M}.change("routine", "cat_a", 0, { to: "19:45" }); return { ok, shared: ${M}.sharing("routine", "cat_a").join(), b: Cutaway.time.routines.get("cat_b")[0].to }; })()`);
-    t.ok("time: routines a loop makes share their text: a change moves them all", cats.ok && cats.shared === "cat_a,cat_b" && cats.b === "19:45", JSON.stringify(cats));
+    t.ok("schedule: routines a loop makes share their text: a change moves them all", cats.ok && cats.shared === "cat_a,cat_b" && cats.b === "19:45", JSON.stringify(cats));
     const bell = await chrome.ev(`(async () => ({ ok: await ${M}.change("moment", "bell", 0, { from: "22:15" }), live: Cutaway.time.moments.get("bell").from }))()`);
-    t.ok("time: a value the file computes (a variable) is left to the file", !bell.ok && bell.live === "22:30", JSON.stringify(bell));
+    t.ok("schedule: a value the file computes (a variable) is left to the file", !bell.ok && bell.live === "22:30", JSON.stringify(bell));
     const days = await chrome.ev(`(async () => { const ok = await ${M}.change("moment", "bell", 0, { day: [1, 2] }); return { ok, day: Cutaway.time.moments.get("bell").day }; })()`);
-    t.ok("time: a moment's days changed", days.ok && JSON.stringify(days.day) === "[1,2]", JSON.stringify(days));
+    t.ok("schedule: a moment's days changed", days.ok && JSON.stringify(days.day) === "[1,2]", JSON.stringify(days));
     await chrome.ev(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
-    t.ok("time: Ctrl+Z undoes the last change, in the game and the text", (await chrome.ev(`Cutaway.time.moments.get("bell").day`)) === 1 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("day: [1, 2]"));
+    t.ok("schedule: Ctrl+Z undoes the last change, in the game and the text", (await chrome.ev(`Cutaway.time.moments.get("bell").day`)) === 1 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("day: [1, 2]"));
     // a real click on a bar picks it (the bar takes the pointer when pressed, for a drag: the click must still pick)
     const mouseAt = async (fn, double = false) => {
       const p = await chrome.ev(`(() => { const b = [...${E}.centre.querySelectorAll("[title]")].find(${fn}), r = b.getBoundingClientRect(); return { x: r.left + Math.min(20, r.width / 2), y: r.top + r.height / 2 }; })()`);
@@ -197,17 +197,17 @@ Cutaway.time.mark("01:00");
     await chrome.ev(`(() => { ${M}.select(null); ${M}.day = 1; return 1; })()`);
     await sleep(200);
     await mouseAt(`(e) => /^bell:/.test(e.title)`);
-    t.ok("time: a click on a moment's bar picks it: its times and its scripts in the inspector", JSON.stringify(await chrome.ev(`${M}.selected`)) === JSON.stringify({ kind: "moment", id: "bell" }) &&
+    t.ok("schedule: a click on a moment's bar picks it: its times and its scripts in the inspector", JSON.stringify(await chrome.ev(`${M}.selected`)) === JSON.stringify({ kind: "moment", id: "bell" }) &&
       /play \(\d+ steps?\)/.test(await chrome.ev("document.querySelector('.cutaway-editor').textContent")), JSON.stringify(await chrome.ev(`${M}.selected`)));
 
     // a moment's script as blocks in the centre, written into its file (only the steps that changed)
     await chrome.ev(`${M}.select({ kind: "moment", id: "bell" }); ${M}.openScript("bell", "play")`);
     await sleep(300);
-    t.ok("time: a moment's play opens as blocks in the centre", /moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)) && (await chrome.ev(`${M}.script?.id`)) === "bell");
+    t.ok("schedule: a moment's play opens as blocks in the centre", /moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)) && (await chrome.ev(`${M}.script?.id`)) === "bell");
     const sc = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { set: "bell_rang" }]); return { ok, live: Cutaway.time.moments.get("bell").play, text: ${M}.files.get("layers/times.js").src }; })()`);
-    t.ok("time: its steps changed: in the game and in the file", sc.ok && sc.live.length === 2 && sc.text.includes('play: [{ sfx: "_tick" }, { set: "bell_rang" }] });'), sc.text);
+    t.ok("schedule: its steps changed: in the game and in the file", sc.ok && sc.live.length === 2 && sc.text.includes('play: [{ sfx: "_tick" }, { set: "bell_rang" }] });'), sc.text);
     const sc2 = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { wait: 500 }, { set: "bell_rang" }]); return { ok, text: ${M}.files.get("layers/times.js").src }; })()`);
-    t.ok("time: a step put in between: only it is added, the others stay as written", sc2.ok && /\{ sfx: "_tick" \},\s*\{ wait: 500 \},\s*\{ set: "bell_rang" \}/.test(sc2.text) && sc2.text.includes("// a guard and two cats"), sc2.text);
+    t.ok("schedule: a step put in between: only it is added, the others stay as written", sc2.ok && /\{ sfx: "_tick" \},\s*\{ wait: 500 \},\s*\{ set: "bell_rang" \}/.test(sc2.text) && sc2.text.includes("// a guard and two cats"), sc2.text);
     const ring = await chrome.ev(`(async () => ({ ok: await ${M}.changeScript("ring", "play", [{ wait: 100 }]), live: Cutaway.time.moments.get("ring").play.length }))()`);
     // steps that hold code: kept as written; a change to their code is left to the file; a list spread into it too
     const dog = await chrome.ev(`(async () => {
@@ -216,21 +216,21 @@ Cutaway.time.mark("01:00");
       const b = await ${M}.changeScript("dog", "play", [{ say: "pip", text: "Here, boy." }, { walk: "pip", to: [70, 140] }, { set: "dog_called" }]);
       const g = await ${M}.changeScript("gong", "play", [{ sfx: "_tick" }]);
       return { a, b, g, textA, textB: ${M}.files.get("layers/times.js").src, gong: Cutaway.time.moments.get("gong").play.length }; })()`);
-    t.ok("time: a step that holds code stays as written while another changes (its comment too)", dog.a && /text: "Here, boy\." \},\s+\/\/ pip calls\n\s+\{ walk: "pip", to: SPOT \},\s*\{ set: "dog_called" \}/.test(dog.textA), dog.textA.slice(dog.textA.indexOf('"dog"'), dog.textA.indexOf('"gong"')));
-    t.ok("time: a change to a value the code computes (to: SPOT) is left to the file", !dog.b && dog.textB === dog.textA, JSON.stringify(dog.b) + dog.textB.slice(dog.textB.indexOf('"dog"'), dog.textB.indexOf('"gong"')));
-    t.ok("time: a list spread into a script (...RING) is left to the file", !dog.g && dog.gong === 2);
-    t.ok("time: a script the file computes (a variable) is left to the file", !ring.ok && ring.live === 1, JSON.stringify(ring));
+    t.ok("schedule: a step that holds code stays as written while another changes (its comment too)", dog.a && /text: "Here, boy\." \},\s+\/\/ pip calls\n\s+\{ walk: "pip", to: SPOT \},\s*\{ set: "dog_called" \}/.test(dog.textA), dog.textA.slice(dog.textA.indexOf('"dog"'), dog.textA.indexOf('"gong"')));
+    t.ok("schedule: a change to a value the code computes (to: SPOT) is left to the file", !dog.b && dog.textB === dog.textA, JSON.stringify(dog.b) + dog.textB.slice(dog.textB.indexOf('"dog"'), dog.textB.indexOf('"gong"')));
+    t.ok("schedule: a list spread into a script (...RING) is left to the file", !dog.g && dog.gong === 2);
+    t.ok("schedule: a script the file computes (a variable) is left to the file", !ring.ok && ring.live === 1, JSON.stringify(ring));
     await chrome.ev(`${M}.script.view.selectNone(); 1`);
     await sleep(200);
-    t.ok("time: closed, the timetable is back in the centre", !(await chrome.ev(`${M}.script`)) && !/moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)));
+    t.ok("schedule: closed, the timetable is back in the centre", !(await chrome.ev(`${M}.script`)) && !/moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)));
     // Ctrl+Z twice: the dog's change, then the step put into the bell's
     await chrome.ev(`(() => { for (let i = 0; i < 2; i++) document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
     await sleep(200);
-    t.ok("time: Ctrl+Z: the changes go again, in the game and the file", (await chrome.ev(`Cutaway.time.moments.get("dog").play.length`)) === 2 && (await chrome.ev(`Cutaway.time.moments.get("bell").play.length`)) === 2 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("wait: 500"));
+    t.ok("schedule: Ctrl+Z: the changes go again, in the game and the file", (await chrome.ev(`Cutaway.time.moments.get("dog").play.length`)) === 2 && (await chrome.ev(`Cutaway.time.moments.get("bell").play.length`)) === 2 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("wait: 500"));
     await chrome.ev(`${M}.save()`);
     await sleep(300);
     const saved = readFileSync(file, "utf8");
-    t.ok("time: Save writes the file: the changes there, its comments kept", saved.includes('from: "20:15"') && saved.includes('to: "19:45"') && saved.includes('{ set: "bell_rang" }') && saved.includes("// a guard and two cats") && (await chrome.ev(`${M}.unsaved`)) === 0, saved.slice(0, 400));
+    t.ok("schedule: Save writes the file: the changes there, its comments kept", saved.includes('from: "20:15"') && saved.includes('to: "19:45"') && saved.includes('{ set: "bell_rang" }') && saved.includes("// a guard and two cats") && (await chrome.ev(`${M}.unsaved`)) === 0, saved.slice(0, 400));
     // a bar dragged by its right end, two quarter hours on
     await chrome.ev(`(() => { ${M}.day = 1; ${M}.fit(); return 1; })()`);
     await sleep(200);
@@ -242,9 +242,9 @@ Cutaway.time.mark("01:00");
       box.dispatchEvent(new PointerEvent("pointerup", at(r.right - 2 + 2 * ${M}.width)));
       await new Promise((ok) => setTimeout(ok, 100));
       return Cutaway.time.routines.get("guard")[0].to; })()`);
-    t.ok("time: a bar dragged by its end: two quarter hours later", dragged === "22:30", String(dragged));
+    t.ok("schedule: a bar dragged by its end: two quarter hours later", dragged === "22:30", String(dragged));
     await mouseAt(`(e) => /^bell:/.test(e.title)`, true);
-    t.ok("time: a double click on a bar opens its room", (await chrome.ev(`${E}.activeTab`)) === "room" && (await chrome.ev("Cutaway.scene.room.id")) === "yard",
+    t.ok("schedule: a double click on a bar opens its room", (await chrome.ev(`${E}.activeTab`)) === "room" && (await chrome.ev("Cutaway.scene.room.id")) === "yard",
       `${await chrome.ev(`${E}.activeTab`)} ${await chrome.ev("Cutaway.scene.room.id")}`);
     t.ok("map: no page errors", chrome.errors.length === 0, chrome.errors.join("\n"));
   } finally {

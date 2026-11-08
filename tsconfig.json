@@ -66,7 +66,7 @@
     "src/graph-view.js",
     "src/editor-graph.js",
     "src/editor-map.js",
-    "src/editor-timetable.js",
+    "src/editor-schedule.js",
     "src/editor-literal.js",
     "src/editor-guide.js",
     "src/timeline.js",

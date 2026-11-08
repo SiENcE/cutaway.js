@@ -35,7 +35,7 @@ The editor docks around the game in its own page, like most editors:
 - **The menu bar** on top: File, Edit, View, Room, Art, Play, Tools, Help (below). On its right: the
   room to open, **▶ Play**, and whether the studio is connected.
 - **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
-  Issues, Checks, Connections, Map, Time, Sequences; a ● marks one with unsaved work; the help isn't one of them:
+  Issues, Checks, Connections, Map, Schedule, Sequences; a ● marks one with unsaved work; the help isn't one of them:
   the Help menu and F1 open it), the **rooms** (click one to open it), and what
   is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
   Things (its properties and scripts; actors always, and anything while Things is open). In the Art
@@ -357,8 +357,8 @@ top counts them.
   (or a double click on the ground) shows everything.
 - **only the picked room's ways** hides the rest; **light up what is unreachable** dims the others.
 
-## Time
-The game day as a timetable (for a game with game time: routines and moments, the reference's "Game time"),
+## Schedule
+The game day as a timetable (Tools > Schedule; for a game with game time: routines and moments, the reference's "Game time"),
 one day at a time: pick it with the **day** buttons (every day something names, and today). Each actor with a
 routine is a row; its entries are **bars** from their start to their end, coloured and named by the room they
 put the actor in (no room: grey). An entry under an `if` is **striped**; entries that hold at the same time
@@ -399,7 +399,7 @@ in: the timeline is a view of them and an editor over them.
 - **Pick a sequence** on the left (its shots are listed under it: a click goes there). The tab runs the
   sequence silently to its end (a **trace**: a two-minute sequence takes well under a second) and shows its
   **lanes** under the game picture: the **shots** (each mark to the next), the **room** shown (a room's
-  colour, as in the Time tab), the **story** (what the sequence waits for: waits as hollow bars, lines,
+  colour, as in the Schedule tab), the **story** (what the sequence waits for: waits as hollow bars, lines,
   dialogues), the **camera**, a lane for each **prop** and each **actor** that a step moves, the **screen**
   (letterbox, fades, dissolves, captions, the worn tape), the **sound** (music, stingers, sounds), the
   **state** (flags, items), and a lane for each of the game's own actions. A step that goes on at once
@@ -511,7 +511,7 @@ What it does." },
 
 A tab that writes the game's files uses `E.studio.read(path)` and `E.saveFile(path, text)` (only in the
 folders `write` lists), `E.modules.literal` to change one value where it is written (comments and layout
-kept, as the Time and Sequences tabs do), and `save`, `undo`, `redo` and `unsaved` in its `E.tab` so that
+kept, as the Schedule and Sequences tabs do), and `save`, `undo`, `redo` and `unsaved` in its `E.tab` so that
 Ctrl+S, Ctrl+Z and the unsaved marks reach it. A bigger example is Glass Sister's Iso-Editor (a room's map
 edited over its picture and baked by a task), which isn't in this repo.
 

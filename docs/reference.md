@@ -334,7 +334,7 @@ Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   //
 - `Cutaway.time.now` (`{ day, minutes, text }`), `Cutaway.time.next()` (minutes, or null), and the
   event `"time.changed"`. `configure({ waitPoint: () => ({ x, y }) })` tells `play.mjs` where the
   game's own button for waiting is; without it, it runs the step. `Cutaway.time.config` (`{ start,
-  end, marks }`), `.routines` and `.moments` are what the editor's Time tab draws; `Cutaway.time.source(kind,
+  end, marks }`), `.routines` and `.moments` are what the editor's Schedule tab draws; `Cutaway.time.source(kind,
   id)` (`"routine"` or `"moment"`) where each was defined (the script's address, line and column, from the
   stack when it was made), so the tab can change its times in that file.
 - The solver waits as a move of its own ("wait": on to the next change), so a game that needs the
