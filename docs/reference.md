@@ -326,7 +326,8 @@ Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   //
   for the next change (a text saying why, say). A step to a new day isn't held.
 - `Cutaway.time.now` (`{ day, minutes, text }`), `Cutaway.time.next()` (minutes, or null), and the
   event `"time.changed"`. `configure({ waitPoint: () => ({ x, y }) })` tells `play.mjs` where the
-  game's own button for waiting is; without it, it runs the step.
+  game's own button for waiting is; without it, it runs the step. `Cutaway.time.config` (`{ start,
+  end, marks }`), `.routines` and `.moments` are what the editor's Time tab draws.
 - The solver waits as a move of its own ("wait": on to the next change), so a game that needs the
   player to be watching at the right time is checked like any other; waiting past a moment the end
   needs shows up as a soft-lock.

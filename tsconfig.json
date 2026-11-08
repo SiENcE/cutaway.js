@@ -66,6 +66,7 @@
     "src/graph-view.js",
     "src/editor-graph.js",
     "src/editor-map.js",
+    "src/editor-timetable.js",
     "src/editor-guide.js"
   ]
 }

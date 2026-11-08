@@ -130,7 +130,7 @@
 Cutaway.editor = (function () {
   const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170, SPLIT = 6;
   const MODULES = ["editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
-    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-help.js", "editor-guide.js"];
+    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-timetable.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
   let isOpen = false, showHud = false;
   /** @type {string | null} */
@@ -1423,6 +1423,7 @@ Cutaway.editor = (function () {
         { label: "Checks", run: () => showTab("checks") },
         { label: "Connections", run: () => showTab("connections"), title: "the puzzle dependency chart and the state budget" },
         { label: "Map", run: () => showTab("map"), title: "every room and the ways between them" },
+        { label: "Time", run: () => showTab("time"), title: "the game day as a timetable: who is where, the moments, the stops of the clock" },
         { label: "State (the developer's menu)", run: () => showTab("state") },
         ...(gameTabs.length ? [{ sep: true }, { head: "The game's tabs" }, ...gameTabs.map((id) => ({ label: tabs.find((t) => t.id === id)?.label ?? id, run: () => showTab(id) }))] : []),
       ]],

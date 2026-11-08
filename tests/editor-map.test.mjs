@@ -119,6 +119,27 @@ export default async function (t) {
     await sleep(300);
     const sel = await chrome.ev(`(() => { const a = [...document.querySelectorAll("textarea")].find((x) => x.value.length > 100); const lines = a.value.split("\\n"); return { at: a.selectionStart, end: a.selectionEnd, want: lines.slice(0, 4).join("\\n").length + 1, len: lines[4].length }; })()`);
     t.ok("art: a pxl source opens at a line, the line selected", sel.at === sel.want && sel.end === sel.want + sel.len, JSON.stringify(sel));
+    // the Time tab: the demo has no game time, so the test gives it a day, two routines and a moment
+    await chrome.ev(`(() => {
+      Cutaway.time.configure({ start: "18:00", end: "02:00" });
+      Cutaway.routine("guard", [{ day: 1, from: "20:00", to: "22:00", room: "hall", at: [100, 140] }, { day: 1, from: "21:00", to: "23:00", if: "door_open", room: "yard", at: [60, 140] }, { day: 2, from: "19:00", to: "20:00", room: "yard" }]);
+      Cutaway.moment("bell", { room: "yard", day: 1, from: "22:30", to: "22:45", play: [] });
+      Cutaway.time.mark("01:00");
+      Cutaway.state.set("day", 1); Cutaway.state.set("time", 21 * 60 + 15);
+      ${E}.show("time"); return 1; })()`);
+    await sleep(300);
+    const tt = await chrome.ev(`(() => { const d = ${E}.modules.time.table(1); return { days: ${E}.modules.time.days(), lanes: d.actors.map((a) => a.actor + ":" + a.lanes.length).join(), moments: d.moments.map((m) => m.id).join(),
+      stops: d.stops.map((s) => Cutaway.time.format(s)).join(" "), span: Cutaway.time.format(d.t0) + "-" + Cutaway.time.format(d.t1),
+      bars: [...${E}.centre.querySelectorAll("[title]")].filter((e) => /^(guard|bell):/.test(e.title)).length }; })()`);
+    t.ok("time: a day's table: the guard's two entries in two lanes (they overlap), the moment, the day's span", tt.lanes === "guard:2" && tt.moments === "bell" && tt.span === "18:00-02:00" && tt.days.join() === "1,2", JSON.stringify(tt));
+    t.ok("time: the stops of the clock are every start and end that day and the marks", tt.stops === "20:00 21:00 22:00 22:30 22:45 23:00 01:00", tt.stops);
+    t.ok("time: the bars drawn in the centre", tt.bars === 3, String(tt.bars));
+    await chrome.ev(`${E}.modules.time.select({ kind: "routine", actor: "guard", i: 1 }); 1`);
+    await sleep(150);
+    t.ok("time: a picked entry shows its room and its condition", /guard, entry 1/.test(await chrome.ev("document.body.textContent")) && /if door_open/.test(await chrome.ev("document.body.textContent")));
+    await chrome.ev(`${E}.modules.time.day = 2; 1`);
+    await sleep(150);
+    t.ok("time: another day", (await chrome.ev(`${E}.modules.time.table(2).actors[0].lanes[0].length`)) === 1);
     t.ok("map: no page errors", chrome.errors.length === 0, chrome.errors.join("\n"));
   } finally {
     await chrome.close();

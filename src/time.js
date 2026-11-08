@@ -226,6 +226,8 @@ Cutaway.time = (function () {
     get now() { return { day: day(), minutes: minutes(), text: format(minutes()) }; },
     /** Is game time used at all (configured, or anything scheduled)? */
     get used() { return !!cfg || routines.size > 0 || moments.size > 0; },
+    /** The game day's start and end (minutes; null where not configured) and the extra stops (marks): the editor's timetable. */
+    get config() { return { start: cfg ? cfg.start : null, end: cfg ? cfg.end : null, marks: marks.slice() }; },
     get routines() { return routines; },
     get moments() { return moments; },
     /** Forget which slot each actor was put in (a new game, a loaded save). */

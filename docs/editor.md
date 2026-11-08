@@ -356,6 +356,21 @@ top counts them.
   (or a double click on the ground) shows everything.
 - **only the picked room's ways** hides the rest; **light up what is unreachable** dims the others.
 
+## Time
+The game day as a timetable (for a game with game time: routines and moments, the reference's "Game time"),
+one day at a time: pick it with the **day** buttons (every day something names, and today). Each actor with a
+routine is a row; its entries are **bars** from their start to their end, coloured and named by the room they
+put the actor in (no room: grey). An entry under an `if` is **striped**; entries that hold at the same time
+under different conditions lie in lanes of their own. Each **moment** is a row too, its window a bar in its
+room's colour. The **yellow lines** (and the dots under the hours) are the times the clock stops at when the
+player waits: every start and end that day and the marks (`Cutaway.time.mark`); the line on top lists them,
+so a stop only one thing needs shows (each one is another state for the solver). The **pink line** is the
+time now.
+
+- Click a bar: its times, its room and place, its condition; **Open room** (or a double click on the bar)
+  shows the room. Esc or a click on the empty table lets go.
+- The table scrolls both ways; the names and the hours stay.
+
 ## A game's own tabs
 A game can bring tabs of its own (a map editor for its own room format, a tool only it needs): the scripts
 listed in its `studio.json` under `"editor"` (paths from the game's page) load after the engine's tabs and

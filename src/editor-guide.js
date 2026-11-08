@@ -13,7 +13,7 @@
   let bookId = "editor", at = "intro", query = "";
   /** @type {Record<string, string>} the tabs and their sections in the editor's guide */
   const FOR_TAB = { room: "room-shapes", texts: "texts", things: "things", art: "art", paint: "paint", sound: "sound", dialogue: "dialogue",
-    state: "state", issues: "issues", checks: "checks", voices: "voices", connections: "connections", map: "map" };
+    state: "state", issues: "issues", checks: "checks", voices: "voices", connections: "connections", map: "map", time: "time" };
 
   /** @type {Record<string, [string, string]>} a game's tabs and the book and section F1 opens for each (addBook) */
   const GAME_TAB = {};
