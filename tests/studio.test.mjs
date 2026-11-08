@@ -3,7 +3,8 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { studio } from "../tools/studio.mjs";
+import { studio, winArg } from "../tools/studio.mjs";
+import { spawnSync } from "node:child_process";
 
 export default async function (t) {
   const dir = mkdtempSync(join(tmpdir(), "cutaway-studio-"));
@@ -34,6 +35,10 @@ export default async function (t) {
     const r = await (await call("run?task=hello", { method: "POST" })).json();
     t.ok("studio: runs a task", r.code === 0 && r.output.trim() === "42", JSON.stringify(r));
     t.ok("studio: unknown tasks are refused", (await call("run?task=rm", { method: "POST" })).status === 404);
+    // the address the studio opens keeps its token on Windows: cmd would end the command at its &
+    const url = "http://127.0.0.1:7400/index.html?edit&studio=abc123";
+    const echoed = process.platform === "win32" ? spawnSync("cmd", ["/c", "echo", winArg(url)], { encoding: "utf8" }).stdout.trim() : winArg(url).replace(/\^/g, "");
+    t.ok("studio: the address opened on Windows keeps its token (& escaped for cmd)", echoed === url, echoed);
     // a task's {name} parts are filled by the editor, with plain names only
     const v = await (await call("run?task=echo&vars=" + encodeURIComponent(JSON.stringify({ room: "kessel_lobby" })), { method: "POST" })).json();
     t.ok("studio: a task's {room} filled in", v.code === 0 && v.output.trim() === "kessel_lobby", JSON.stringify(v));

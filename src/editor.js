@@ -211,6 +211,8 @@ Cutaway.editor = (function () {
     let cfg = null;
     /** @type {Promise<boolean> | null} */
     let connecting = null;
+    /** why the studio isn't there (said in the status bar when the editor opens, and on the indicator) */
+    let why = "";
     /** @param {string} path @param {RequestInit} [o] */
     async function call(path, o = {}) {
       const r = await fetch("/__studio/" + path, { ...o, headers: { "x-studio-token": token } });
@@ -221,12 +223,16 @@ Cutaway.editor = (function () {
     return {
       /** Is the studio there? (Connected when the editor opens.) */
       get available() { return !!cfg; },
+      /** Why it isn't (after connecting), or "". */
+      get why() { return why; },
       get config() { return cfg; },
       /** Connect (once; the modules may ask again). @returns {Promise<boolean>} */
       connect() {
         connecting ??= (async () => {
-          if (!token || location.protocol === "file:") return false;
+          if (location.protocol === "file:") { why = "no studio: the game was opened as a file (start it with node lib/cutaway/tools/studio.mjs)"; return false; }
+          if (!token) { why = "no studio: this address has no studio token; open the one the studio printed (…?edit&studio=…)"; return false; }
           try { cfg = await (await call("config")).json(); } catch { cfg = null; }
+          if (!cfg) why = "no studio: it refused this page's token or isn't running; open the address it printed when it started";
           return !!cfg;
         })();
         return connecting;
@@ -1573,7 +1579,7 @@ Cutaway.editor = (function () {
       Cutaway.room.ids().map((id) => el("option", { value: id, textContent: id, selected: id === d?.id }))));
     barRight.replaceChildren(el("span", { className: "cw-dim", textContent: "room" }), select, button("▶ Play", close, "close the editor and play from here (F10)"),
       el("span", { style: { color: studio.available ? "#7c7" : "#c96", padding: "0 4px" },
-        title: studio.available ? "the studio is connected: saves go into the game's folder, tasks run" : "no studio: saves go through the browser (start tools/studio.mjs)",
+        title: studio.available ? "the studio is connected: saves go into the game's folder, tasks run" : `${studio.why || "no studio"}; saves go through the browser`,
         textContent: studio.available ? "studio ●" : "studio ○" }));
   }
 
@@ -1791,7 +1797,7 @@ Cutaway.editor = (function () {
   function open() {
     if (isOpen) return;
     isOpen = true;
-    studio.connect().then(() => { panelDirty = true; if (barEl) buildBar(); });
+    studio.connect().then((ok) => { if (!ok && studio.why && location.protocol !== "file:") setStatus(studio.why); panelDirty = true; if (barEl) buildBar(); });
     loadModules().then(() => { if (barEl) buildBar(); });
     win = wantWindow ? popup() : null;
     ensureCss(document);

@@ -163,6 +163,9 @@ export function studio(pagePath, { quiet = false, root = "" } = {}) {
   return { start, config, root: ROOT };
 }
 
+/** An argument for cmd /c, its special characters (& ^ < > |) escaped so it arrives whole. @param {string} s */
+export const winArg = (s) => s.replace(/[&^<>|]/g, (c) => "^" + c);
+
 // the command line
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2), opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
@@ -173,7 +176,9 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   ${open}
   (Ctrl+C stops it)`);
   if (!args.includes("--no-open")) {
-    const cmd = process.platform === "win32" ? ["cmd", ["/c", "start", "", open]] : process.platform === "darwin" ? ["open", [open]] : ["xdg-open", [open]];
+    // cmd reads & in the address as the end of the command (the token after it was lost, and the editor opened without
+    // the studio): its special characters are escaped with ^
+    const cmd = process.platform === "win32" ? ["cmd", ["/c", "start", "", winArg(open)]] : process.platform === "darwin" ? ["open", [open]] : ["xdg-open", [open]];
     spawn(cmd[0], cmd[1], { stdio: "ignore", detached: true }).unref();
   }
 }
