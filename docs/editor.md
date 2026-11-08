@@ -367,8 +367,17 @@ player waits: every start and end that day and the marks (`Cutaway.time.mark`); 
 so a stop only one thing needs shows (each one is another state for the solver). The **pink line** is the
 time now.
 
-- Click a bar: its times, its room and place, its condition; **Open room** (or a double click on the bar)
-  shows the room. Esc or a click on the empty table lets go.
+- Click a bar: its times, its room and place, its condition, and where it is written (`game/prolog.js:29`:
+  a click opens the file there); **Open room** (or a double click on the bar) shows the room. Esc or a click on
+  the empty table lets go.
+- **Changing times** (with the studio): the picked bar's **from**, **to** and **day** (a day, several as
+  `2, 3`, empty: every day) in the inspector, or **drag a bar**: whole, or by one of its ends, in quarter
+  hours. The change goes into the game at once (the actors move) and into the game's file where the routine
+  or the moment is written, only that value (comments and layout stay); **Save** (Ctrl+S) writes the file,
+  Ctrl+Z / Ctrl+Y undo and redo. Routines a loop makes share one text: the inspector names them, and a change
+  moves them all. A value the file computes (a variable, `from: start`) is left to the file: the status line
+  says so and the link opens it there. A time off the quarter hours is allowed, with a word: every stop of
+  the clock is another state for the solver.
 - **Zoom:** the wheel zooms the time axis round the pointer (the time there stays where it is), **+** and
   **−** (the keys or the buttons) step it, **Fit** (or **0**, or a double click on the empty table) puts the
   whole day in view; zoomed in, the quarter hours get their labels too. The zoom is kept.

@@ -5,6 +5,10 @@
 // times the clock stops at when the player waits (every start and end that day, the marks) are lines down the
 // whole table, so a stop that only one thing needs shows; the time now is a line of its own. A click picks a bar
 // (what it says, where it is), a double click opens its room.
+// Times and days can be changed here (the inspector's fields, or a bar dragged: whole, or by an end, in quarter
+// hours): the change goes into the game's file where the routine or the moment is written (Cutaway.time.source
+// says where; only that value changes, the file's comments and layout stay) and into the game at once. A value
+// the file computes (a variable, a loop's) is left to the file. Undo and redo; Save (Ctrl+S) writes the files.
 "use strict";
 
 (function () {
@@ -98,11 +102,11 @@
       [el("span", { style: { position: "sticky", left: "0", display: "inline-block", padding: "2px 6px", whiteSpace: "nowrap" } }, [text])])); y += ROW; };
     /**
      * A bar. @param {number} from @param {number} to @param {string | null | undefined} room @param {string} cond
-     * @param {boolean} on @param {string} title @param {() => void} pick
+     * @param {boolean} on @param {string} title @param {() => void} pick @param {{kind: "routine" | "moment", id: string, i: number}} who
      */
-    const bar = (from, to, room, cond, on, title, pick) => {
+    const bar = (from, to, room, cond, on, title, pick, who) => {
       const c = roomColor(room);
-      return el("div", { title, onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); pick(); },
+      const b = el("div", { title, onclick: (/** @type {MouseEvent} */ e) => { e.stopPropagation(); if (dragged) { dragged = false; return; } pick(); },
         ondblclick: () => { if (room && Cutaway.room.ids().includes(room)) { E.openRoom(room); E.show("room"); } },
         style: { position: "absolute", left: `${x(from) + 1}px`, top: `${y + 2}px`, width: `${Math.max(3, x(to) - x(from) - 2)}px`, height: `${ROW - 4}px`, boxSizing: "border-box",
           background: cond ? `repeating-linear-gradient(135deg, ${c} 0 5px, #1a1526 5px 8px)` : c, border: `1px solid ${on ? COL.sel : "rgba(0,0,0,.5)"}`,
@@ -110,6 +114,15 @@
           color: "#fff", textShadow: "0 1px 0 #000", cursor: "pointer" } },
         // its name stays at the view's left edge while a long bar runs on past it (clip, not hidden: that would stop the sticky)
         [el("span", { style: { position: "sticky", left: `${NAME_W + 2}px`, padding: "0 3px" } }, [`${cond ? "? " : ""}${room ?? "—"}`])]);
+      // dragged: whole, or by an end (the outer 5 px), in quarter hours
+      const edge = (/** @type {PointerEvent} */ e) => { const r = b.getBoundingClientRect(), o = e.clientX - r.left; return o < 5 ? "from" : o > r.width - 5 ? "to" : "move"; };
+      b.addEventListener("pointermove", (e) => { if (!drag) b.style.cursor = edge(e) === "move" ? "grab" : "ew-resize"; });
+      b.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        drag = { who, el: b, x0: e.clientX, from, to, nf: from, nt: to, mode: edge(e), left: x(from) + 1 };
+        box.setPointerCapture(e.pointerId);
+      });
+      return b;
     };
     /** @param {string} name @param {string} [title] */
     const name = (name, title) => el("div", { title: title ?? name, style: { position: "sticky", left: "0", width: `${NAME_W - 4}px`, height: `${ROW}px`, padding: "2px 6px", boxSizing: "border-box", background: COL.ground, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", zIndex: "2" } }, [name]);
@@ -121,7 +134,7 @@
         for (const b of lane) {
           const on = sel?.kind === "routine" && sel.actor === a.actor && sel.i === b.i;
           rows.push(bar(b.from, b.to, b.e.room, condText(b.e.if), on, `${a.actor}: ${T().format(b.from)} to ${T().format(b.to)} in ${b.e.room ?? "no room"}${condText(b.e.if) ? `, if ${condText(b.e.if)}` : ""}`,
-            () => { sel = { kind: "routine", actor: a.actor, i: b.i }; E.refresh(); draw(); }));
+            () => { sel = { kind: "routine", actor: a.actor, i: b.i }; E.refresh(); draw(); }, { kind: "routine", id: a.actor, i: b.i }));
         }
         y += ROW;
       });
@@ -131,7 +144,7 @@
       rows.push(el("div", { style: { position: "absolute", left: "0", top: `${y}px`, width: `${W}px`, height: `${ROW}px` } }, [name(m.id)]));
       const on = sel?.kind === "moment" && sel.id === m.id, done = Cutaway.state.peek(`~moment.${m.id}`);
       rows.push(bar(m.from, m.to, m.m.room, condText(m.m.if), on, `${m.id}: ${T().format(m.from)} to ${T().format(m.to)} in ${m.m.room}${condText(m.m.if) ? `, if ${condText(m.m.if)}` : ""}${done ? ` (happened: ${done})` : ""}`,
-        () => { sel = { kind: "moment", id: m.id }; E.refresh(); draw(); }));
+        () => { sel = { kind: "moment", id: m.id }; E.refresh(); draw(); }, { kind: "moment", id: m.id, i: 0 }));
       y += ROW;
     }
     if (!d.actors.length && !d.moments.length) { rows.push(el("div", { style: { position: "absolute", left: "8px", top: `${y + 6}px`, color: "#9a92b4" } }, [`Nothing is scheduled on day ${d.day}: no routine, no moment.`])); y += ROW * 2; }
@@ -190,6 +203,7 @@
 
   /** @type {EditorView} */
   const view = { el: box, shown() { draw(); }, selectNone() { sel = null; E.refresh(); draw(); },
+    undo: () => step(undo, redo, false), redo: () => step(redo, undo, true),
     /** + and - zoom, 0 (or Ctrl+0) fits the day */
     key(e) {
       if (e.key === "+" || e.code === "NumpadAdd" || e.code === "Equal") { zoom(1.5); return true; }
@@ -197,6 +211,154 @@
       if (e.code === "Digit0" || e.code === "Numpad0") { fit(); return true; }
       return false;
     } };
+
+  // ---- dragging a bar
+
+  /** @type {{who: {kind: "routine" | "moment", id: string, i: number}, el: HTMLElement, x0: number, from: number, to: number, nf: number, nt: number, mode: string, left: number} | null} */
+  let drag = null;
+  /** a drag just ended: the click that follows it doesn't pick */
+  let dragged = false;
+  box.addEventListener("pointermove", (/** @type {PointerEvent} */ e) => {
+    if (!drag) return;
+    const q = Math.round((e.clientX - drag.x0) / tw) * 15, d = drag;
+    if (d.mode === "move") { d.nf = d.from + q; d.nt = d.to + q; }
+    else if (d.mode === "from") { d.nf = Math.min(d.from + q, d.to - 15); d.nt = d.to; }
+    else { d.nf = d.from; d.nt = Math.max(d.to + q, d.from + 15); }
+    d.el.style.left = `${d.left + ((d.nf - d.from) / 15) * tw}px`;
+    d.el.style.width = `${Math.max(3, ((d.nt - d.nf) / 15) * tw - 2)}px`;
+    E.setCursor(`${T().format(d.nf)} to ${T().format(d.nt)}`);
+  });
+  box.addEventListener("pointerup", () => {
+    const d = drag;
+    drag = null;
+    if (!d) return;
+    E.setCursor(null);
+    if (d.nf === d.from && d.nt === d.to) return;
+    dragged = true;
+    sel = d.who.kind === "routine" ? { kind: "routine", actor: d.who.id, i: d.who.i } : { kind: "moment", id: d.who.id };
+    /** @type {Record<string, any>} */
+    const v = {};
+    if (d.nf !== d.from) v.from = T().format(d.nf);
+    if (d.nt !== d.to) v.to = T().format(d.nt);
+    change(d.who.kind, d.who.id, d.who.i, v).then((ok) => { if (!ok) draw(); });
+  });
+
+  // ---- changing the game's file
+
+  /** @type {Map<string, {src: string, saved: string}>} the files touched: as they are now, as saved */
+  const files = new Map();
+  /** @typedef {{path: string, before: string, after: string, live: {o: any, key: string, before: any, after: any}[]}} TimeEdit */
+  /** @type {TimeEdit[]} */ let undo = [];
+  /** @type {TimeEdit[]} */ let redo = [];
+  const RE = { routine: /Cutaway\.(?:time\.)?routine\s*\(/, moment: /Cutaway\.(?:time\.)?moment\s*\(/ };
+
+  /** A script's address as a path in the game's folder ("game/prolog.js"), or null (another place). @param {string} url */
+  function relPath(url) {
+    try {
+      const u = new URL(url, location.href), base = new URL(".", location.href);
+      if (u.origin === base.origin && u.pathname.startsWith(base.pathname)) return decodeURIComponent(u.pathname.slice(base.pathname.length));
+    } catch { /* not an address */ }
+    return null;
+  }
+  /** Where a routine or a moment is written: its file in the game's folder and its line. @param {"routine" | "moment"} kind @param {string} id */
+  function where(kind, id) {
+    const s = T().source(kind, id), path = s ? relPath(s.file) : null;
+    return path && s ? { path, line: s.line } : null;
+  }
+  /** Everything one text defines (routines made in a loop share it). @param {"routine" | "moment"} kind @param {string} id */
+  function sharing(kind, id) {
+    const w = where(kind, id);
+    if (!w) return [id];
+    return [...(kind === "routine" ? T().routines.keys() : T().moments.keys())].filter((o) => { const v = where(kind, o); return v && v.path === w.path && v.line === w.line; });
+  }
+  /** A value as the data writes it. @param {any} v @returns {string} */
+  const lit = (v) => (Array.isArray(v) ? `[${v.map(lit).join(", ")}]` : typeof v === "string" ? JSON.stringify(v) : String(v));
+  /** The object of a routine's entry i or of a moment in its file's text, or null (computed there). @param {string} src @param {"routine" | "moment"} kind @param {number} line @param {number} i */
+  function locate(src, kind, line, i) {
+    const L = E.modules.literal, c = L?.call(src, line, RE[kind]);
+    if (!c || c.args.length < 2) return null;
+    const a = c.args[1];
+    if (kind === "moment") return a.t === "obj" ? a : null;
+    return a.t === "arr" && a.items?.[i]?.t === "obj" ? a.items[i] : null;
+  }
+
+  /**
+   * Change keys of a routine's entry or a moment: in its file (only those values) and in the game now (every
+   * routine the same text defines). A value undefined takes the key out. False when it can't (no studio, the
+   * file computes it).
+   * @param {"routine" | "moment"} kind @param {string} id @param {number} i @param {Record<string, any>} values
+   */
+  async function change(kind, id, i, values) {
+    const what = kind === "routine" ? `${id}'s entry ${i}` : `the moment ${id}`;
+    if (!E.studio.available) { E.setStatus("time: changing a time needs the studio (it writes the game's file)"); return false; }
+    const w = where(kind, id);
+    if (!w) { E.setStatus(`time: where ${what} is written isn't known: change it in the game's file`); return false; }
+    const L = E.modules.literal;
+    if (!files.has(w.path)) { try { const t = await E.studio.read(w.path); files.set(w.path, { src: t, saved: t }); } catch (e) { E.setStatus(`time: ${w.path}: ${/** @type {any} */ (e).message}`); return false; } }
+    const f = /** @type {{src: string, saved: string}} */ (files.get(w.path));
+    let src = f.src;
+    for (const [key, v] of Object.entries(values)) {
+      const o = locate(src, kind, w.line, i), n = o ? L.field(o, key) : null;
+      if (!o || n?.t === "code") { E.setStatus(`time: ${what} has its ${o ? key : "values"} computed in the code (${w.path}:${w.line}): change it there`); return false; }
+      src = v === undefined ? (n ? L.removeKey(src, o, key) : src) : L.setKey(src, o, key, lit(v));
+    }
+    /** @type {TimeEdit["live"]} */
+    const live = [];
+    for (const other of sharing(kind, id)) {
+      const obj = kind === "routine" ? T().routines.get(other)?.[i] : T().moments.get(other);
+      if (obj) for (const [key, v] of Object.entries(values)) live.push({ o: obj, key, before: /** @type {any} */ (obj)[key], after: v });
+    }
+    const ed = { path: w.path, before: f.src, after: src, live };
+    undo.push(ed); if (undo.length > 200) undo.shift();
+    redo = [];
+    put(ed, true);
+    E.setStatus(`time: ${what} ${Object.entries(values).map(([k, v]) => `${k} ${v === undefined ? "(every day)" : lit(v)}`).join(", ")} in ${w.path}:${w.line} (not saved)`);
+    return true;
+  }
+  /** An edit done (true) or undone. @param {TimeEdit} ed @param {boolean} on */
+  function put(ed, on) {
+    const f = files.get(ed.path);
+    if (f) f.src = on ? ed.after : ed.before;
+    for (const c of ed.live) { const v = on ? c.after : c.before; if (v === undefined) delete c.o[c.key]; else c.o[c.key] = v; }
+    T().apply();
+    E.refresh(); draw();
+  }
+  /** @param {TimeEdit[]} from @param {TimeEdit[]} to @param {boolean} on */
+  function step(from, to, on) { const ed = from.pop(); if (!ed) return; to.push(ed); put(ed, on); }
+  /** The files changed, written. */
+  async function save() {
+    const out = [];
+    for (const [path, f] of files) if (f.src !== f.saved) { out.push(await E.saveFile(path, f.src)); f.saved = f.src; }
+    E.setStatus(out.length ? `time: ${out.join(", ")}` : "time: nothing to save");
+    E.refresh();
+  }
+  const unsaved = () => [...files.values()].filter((f) => f.src !== f.saved).length;
+
+  /** The fields of a picked entry or moment: from, to, the day; where it is written. @param {"routine" | "moment"} kind @param {string} id @param {number} i @param {any} o */
+  function fields(kind, id, i, o) {
+    const t = T();
+    /** @param {string} key @param {string} v @param {string} title */
+    const time = (key, v, title) => el("input", { value: v, title, style: { width: "52px" }, onchange: (/** @type {any} */ e) => {
+      const x = String(e.target.value).trim(), m = t.parse(x);
+      if (!/^\d{1,2}:\d{2}$/.test(x) || !Number.isFinite(m)) { E.setStatus("time: a clock time, 22:15"); E.refresh(); return; }
+      const from = key === "from" ? m : t.parse(o.from), to = key === "to" ? m : t.parse(o.to);
+      if (!(from < to)) { E.setStatus("time: it must end after it begins (on the game day: the morning comes after the evening)"); E.refresh(); return; }
+      if (m % 15) E.setStatus(`time: ${x} is off the quarter hours (the solver counts every stop of the clock)`);
+      change(kind, id, i, { [key]: t.format(m) });
+    } });
+    const dayText = o.day === undefined ? "" : Array.isArray(o.day) ? o.day.join(", ") : String(o.day);
+    const day = el("input", { value: dayText, placeholder: "every day", title: "a day (2), several (2, 3), or empty: every day", style: { width: "70px" }, onchange: (/** @type {any} */ e) => {
+      const x = String(e.target.value).trim(), list = x ? x.split(/[\s,]+/).map(Number) : [];
+      if (list.some((n) => !Number.isInteger(n) || n < 1)) { E.setStatus("time: days are whole numbers from 1 (2, or 2, 3; empty: every day)"); E.refresh(); return; }
+      change(kind, id, i, { day: list.length === 0 ? undefined : list.length === 1 ? list[0] : list });
+    } });
+    const w = where(kind, id), shared = sharing(kind, id);
+    return el("div", {}, [
+      el("div", { style: { margin: "4px 0" } }, ["from ", time("from", o.from, "its start, a clock time (Enter)"), " to ", time("to", o.to, "its end, not included"), " day ", day]),
+      ...(shared.length > 1 ? [el("div", { style: { color: "#ffd27a" } }, [`one text for ${shared.join(", ")}: a change here changes them all`])] : []),
+      w ? el("div", { style: { cursor: "pointer", color: "#7ad8ff" }, title: "open the file at this line", onclick: () => { E.modules.art?.openSource(w.path, w.line); } }, [`${w.path}:${w.line}`])
+        : el("div", { className: "cw-dim" }, ["where it is written isn't known"])]);
+  }
 
   // ---- the inspector
 
@@ -208,12 +370,13 @@
       button("Fit", fit, "the whole day in view (0, or a double click on the empty table)"), el("span", { className: "cw-dim" }, [` ${Math.round(tw)} px a quarter hour`])]));
     panel.append(el("div", { style: { margin: "4px 0" } }, ["day ", ...ds.map((n) => button(n === day ? `● ${n}` : String(n), () => { shownDay = n; sel = null; E.refresh(); draw(); }, `day ${n}${n === t.now.day ? " (today)" : ""}`))]));
     panel.append(el("div", { className: "cw-dim", style: { margin: "2px 0 6px" } }, [`${d.actors.length} actors · ${d.moments.length} moments · the clock stops ${d.stops.length} times: ${d.stops.map((s) => t.format(s)).join(" ")}`]));
-    panel.append(el("div", { className: "cw-dim" }, ["A bar is where an actor is (its room's name and colour) or a moment's window; striped: only under a condition. The yellow lines are the stops of the clock (where waiting stops: every start and end, the marks), the pink one now. A click picks a bar, a double click opens its room. The wheel zooms round the pointer, Shift+wheel scrolls across."]));
+    panel.append(el("div", { className: "cw-dim" }, ["A bar is where an actor is (its room's name and colour) or a moment's window; striped: only under a condition. The yellow lines are the stops of the clock (where waiting stops: every start and end, the marks), the pink one now. A click picks a bar, a double click opens its room; drag a bar (or one of its ends) to change its times. The wheel zooms round the pointer, Shift+wheel scrolls across."]));
+    if (unsaved()) panel.append(el("div", { style: { margin: "4px 0" } }, [button(`Save (${unsaved()} file${unsaved() > 1 ? "s" : ""})`, () => { save(); }, "write the changed times into the game's files (Ctrl+S)")]));
     if (sel?.kind === "routine") {
       const s = sel, e = t.routines.get(s.actor)?.[s.i];
       if (e) panel.append(el("div", { className: "cw-sec" }, [
         el("div", { style: { fontWeight: "bold" } }, [`${s.actor}, entry ${s.i}`]),
-        el("div", {}, [`${e.from} to ${e.to}${e.day === undefined ? ", every day" : `, day ${Array.isArray(e.day) ? e.day.join(", ") : e.day}`}`]),
+        fields("routine", s.actor, s.i, e),
         el("div", {}, [`in ${e.room ?? "no room"}${e.at ? ` at ${e.at.join(", ")}` : ""}${e.face ? `, facing ${e.face}` : ""}${e.path ? `, walking a path of ${e.path.length}` : ""}`]),
         ...(condText(e.if) ? [el("div", { style: { color: "#ffd27a" } }, [`if ${condText(e.if)}`])] : []),
         el("div", { style: { marginTop: "4px" } }, [
@@ -222,8 +385,8 @@
     } else if (sel?.kind === "moment") {
       const s = sel, m = t.moments.get(s.id), done = Cutaway.state.peek(`~moment.${s.id}`);
       if (m) panel.append(el("div", { className: "cw-sec" }, [
-        el("div", { style: { fontWeight: "bold" } }, [`moment ${s.id}`]),
-        el("div", {}, [`${m.from} to ${m.to}${m.day === undefined ? ", every day" : `, day ${Array.isArray(m.day) ? m.day.join(", ") : m.day}`}, in ${m.room}`]),
+        el("div", { style: { fontWeight: "bold" } }, [`moment ${s.id}, in ${m.room}`]),
+        fields("moment", s.id, 0, m),
         ...(condText(m.if) ? [el("div", { style: { color: "#ffd27a" } }, [`if ${condText(m.if)}`])] : []),
         el("div", { className: "cw-dim" }, [`${m.play ? "plays when watched" : "nothing to play"}${m.unseen ? "; leaves something behind when nobody watched" : ""}${done ? `; happened (${done})` : "; not yet"}`]),
         ...(Cutaway.room.ids().includes(m.room) ? [el("div", { style: { marginTop: "4px" } }, [button("Open room", () => { E.openRoom(m.room); E.show("room"); }, "its room in the Room tab")])] : [])]));
@@ -231,7 +394,8 @@
     draw();
   }
 
-  E.tab({ id: "time", label: "Time", build, view: () => view, selectNone: () => view.selectNone?.() });
-  E.modules.time = { table, days, zoom, fit, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
+  E.tab({ id: "time", label: "Time", build, view: () => view, selectNone: () => view.selectNone?.(), save: () => save(),
+    undo: () => step(undo, redo, false), redo: () => step(redo, undo, true), get unsaved() { return unsaved(); } });
+  E.modules.time = { table, days, zoom, fit, change, save, where, sharing, get unsaved() { return unsaved(); }, files, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
     select(/** @type {any} */ s) { sel = s; E.refresh(); draw(); } };
 })();

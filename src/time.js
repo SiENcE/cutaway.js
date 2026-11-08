@@ -58,6 +58,20 @@ Cutaway.time = (function () {
   let waitPoint = null;
   /** @type {string[]} extra times `next` stops at */
   const marks = [];
+  /** @type {Map<string, {file: string, line: number, col: number}>} where each routine ("routine:<actor>") and moment ("moment:<id>") was defined */
+  const sources = new Map();
+  /**
+   * Where the call that defines something was made: the first place on the stack outside this file (the
+   * game's data file, its line and column), or null when the stack doesn't say. For the editor's Time tab.
+   */
+  function caller() {
+    for (const l of (new Error().stack ?? "").split("\n").slice(1)) {
+      const m = /((?:https?|file):\/\/[^\s()]+|[A-Za-z]:[\\/][^\s():]+|\/[^\s():]+):(\d+):(\d+)\)?\s*$/.exec(l);
+      if (!m || /[\\/]time\.js$/.test(m[1])) continue;
+      return { file: m[1], line: Number(m[2]), col: Number(m[3]) };
+    }
+    return null;
+  }
   /** @type {((to: number) => any) | null} may the clock go on to these minutes? (a true value: no) */
   let hold = null;
   /** which entry each actor was last put in (`day/index`), so a slot doesn't put them back while it lasts */
@@ -210,9 +224,14 @@ Cutaway.time = (function () {
     /** Where the game's button for waiting is (null: it has none). */
     waitPoint() { return waitPoint ? waitPoint() : null; },
     /** @param {string} actor @param {RoutineEntry[]} entries */
-    routine(actor, entries) { routines.set(actor, entries); placed.delete(actor); },
+    routine(actor, entries) { routines.set(actor, entries); placed.delete(actor); const at = caller(); if (at) sources.set(`routine:${actor}`, at); },
     /** @param {string} id @param {MomentDef} def */
-    moment(id, def) { moments.set(id, def); },
+    moment(id, def) { moments.set(id, def); const at = caller(); if (at) sources.set(`moment:${id}`, at); },
+    /**
+     * Where a routine or a moment was defined: the script's address (as the stack names it), its line and column.
+     * @param {"routine" | "moment"} kind @param {string} id @returns {{file: string, line: number, col: number} | null}
+     */
+    source(kind, id) { return sources.get(`${kind}:${id}`) ?? null; },
     /** Stop the clock while `fn(to)` gives a true value; null: never. @param {((to: number) => any) | null} fn */
     hold(fn) { hold = fn; },
     /** What holds the clock at the next change (the value `hold` gave), or null. */
