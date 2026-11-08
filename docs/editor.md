@@ -462,6 +462,53 @@ then described here, found by the search, while the engine's guides stay free of
 its panel there, and once at the first change (a room whose shapes a game bakes from a map says where to
 change them, as the next bake would undo a change made here).
 
+**An example: the demo's Grid tab.** The demo brings a tab of its own, `demo/editor/grid.js` (the engine's
+`studio.json` lists it: `npm run studio` and Tools > The game's tabs > Grid). It lays a grid over the room
+picture, names the cell under the pointer in the status bar, measures the room's hotspots in cells, and puts
+its page into this guide. In a game, `studio.json` names the script (paths from the game's page; the studio
+only loads what this list names):
+
+```json
+{ "write": ["game"], "editor": ["game/editor/grid.js"] }
+```
+
+and the script adds its tab (the whole file is in the demo; its skeleton):
+
+```js
+"use strict";
+(function () {
+  const E = Cutaway.editor, el = E.el, button = E.button;
+  let size = 16, at = null;
+  E.tab({
+    id: "grid", label: "Grid",
+    build(panel) {                                   // the inspector, built again on E.refresh()
+      panel.append(el("div", {}, ["cell ", ...[8, 16, 32].map((n) => button(String(n), () => { size = n; E.refresh(); }))]));
+    },
+    render(ctx) {                                    // over the picture, in room pixels
+      const [w, h] = Cutaway.scene.room?.size ?? [Cutaway.display.width, Cutaway.display.height];
+      ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+      for (let x = 0; x <= w; x += size) ctx.fillRect(x, 0, 1, h);
+      for (let y = 0; y <= h; y += size) ctx.fillRect(0, y, w, 1);
+    },
+    hover(p) {                                       // the pointer over the picture (null: it left)
+      at = p && { x: Math.floor(p.x / size), y: Math.floor(p.y / size) };
+      E.setCursor(at ? `cell ${at.x}, ${at.y}` : null);
+    },
+  });
+  // its page in the editor guide; F1 on the tab opens it
+  E.modules.help?.addBook({ id: "grid", title: "Grid", file: "game/editor/grid.js", md: "# Grid
+
+What it does." },
+    { grid: "intro" }, { into: "editor" });
+})();
+```
+
+A tab that writes the game's files uses `E.studio.read(path)` and `E.saveFile(path, text)` (only in the
+folders `write` lists), `E.modules.literal` to change one value where it is written (comments and layout
+kept, as the Time and Sequences tabs do), and `save`, `undo`, `redo` and `unsaved` in its `E.tab` so that
+Ctrl+S, Ctrl+Z and the unsaved marks reach it. A bigger example is Glass Sister's Iso-Editor (a room's map
+edited over its picture and baked by a task), which isn't in this repo.
+
 ## Files the editor writes
 
 | layer | file (the studio's `layers`) | what |

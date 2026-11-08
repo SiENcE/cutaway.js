@@ -3,3 +3,4 @@ out/
 *.log
 .claude/skills/
 CLAUDE.md
+docs/proposal-timeline.md

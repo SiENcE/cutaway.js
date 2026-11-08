@@ -70,6 +70,7 @@
     "src/editor-literal.js",
     "src/editor-guide.js",
     "src/timeline.js",
-    "src/editor-sequences.js"
+    "src/editor-sequences.js",
+    "demo/editor/grid.js"
   ]
 }
