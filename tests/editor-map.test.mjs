@@ -22,6 +22,7 @@ export default async function (t) {
       E.modules.mytab = { got };
       E.roomNote((id) => (id === "yard" ? "The yard's shapes are made elsewhere." : null));
       E.modules.help.addBook({ id: "mine", title: "My guide", file: "mine.md", md: "# Mine\\n\\nWhat it is.\\n\\n## How\\n\\nHow it goes." }, { mytab: "how" });
+      E.modules.help.addBook({ id: "minefmt", title: "My format", file: "fmt.md", md: "# My format\\n\\nWhat it holds.\\n\\n## Keys\\n\\nThe keys of it." }, {}, { into: "reference" });
     })();`);
   writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { edits: "layers/edits.js" }, editor: ["mytab.js"], tasks: { where: ["node", "-e", "console.log('in ' + process.argv[1])", "{room}"] } }));
   const s = await studio(page, { quiet: true }).start(0);
@@ -46,7 +47,9 @@ export default async function (t) {
     t.ok("editor: Tools lists Connections, Map and the game's tabs; Help the game's guide", menus.Tools.includes("Connections") && menus.Tools.includes("Map") && menus.Tools.includes("The game's tabs") && menus.Tools.includes("Mine") && menus.Help.includes("My guide"), JSON.stringify(menus.Tools) + JSON.stringify(menus.Help));
     await chrome.ev(`${E}.modules.help.open("mytab"); 1`);
     await sleep(200);
-    t.ok("editor: F1 on a game's tab opens its guide at its section", JSON.stringify(await chrome.ev(`${E}.modules.help.at`)) === '["mine","how"]' && /How it goes/.test(await chrome.ev("document.body.textContent")));
+    const merged = await chrome.ev(`(() => { const b = ${E}.modules.help.books(); const ref = b.find((x) => x.id === "reference"); return { books: b.map((x) => x.id), secs: ref.secs.slice(-2).map((s) => s.title + " @" + s.file) }; })()`);
+    t.ok("editor: a game's guide can go into the reference, its sections at the end, titled and marked with its file", !merged.books.includes("minefmt") && merged.secs.join() === "My format @fmt.md,My format: Keys @fmt.md", JSON.stringify(merged));
+    t.ok("editor: F1 on a game's tab opens its guide at its section",JSON.stringify(await chrome.ev(`${E}.modules.help.at`)) === '["mine","how"]' && /How it goes/.test(await chrome.ev("document.body.textContent")));
     // a task with a {room} part run without it asks, the open room offered
     const asked = await chrome.ev(`(async () => { let offered = ""; window.prompt = (q, d) => { offered = d; return d; }; const r = await ${E}.runTask("where"); return { offered, out: r.output.trim() }; })()`);
     t.ok("editor: a task's {room} left open is asked for, the room open offered", asked.offered === "hall" && asked.out === "in hall", JSON.stringify(asked));

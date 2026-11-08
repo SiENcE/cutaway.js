@@ -8,7 +8,7 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  /** @typedef {{id: string, title: string, md: string}} Section */
+  /** @typedef {{id: string, title: string, md: string, file?: string}} Section  (file: where a game's section comes from) */
   /** @typedef {{id: string, title: string, file: string, md: string, secs?: Section[]}} Book */
   let bookId = "editor", at = "intro", query = "";
   /** @type {Record<string, string>} the tabs and their sections in the editor's guide */
@@ -180,7 +180,7 @@
         secs.map((s) => el("option", { value: s.id, selected: s === sec, textContent: s.title + (q ? ` (${hits(s)})` : "") })));
     }
     const page = el("div", { className: "doc" });
-    let html = `<h1>${inline(sec.id === "intro" ? sec.title : sec.title)}</h1>` + markdown(sec.md) + `<p style="color:#7a7090">${esc(book.file)}</p>`;
+    let html = `<h1>${inline(sec.id === "intro" ? sec.title : sec.title)}</h1>` + markdown(sec.md) + `<p style="color:#7a7090">${esc(sec.file ?? book.file)}</p>`;
     if (q) {                                                   // the words marked in the text, never inside tags
       const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
       html = html.replace(/>([^<]+)</g, (_m, t) => ">" + t.replace(re, (/** @type {string} */ x) => "<mark>" + x + "</mark>") + "<");
@@ -207,13 +207,32 @@
 
   E.tab({ id: "help", label: "Help", build });
   /**
-   * A game's own guide beside the engine's (its tabs': a game's editor module adds it), Markdown cut at its
-   * ## headings like the others; `tabs` maps its tabs to the section F1 opens there ("intro": the top).
-   * Added again with the same id, it replaces the one before.
+   * A game's own guide (its tabs': a game's editor module adds it), Markdown cut at its ## headings like the
+   * others; `tabs` maps its tabs to the section F1 opens there ("intro": the top). Beside the engine's guides,
+   * or with `into` ("editor" or "reference") inside one of them: its sections join that guide's (after its
+   * section "A game's own tabs", or at its end), each titled with the guide's own title and marked with its
+   * file, so the guide and its search tell how to use the game's tabs too. Added again, it replaces itself.
    * @param {{id: string, title: string, file: string, md: string}} book @param {Record<string, string>} [tabs]
+   * @param {{into?: "editor" | "reference"}} [o]
    */
-  function addBook(book, tabs = {}) {
-    const list = /** @type {Book[]} */ (/** @type {any} */ (Cutaway).editorHelp ??= []), i = list.findIndex((b) => b.id === book.id);
+  function addBook(book, tabs = {}, o = {}) {
+    const list = /** @type {Book[]} */ (/** @type {any} */ (Cutaway).editorHelp ??= []);
+    if (o.into) {
+      books();                                                 // the engine's guides cut into their sections first
+      const target = list.find((b) => b.id === o.into);
+      if (!target?.secs) return;
+      const prefix = book.id + "--", parts = book.md.split(/\n(?=## )/), intro = /** @type {string} */ (parts.shift());
+      const head = (/^#\s+(.*)$/m.exec(intro) ?? [, book.title])[1];
+      /** @type {Section[]} */
+      const secs = [{ id: prefix + "intro", title: head, md: intro.replace(/^#\s+.*$/m, "").trim(), file: book.file }];
+      for (const p of parts) { const t = (/^##\s+(.*)$/m.exec(p) ?? [, "?"])[1]; secs.push({ id: prefix + slug(t), title: `${head}: ${t}`, md: p.replace(/^##\s+.*$/m, "").trim(), file: book.file }); }
+      const kept = target.secs.filter((s) => !s.id.startsWith(prefix)), after = kept.findIndex((s) => s.id === "a-game-s-own-tabs");
+      target.secs = after >= 0 ? [...kept.slice(0, after + 1), ...secs, ...kept.slice(after + 1)] : [...kept, ...secs];
+      for (const [tab, sec] of Object.entries(tabs)) GAME_TAB[tab] = [o.into, prefix + sec];
+      E.refresh();
+      return;
+    }
+    const i = list.findIndex((b) => b.id === book.id);
     if (i >= 0) list[i] = { ...book }; else list.push({ ...book });
     for (const [tab, sec] of Object.entries(tabs)) GAME_TAB[tab] = [book.id, sec];
     E.refresh();
