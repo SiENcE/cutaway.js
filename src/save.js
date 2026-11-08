@@ -15,6 +15,8 @@
  * @property {Record<string, {room: string | null, x: number, y: number, facing: Facing}>} actors
  * @property {{members: string[], locked: string[]}} party
  * @property {StateData} state
+ * @property {string} [playing]       a save written while something played (a moment's script): the game as it was just
+ *   before it, which plays again once loaded (a script can't be saved half-way)
  */
 
 Cutaway.save = (function () {
@@ -23,12 +25,15 @@ Cutaway.save = (function () {
   /** @type {(data: SaveData, from: number) => SaveData} */
   let migrate = (d) => d;
   let loading = false, filming = false;
+  /** @type {SaveData | null} what a save writes while something plays that can't be saved half-way (game time's moments) */
+  let held = null;
 
   /** @param {string | number} slot */
   function key(slot) { return `cutaway.${gameId}.save.${slot}`; }
 
   /** @returns {SaveData | null} */
   function capture() {
+    if (held) return JSON.parse(JSON.stringify(held));
     const room = Cutaway.scene.room?.id;
     if (!room || Cutaway.scene.backdrop) return null;
     /** @type {SaveData["actors"]} */
@@ -79,7 +84,7 @@ Cutaway.save = (function () {
       for (const [id, p] of Object.entries(d.actors)) Cutaway.actors.get(id)?.place(p.room, p.x, p.y, p.facing);
       Cutaway.scene.setActive(d.active);
       await Cutaway.scene.load(d.room, { enter: false });
-      Cutaway.events.emit("loaded", {});
+      Cutaway.events.emit("loaded", { playing: d.playing ?? null });
     } finally {
       loading = false;
     }
@@ -87,6 +92,15 @@ Cutaway.save = (function () {
 
   return {
     write, read, capture, apply,
+    /**
+     * While a script plays that a save can't hold half-way (a moment's), a save writes this instead: the game as it
+     * was just before it, with `playing` naming it, so that it plays again once loaded (Cutaway.time does it for its
+     * moments). null: saves are of the game as it is again.
+     * @param {SaveData | null} d
+     */
+    hold(d) { held = d; },
+    /** Is a save held (something plays that can't be saved half-way)? */
+    get held() { return !!held; },
     /** @param {string | number} slot */
     async load(slot) { const d = read(slot); if (!d) return false; await apply(d); return true; },
     /** @param {string | number} slot */

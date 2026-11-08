@@ -77,6 +77,25 @@ export default async function (t) {
   await g2.C.script.run([{ time: "20:00" }]);
   t.ok("the window passed: it happened unseen", g2.C.state.test("moment:visit") && !g2.C.state.test("seen:visit") && g2.C.state.flag("missed_visit") === true);
 
+  // ---- a save written while a moment plays: the game just before it, and the moment plays again once loaded
+  const g3 = loadGame("demo/index.html");
+  withCamera(g3.C);
+  /** @type {any} */
+  let mid = null;
+  g3.C.script.action("grab", () => { mid = g3.C.save.capture(); });
+  g3.C.time.moments.get("visit").play = [{ set: "saw_visit" }, { inc: "visits" }, { grab: true }, "There he is.", { set: "visit_over" }];
+  await boot(g3, { instant: true });
+  const C3 = g3.C;
+  await C3.script.run([{ goto: "cam" }, { time: "19:00" }]);
+  t.ok("a save in the middle of a moment holds the game just before it", mid && mid.playing === "moment.visit" && mid.state.flags["~moment.visit"] === undefined
+    && mid.state.flags.saw_visit === undefined && C3.state.flag("visit_over") === true && !C3.save.held, JSON.stringify(mid?.state.flags));
+  await C3.save.apply(mid);
+  await new Promise((r) => setTimeout(r, 0));
+  t.ok("loaded, the moment plays again from its start, once (its counter counts one)", C3.state.test("seen:visit") && C3.state.flag("visit_over") === true && C3.state.flag("visits") === 1,
+    JSON.stringify(C3.state.snapshot().flags));
+  const after = C3.save.capture();
+  t.ok("and a save after it is of the game as it is", !after.playing && after.state.flags["~moment.visit"] === "seen");
+
   // ---- a save keeps the time
   const snap = C.save.capture();
   await run([{ time: "+60" }]);

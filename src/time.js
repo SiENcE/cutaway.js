@@ -130,6 +130,24 @@ Cutaway.time = (function () {
     return Cutaway.script.busy ? Cutaway.script.exec(s, { path }) : Cutaway.script.run(s, { path });
   }
 
+  /**
+   * Run a moment's script. A save written while it plays (the pause menu, an autosave at a goto in it) can't hold a
+   * script half-way: it keeps the game as it was just before the moment, which plays again once loaded (its flags
+   * and counters aren't done twice, and nothing waits for steps that never came).
+   * @param {string} id @param {"seen" | "unseen"} how @param {Script} s
+   */
+  async function happen(id, how, s) {
+    const pre = Cutaway.save?.held ? null : Cutaway.save?.capture() ?? null;
+    if (pre) Cutaway.save.hold({ ...pre, playing: `moment.${id}` });
+    try {
+      Cutaway.state.set(`~moment.${id}`, how);
+      Cutaway.events.emit("moment", { id, seen: how === "seen" });
+      if (s) await perform(s, `moment.${id}.${how === "seen" ? "play" : "unseen"}`);
+    } finally {
+      if (pre) Cutaway.save.hold(null);
+    }
+  }
+
   /** Moments that are due: watched ones play, ones whose window passed happen unseen. */
   async function check() {
     const here = Cutaway.scene.backdrop ? null : Cutaway.scene.room?.id ?? null;
@@ -138,15 +156,8 @@ Cutaway.time = (function () {
       const d = day(), t = minutes();
       const past = typeof m.day === "number" ? d > m.day || (d === m.day && t >= parse(m.to)) : onDay(m.day, d) && t >= parse(m.to);
       if (!Cutaway.state.test(m.if) && !past) continue;
-      if (past) {
-        Cutaway.state.set(`~moment.${id}`, "unseen");
-        Cutaway.events.emit("moment", { id, seen: false });
-        if (m.unseen) await perform(m.unseen, `moment.${id}.unseen`);
-      } else if (onDay(m.day, d) && t >= parse(m.from) && here === m.room) {
-        Cutaway.state.set(`~moment.${id}`, "seen");
-        Cutaway.events.emit("moment", { id, seen: true });
-        if (m.play) await perform(m.play, `moment.${id}.play`);
-      }
+      if (past) await happen(id, "unseen", m.unseen);
+      else if (onDay(m.day, d) && t >= parse(m.from) && here === m.room) await happen(id, "seen", m.play);
     }
   }
 
@@ -210,6 +221,8 @@ Cutaway.time = (function () {
     }
   }
   Cutaway.clock.onUpdate(update);
+  // a save written while a moment played is of the game just before it: loaded, the moment plays again
+  Cutaway.events.on("loaded", (/** @type {{playing?: string | null}} */ e) => { if (e?.playing && moments.size) check(); });
 
   return {
     /**
