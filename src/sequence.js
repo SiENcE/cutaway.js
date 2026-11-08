@@ -46,7 +46,8 @@ Cutaway.sequence = (function () {
    * The sequence playing: its steps stop once `cancel.stopped`; `skipping` is "shot" (to the next mark)
    * or "end" (all of it) while it hurries.
    * `until`: the shot mark a skip hurries to (none: the next one).
-   * @typedef {{id: string, cancel: {stopped: boolean}, skipping: "" | "shot" | "end", until: string, done: boolean, hurry: Promise<void> | null}} Playing
+   * `aborted`: stopped by the editor's film (no `after`, no fade back in: the film puts the game back itself).
+   * @typedef {{id: string, cancel: {stopped: boolean}, skipping: "" | "shot" | "end", until: string, done: boolean, hurry: Promise<void> | null, aborted: boolean}} Playing
    * @type {Playing | null}
    */
   let cur = null;
@@ -56,8 +57,25 @@ Cutaway.sequence = (function () {
   let gateDef = null;
   let tweensWere = false, lastSkip = -1e9;
 
+  /** @type {Map<string, {file: string, line: number, col: number}>} where each sequence is written (the editor's Film tab writes there) */
+  const sources = new Map();
+  /** Where the game's code called this (a script's address, line, column), or null (the edits layer made it). */
+  function caller() {
+    for (const l of (new Error().stack ?? "").split("\n").slice(1)) {
+      const m = /((?:https?|file):\/\/[^\s()]+|[A-Za-z]:[\\/][^\s():]+|\/[^\s():]+):(\d+):(\d+)\)?\s*$/.exec(l);
+      if (!m || /[\\/]sequence\.js$/.test(m[1])) continue;
+      return /[\\/]layers\.js$/.test(m[1]) ? null : { file: m[1], line: Number(m[2]), col: Number(m[3]) };
+    }
+    return null;
+  }
+
   /** @param {string} id @param {SequenceDef} def */
-  function sequence(id, def) { defs.set(id, def); return id; }
+  function sequence(id, def) {
+    defs.set(id, def);
+    const at = caller();
+    if (at) sources.set(id, at); else sources.delete(id);
+    return id;
+  }
 
   /** Lines, sounds and waits pass at once while a sequence skips ahead; tweens arrive at once. @param {boolean} on */
   function hurrying(on) {
@@ -91,6 +109,9 @@ Cutaway.sequence = (function () {
         if (!c.skipping || c.done) break;
         if (Cutaway.menu.card) Cutaway.menu.closeCard();
         if (Cutaway.ui.line) Cutaway.ui.skip();
+        // the editor's film stops one that waits for a choice: the last one (most often the way out)
+        const asked = c.aborted ? Cutaway.dialogs?.choices : null;
+        if (asked) Cutaway.dialogs.pick(asked.length - 1);
         Cutaway.clock.advance(250);
       }
       if (c.skipping === "shot") c.skipping = "";
@@ -117,6 +138,22 @@ Cutaway.sequence = (function () {
     const was = c.skipping;
     c.skipping = "end";
     if (!was) hurry(c);
+  }
+
+  /**
+   * Stop the sequence playing where it is, for the editor's film: its steps stop and what was waiting
+   * finishes at once, without `after` and without the screen going black (the film puts the game back as
+   * it was itself). Resolves when it has ended.
+   */
+  async function abort() {
+    const c = cur;
+    if (!c || c.done) return;
+    c.aborted = true;
+    c.cancel.stopped = true;
+    const was = c.skipping;
+    c.skipping = "end";
+    if (!was) hurry(c);
+    while (cur === c) await breathe();
   }
 
   /** A shot mark: a skip to the next shot ends here. @param {string} name */
@@ -158,7 +195,7 @@ Cutaway.sequence = (function () {
     if (cur) { await Cutaway.script.exec(def.steps, { path: `sequence.${id}`, cancel: cur.cancel }); return false; }
     const room = Cutaway.scene.room?.id ?? null, view = Cutaway.scene.view;
     /** @type {Playing} */
-    const c = { id, cancel: { stopped: false }, skipping: "", until: "", done: false, hurry: null };
+    const c = { id, cancel: { stopped: false }, skipping: "", until: "", done: false, hurry: null, aborted: false };
     cur = c;
     Cutaway.ui.hold(null);
     Cutaway.ui.setCutscene(true);
@@ -168,7 +205,7 @@ Cutaway.sequence = (function () {
     c.done = true;
     if (c.hurry) await c.hurry;
     const skipped = c.cancel.stopped;
-    if (skipped && def.after !== undefined) {
+    if (skipped && !c.aborted && def.after !== undefined) {
       hurrying(true);
       await Cutaway.script.run(def.after, { path: `sequence.${id}.after` });
     }
@@ -180,7 +217,7 @@ Cutaway.sequence = (function () {
     Cutaway.ui.setCutscene(false);
     Cutaway.events.emit("sequence.end", { id, skipped });
     if (o.restore !== false && room) await Cutaway.scene.load(room, { enter: false, backdrop: view ?? undefined });
-    if (skipped) Cutaway.fx.transition("in");
+    if (skipped && !c.aborted) Cutaway.fx.transition("in");
     return skipped;
   }
 
@@ -229,11 +266,14 @@ Cutaway.sequence = (function () {
   Cutaway.script.action("shot", (s) => shot(String(s.shot)));
 
   sequence.play = play;
+  sequence.abort = abort;
   sequence.skip = skip;
   sequence.next = next;
   /** @param {string} id */
   sequence.get = (id) => defs.get(id) ?? null;
   sequence.ids = () => [...defs.keys()];
+  /** Where a sequence is written in the game's code (its file's address, line, column), or null. @param {string} id */
+  sequence.source = (id) => sources.get(id) ?? null;
   /** The shot marks of a sequence, in order (to play it from one). @param {string} id */
   sequence.shots = (id) => shots(defs.get(id)?.steps ?? []);
   /** The gate the game asked for (Cutaway.start's `gate`), or null. */

@@ -224,6 +224,9 @@ it changes the state; a `{ dialog }` counts as more), a square when it is the la
 
 Add your own: `Cutaway.script.action("organ", async (step, ctx) => { ... })`. A third argument tells the
 validator which flags a step of it sets or reads: `{ sets: (s) => [`tag_${s.tag}`], tests: (s) => [...] }`.
+An action that may go on at once returns `Cutaway.script.goOn(step, done)`: the promise when the script
+waits for it, nothing with `wait: false`, and in both cases the editor's film knows how long the step still
+runs (a tween it starts with `Cutaway.tween.to` counts by itself).
 
 ### Camera, props and cinema
 
@@ -412,6 +415,8 @@ Cutaway.sequence("intro", {
   room it was in before (`Cutaway.sequence.play(id, { restore: false })` leaves it as the sequence left
   it). Played inside another sequence, its steps simply run as part of that one.
 - Dialogues in a sequence would wait for the player; leave them out.
+- `Cutaway.sequence.source(id)`: where the game's code defines it (the script's address, line, column; null
+  for one the edits layer made). The editor's Film tab writes changed steps there.
 - `intro: "id"` (start option) plays it before the title screen (or the first act) the first time the
   game starts on this machine; skipped or not, it is then remembered (`Cutaway.settings.seen(id)`, kept
   beside the settings, not reset with them). `introAlways: true` plays it on every start (an intro
@@ -429,6 +434,39 @@ Cutaway.sequence("intro", {
   then again from "Watch intro", with a click and Esc). `await Cutaway.debug.settle()` plays a sequence
   to its end. The validator checks sequences (each step in the room its last `goto` shows: the props
   `move` and `play` name must be there), `intro` and `gate`.
+
+## The film (the editor's Film tab)
+
+`src/film.js` (`Cutaway.film`, not in a game's load order: the editor loads it) plays a sequence as a film to
+look at: silently, on the game's clock, stepped by hand (one logic step, then the promise chains go on), so
+where it stands is a pure function of the time since its start.
+
+```js
+const tr = await Cutaway.film.trace("intro");   // { ms, steps: [{ path, step, kind, start, end, until, branch, depth }], shots, rooms, music, waits }
+await Cutaway.film.seek("intro", 7250);         // the picture 7.25 s in, held there
+Cutaway.film.play(); Cutaway.film.pause();      // on in real time with its sound, and held again
+await Cutaway.film.close();                     // the game as it was before
+const steps = Cutaway.film.edits.move(Cutaway.sequence.get("intro").steps, tr, "sequence.intro.9", 4000);
+```
+
+- Before each run the game is put back as it was (state, actors, party, the room; a backdrop stays a
+  backdrop) and the clock set back to the same start (`Cutaway.clock.rewind(t)`: waiting timers and tweens
+  keep what they have left), so a game's own drawers that read `Cutaway.clock.time` look the same at the same
+  moment. A script of the game under way runs to its end first.
+- A step's `start` and `end` are when it began and when the film went on; `until` is when what it started
+  had finished (a tween, a walk, a dissolve, a caption's hold with `wait: false`). `path` is the script
+  runner's (`sequence.intro.7`; in a branch `sequence.intro.7.0`, the `if`'s `branch` says which).
+- While it seeks, `Cutaway.audio.quiet` is on: sounds, stingers and voices don't sound; the music and the
+  rooms' loops follow what they are told. Lines that wait for a click go on when their time is up, a card
+  after 3 s; a dialogue's choices end the run (`waits: "choice"`), and so does `Cutaway.film.cap` (10 minutes).
+- What the engine tells it: `Cutaway.script.watch(fn)` (each step's start, end, branch, and what it still
+  runs), `Cutaway.tween.watch(fn)`, `Cutaway.script.goOn`, and `Cutaway.sequence.abort()` (stops the sequence
+  playing without its `after`). `Cutaway.clock.advance(ms, false)` steps without drawing.
+- `Cutaway.film.edits`: pure functions on a copy of a sequence's steps, guided by a trace: `length(steps, tr,
+  path, ms)`, `move(steps, tr, path, t)` (a step that goes on at once: the waits round it split and join, nothing
+  else moves), `ripple(steps, tr, path, d)` (it and all after it), `insert(steps, tr, t, step)`,
+  `remove(steps, tr, path)` (its time stays as a wait), `locate`, `lengthKey`.
+- The edits layer makes a sequence the game doesn't have (`Cutaway.edits({ sequences: { boat: { steps } } })`).
 
 ## Hints
 

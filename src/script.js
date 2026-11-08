@@ -5,6 +5,9 @@
 // While a script runs the player can't start another one (clicks skip the current line instead).
 // A script can be stopped between steps (`cancel` in its context: a skipped sequence). In fast mode (a
 // sequence skipping ahead) lines, sounds and waits are passed over at once.
+// The editor's film watches the steps (Cutaway.script.watch): when each starts and ends, which branch an
+// `if` or a `once` took, and what a step that goes on at once (wait: false) still runs (its promise,
+// Cutaway.script.goOn). Nobody watching costs one check per step.
 "use strict";
 
 /**
@@ -17,6 +20,11 @@
  * @property {{stopped: boolean}} [cancel]  once `stopped`, no further step runs (nested ones neither)
  * @property {() => boolean} [after]  does a line still follow this step (in this script or the one around it)?
  */
+/**
+ * What a watcher of the steps hears: a step starts or ends, a branch is taken (`branch`: "then", "else",
+ * "once"), or a step that went on at once still runs something (`runs`: its promise; `key`: a tween's).
+ * @typedef {{phase: "start" | "end" | "branch" | "runs", path: string, t: number, step?: Step, branch?: string, done?: Promise<any>, key?: string, ms?: number}} ScriptEvent
+ */
 
 Cutaway.script = (function () {
   /** @type {Map<string, (step: Record<string, any>, ctx: ScriptContext) => (void | Promise<void>)>} */
@@ -24,6 +32,10 @@ Cutaway.script = (function () {
   /** @type {Map<string, {sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]}>} what games' actions tell the tools */
   const metas = new Map();
   let busy = 0, fast = false;
+  /** @type {((e: ScriptEvent) => void) | null} the editor's film, hearing every step */
+  let watcher = null;
+  /** the path of the step whose action is being called (its synchronous part): what it starts is its own */
+  let current = "";
 
   /** Wait `ms` of game time; nothing in fast mode. @param {number} ms */
   function sleep(ms) { return fast || !(ms > 0) ? Promise.resolve() : Cutaway.clock.wait(ms); }
@@ -98,6 +110,7 @@ Cutaway.script = (function () {
    * @param {ScriptContext} ctx
    */
   async function step(s, ctx) {
+    if (watcher) return watched(s, ctx, watcher);
     if (typeof s === "string") return say({ say: s }, ctx);
     if ("if" in s) return exec(Cutaway.state.test(s.if) ? s.then : s.else, ctx);
     if ("once" in s) {
@@ -109,6 +122,56 @@ Cutaway.script = (function () {
       if (fn) return fn(s, ctx);
     }
     throw new Error("Cutaway: unknown action " + JSON.stringify(s));
+  }
+
+  /**
+   * A step run as `step` runs it, told to the watcher: its start, the branch it took, its end.
+   * @param {Step} s @param {ScriptContext} ctx @param {(e: ScriptEvent) => void} w
+   */
+  async function watched(s, ctx, w) {
+    const path = ctx.path, t = () => Cutaway.clock.time;
+    w({ phase: "start", path, t: t(), step: s });
+    try {
+      if (typeof s === "string") { await call(() => say({ say: s }, ctx), path); return; }
+      if ("if" in s) {
+        const yes = Cutaway.state.test(s.if);
+        w({ phase: "branch", path, t: t(), branch: yes ? "then" : "else" });
+        await exec(yes ? s.then : s.else, ctx);
+        return;
+      }
+      if ("once" in s) {
+        const first = Cutaway.state.once(path);
+        w({ phase: "branch", path, t: t(), branch: first ? "once" : "else" });
+        await exec(first ? s.once : s.else, ctx);
+        return;
+      }
+      for (const k of Object.keys(s)) {
+        const fn = actions.get(k);
+        if (fn) { await call(() => fn(s, ctx), path); return; }
+      }
+      throw new Error("Cutaway: unknown action " + JSON.stringify(s));
+    } finally {
+      w({ phase: "end", path, t: t() });
+    }
+  }
+
+  /** Call an action with its path as the current one (what its synchronous part starts is its own). @param {() => any} fn @param {string} path */
+  function call(fn, path) {
+    const was = current;
+    current = path;
+    try { return fn(); } finally { current = was; }
+  }
+
+  /**
+   * What an action returns: the step's promise (the script waits for it), or with `wait: false` nothing
+   * (the script goes on), telling a watcher that the step still runs this.
+   * @param {Record<string, any>} s @param {Promise<any> | undefined} done
+   * @returns {Promise<any> | undefined}
+   */
+  function goOn(s, done) {
+    if (s.wait !== false) return done;
+    if (watcher && current && done) watcher({ phase: "runs", path: current, t: Cutaway.clock.time, done });
+    return undefined;
   }
 
   /** The actor named by `who`, or the active one. @param {string} [who] */
@@ -165,7 +228,7 @@ Cutaway.script = (function () {
     const [who, to] = Array.isArray(s.walk) ? [undefined, s.walk] : [s.walk, s.to];
     const a = actorOf(who), [x, y] = xy(to);
     const done = a.walkTo(x, y, !!s.run, !!s.free).then(() => { if (s.face) a.face(s.face); });
-    return s.wait === false ? undefined : done;
+    return goOn(s, done);
   }
 
   const builtins = {
@@ -179,7 +242,7 @@ Cutaway.script = (function () {
     anim: (s) => {
       const [who, k] = String(s.anim).includes(":") ? String(s.anim).split(":") : [undefined, String(s.anim)];
       const done = actorOf(who).playOnce(k);
-      return s.wait === false ? undefined : done;
+      return goOn(s, done);
     },
     /** @param {Record<string, any>} s */
     wait: (s) => sleep(Number(s.wait) || 0),
@@ -234,19 +297,19 @@ Cutaway.script = (function () {
     camera: (s) => {
       if (s.camera === "follow") { Cutaway.scene.cameraFollow(); return; }
       const [x, y] = xy(s.camera), done = Cutaway.scene.cameraTo(x, y, { ms: s.ms, ease: s.ease });
-      return s.wait === false ? undefined : done;
+      return goOn(s, done);
     },
     /** { move: "prop", to: [x, y] | by: [dx, dy], ms, ease, wait: false } @param {Record<string, any>} s */
     move: (s) => {
       const at = Cutaway.scene.propAt(String(s.move)), [x, y] = s.to ? xy(s.to) : (([dx, dy]) => [at.x + dx, at.y + dy])(xy(s.by ?? [0, 0]));
       const done = Cutaway.scene.moveProp(String(s.move), [x, y], { ms: s.ms, ease: s.ease });
-      return s.wait === false ? undefined : done;
+      return goOn(s, done);
     },
     /** { play: "prop", anim: "name", loop: true, wait: false } plays its animation from the start (once: then holds the
      * last frame; the script waits until it has played through) @param {Record<string, any>} s */
     play: (s) => {
       const ms = Cutaway.scene.playProp(String(s.play), { image: s.anim, loop: !!s.loop });
-      return s.wait === false ? undefined : sleep(ms);
+      return goOn(s, s.loop && s.wait === false ? undefined : sleep(ms));
     },
     /** { open: "door_open", sfx: "creak", ms: 260 } shows a hidden prop of the room shown, for the scene (a door standing open while
      * someone goes through it; not saved), with a sound, then waits `ms`; { close: "door_open", sfx } shuts it again. "room/door_open"
@@ -264,7 +327,21 @@ Cutaway.script = (function () {
   for (const [k, fn] of Object.entries(builtins)) actions.set(k, fn);
 
   return {
-    run, exec, sleep, speaks,
+    run, exec, sleep, speaks, goOn,
+    /**
+     * Hear every step (the editor's film): when it starts and ends, which branch an `if` or a `once`
+     * takes, what a step that goes on at once still runs, and the tweens a step starts. One at a time;
+     * returns the function that stops it.
+     * @param {(e: ScriptEvent) => void} fn
+     * @returns {() => void}
+     */
+    watch(fn) {
+      watcher = fn;
+      Cutaway.tween.watch((tw) => { if (watcher && current) watcher({ phase: "runs", path: current, t: Cutaway.clock.time, done: tw.done, key: tw.key, ms: tw.ms }); });
+      return () => { if (watcher === fn) { watcher = null; Cutaway.tween.watch(null); } };
+    },
+    /** The path of the step whose action is being called now ("" between steps). */
+    get current() { return current; },
     /** Is a script running (the player waits)? */
     get busy() { return busy > 0; },
     /** Fast mode: lines, sounds and waits pass at once (a sequence skipping ahead). */

@@ -51,8 +51,9 @@ export default async function (t) {
   t.ok("edits: the game's own steps are kept", C.edits.original("sequences", "intro", ["steps"]).length === JSON.parse(steps).length);
   C.edits.revert("sequences", "intro", ["steps"]);
   t.ok("edits: revert gives the sequence its steps back", JSON.stringify(intro().steps) === steps && !C.edits.changed("sequences", "intro"));
-  C.edits({ sequences: { intro: { after: [{ set: "intro_skipped" }] }, nope: { steps: [] } } });
-  t.ok("edits: a loaded layer changes a sequence (one the game hasn't is left out)", intro().after?.[0]?.set === "intro_skipped" && !C.sequence.get("nope"));
+  C.edits({ sequences: { intro: { after: [{ set: "intro_skipped" }] }, boat: { steps: [{ wait: 100 }] }, nope: { after: [] } } });
+  t.ok("edits: a loaded layer changes a sequence, makes one the game hasn't (the Film tab's New), leaves out one without steps",
+    intro().after?.[0]?.set === "intro_skipped" && JSON.stringify(C.sequence.get("boat")?.steps) === '[{"wait":100}]' && !C.sequence.get("nope") && C.sequence.source("boat") === null);
 
   // recorded voices
   const lang = C.i18n.language, clip = { sample: "data:audio/wav;base64,AAAA", ms: 2600 };

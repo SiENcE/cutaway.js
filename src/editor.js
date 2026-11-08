@@ -99,6 +99,8 @@
  * @property {number | boolean | string} [unsaved]    what isn't saved (a getter; else its module's `unsaved`)
  * @property {() => EditorView | null} [view]         while it returns a view, that view takes the centre
  * @property {(box: HTMLElement) => void} [browse]    its part of the left panel's browser (else the room's things)
+ * @property {() => HTMLElement | null} [dock]         while it returns an element, that sits under the game picture (the picture
+ *   fits above it; its top edge drags its height): the Film tab's timeline
  */
 
 /**
@@ -128,9 +130,9 @@
  */
 
 Cutaway.editor = (function () {
-  const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170, SPLIT = 6;
-  const MODULES = ["editor-literal.js", "editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
-    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-timetable.js", "editor-help.js", "editor-guide.js"];
+  const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170, DOCK_H = 260, SPLIT = 6;
+  const MODULES = ["film.js", "editor-literal.js", "editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
+    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-timetable.js", "editor-film.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
   let isOpen = false, showHud = false;
   /** @type {string | null} */
@@ -156,8 +158,8 @@ Cutaway.editor = (function () {
   let panel = null;
   /** @type {Window | null} the inspector's own window (null: docked beside the game) */
   let win = null;
-  /** @type {{left: boolean, right: boolean, output: boolean, window: boolean, leftW: number, rightW: number, outH: number}} what is shown and how big (kept in localStorage) */
-  const layout = { left: true, right: true, output: false, window: false, leftW: LEFT_W, rightW: RIGHT_W, outH: OUT_H };
+  /** @type {{left: boolean, right: boolean, output: boolean, window: boolean, leftW: number, rightW: number, outH: number, dockH: number}} what is shown and how big (kept in localStorage) */
+  const layout = { left: true, right: true, output: false, window: false, leftW: LEFT_W, rightW: RIGHT_W, outH: OUT_H, dockH: DOCK_H };
   try { Object.assign(layout, JSON.parse(localStorage.getItem("cutaway.editor.layout") ?? "{}")); } catch { /* none kept */ }
   let wantWindow = layout.window, pollTimer = 0, raf = 0;
   let status = "", panelDirty = true, outputDirty = true;
@@ -1046,6 +1048,7 @@ Cutaway.editor = (function () {
 .cw-out { background: #100d18; border-top: 1px solid #3a3350; overflow: auto; padding: 4px 8px; white-space: pre-wrap; color: #ccc; }
 .cw-out .e { border-bottom: 1px solid #221c30; padding: 2px 0; }
 .cw-centre { background: #0e0b14; overflow: hidden; }
+.cw-dock { background: #100d18; border-top: 1px solid #3a3350; overflow: hidden; }
 .cw-ed > .cw-picbars { pointer-events: none; }
 .cw-sb { position: absolute; background: rgba(16, 13, 24, 0.55); pointer-events: auto; z-index: 3; }
 .cw-sb.h { left: 0; right: 10px; bottom: 0; height: 10px; }
@@ -1120,6 +1123,8 @@ Cutaway.editor = (function () {
   /** @type {HTMLElement | null} the open dropdown */ let menuBox = null;
   let menuOpen = "";
   /** @type {EditorView | null} the view in the centre now */ let mounted = null;
+  /** @type {HTMLElement | null} under the picture: the active tab's dock */ let dockEl = null;
+  /** @type {HTMLElement | null} the dock's content now */ let docked = null;
   /** @type {Record<string, HTMLElement>} */ const statusParts = {};
 
   /** The style sheet, once per document. @param {Document} doc */
@@ -1231,27 +1236,28 @@ Cutaway.editor = (function () {
   /** @param {number} v @param {number} a @param {number} b */
   const clamp = (v, a, b) => Math.max(a, Math.min(b, Number(v) || a));
 
-  /** @type {{left: HTMLElement | null, right: HTMLElement | null, output: HTMLElement | null}} the panels' edges to drag */
-  const splits = { left: null, right: null, output: null };
-  /** An edge of a panel that resizes it when dragged. @param {"left" | "right" | "output"} which */
+  /** @type {{left: HTMLElement | null, right: HTMLElement | null, output: HTMLElement | null, dock: HTMLElement | null}} the panels' edges to drag */
+  const splits = { left: null, right: null, output: null, dock: null };
+  /** An edge of a panel that resizes it when dragged. @param {"left" | "right" | "output" | "dock"} which */
   function makeSplit(which) {
-    const e = el("div", { className: "cw-split " + (which === "output" ? "row" : "col"), title: "drag to resize (a double click: the size it had at first)" });
+    const e = el("div", { className: "cw-split " + (which === "output" || which === "dock" ? "row" : "col"), title: "drag to resize (a double click: the size it had at first)" });
     /** @type {{x: number, y: number, size: number} | null} */
     let d = null;
     e.addEventListener("pointerdown", (/** @type {PointerEvent} */ ev) => {
       ev.preventDefault(); ev.stopPropagation();
-      d = { x: ev.clientX, y: ev.clientY, size: which === "left" ? layout.leftW : which === "right" ? layout.rightW : layout.outH };
+      d = { x: ev.clientX, y: ev.clientY, size: which === "left" ? layout.leftW : which === "right" ? layout.rightW : which === "dock" ? layout.dockH : layout.outH };
       try { e.setPointerCapture(ev.pointerId); } catch { /* a pointer the page made */ } e.classList.add("on");
     });
     e.addEventListener("pointermove", (/** @type {PointerEvent} */ ev) => {
       if (!d) return;
       if (which === "left") layout.leftW = Math.round(d.size + ev.clientX - d.x);
       else if (which === "right") layout.rightW = Math.round(d.size - (ev.clientX - d.x));
+      else if (which === "dock") layout.dockH = Math.round(d.size - (ev.clientY - d.y));
       else layout.outH = Math.round(d.size - (ev.clientY - d.y));
       place();
     });
     e.addEventListener("pointerup", () => { if (d) { d = null; e.classList.remove("on"); keepLayout(); } });
-    e.addEventListener("dblclick", () => { if (which === "left") layout.leftW = LEFT_W; else if (which === "right") layout.rightW = RIGHT_W; else layout.outH = OUT_H; place(); keepLayout(); });
+    e.addEventListener("dblclick", () => { if (which === "left") layout.leftW = LEFT_W; else if (which === "right") layout.rightW = RIGHT_W; else if (which === "dock") layout.dockH = DOCK_H; else layout.outH = OUT_H; place(); keepLayout(); });
     return e;
   }
 
@@ -1321,7 +1327,9 @@ Cutaway.editor = (function () {
     layout.leftW = clamp(layout.leftW, 120, Math.max(120, innerWidth * 0.4));
     layout.rightW = clamp(layout.rightW, 220, Math.max(220, innerWidth * 0.6));
     layout.outH = clamp(layout.outH, 60, Math.max(60, innerHeight - MENU_H - STATUS_H - 120));
+    layout.dockH = clamp(layout.dockH, 80, Math.max(80, innerHeight - MENU_H - STATUS_H - 160));
     const L = layout.left ? layout.leftW : 0, R = layout.right && !win ? layout.rightW : 0, O = layout.output ? layout.outH : 0;
+    const D = docked && !mounted ? layout.dockH : 0;
     /** @param {HTMLElement | null} e @param {Record<string, string>} st */
     const at = (e, st) => { if (e) Object.assign(e.style, st); };
     at(barEl, { height: MENU_H + "px" });
@@ -1329,12 +1337,14 @@ Cutaway.editor = (function () {
     if (!win) at(panel, { display: R ? "" : "none", top: MENU_H + "px", bottom: STATUS_H + "px", width: R + "px" });
     at(outputEl, { display: O ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + "px", height: O + "px" });
     at(centreEl, { left: L + "px", right: R + "px", top: MENU_H + "px", bottom: STATUS_H + O + "px" });
+    at(dockEl, { display: D ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + O + "px", height: D + "px" });
+    at(splits.dock, { display: D ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + O + D - SPLIT / 2 + "px", height: SPLIT + "px" });
     at(statusEl, { height: STATUS_H + "px" });
     // the edges to drag: the left panel's right edge, the inspector's left edge, the output pane's top edge
     at(splits.left, { display: L ? "" : "none", left: L - SPLIT / 2 + "px", top: MENU_H + "px", bottom: STATUS_H + "px", width: SPLIT + "px" });
     at(splits.right, { display: R ? "" : "none", right: R - SPLIT / 2 + "px", top: MENU_H + "px", bottom: STATUS_H + "px", width: SPLIT + "px" });
     at(splits.output, { display: O ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + O - SPLIT / 2 + "px", height: SPLIT + "px" });
-    Cutaway.display.reserve({ left: L, top: MENU_H, right: R, bottom: STATUS_H + O });
+    Cutaway.display.reserve({ left: L, top: MENU_H, right: R, bottom: STATUS_H + O + D });
     mounted?.shown?.();
   }
 
@@ -1823,6 +1833,13 @@ Cutaway.editor = (function () {
       mounted = v;
       cursorText = null;                                  // the view sets its own again
       v?.shown?.();
+      place();
+    }
+    const dk = isOpen ? activeTab()?.dock?.() ?? null : null;
+    if (dk !== docked && dockEl) {
+      dockEl.replaceChildren(...(dk ? [dk] : []));
+      docked = dk;
+      place();
     }
     if (panelDirty) {
       panelDirty = false;
@@ -1974,13 +1991,15 @@ Cutaway.editor = (function () {
     leftEl = el("div", { className: "cw-left" });
     centreEl = el("div", { className: "cw-centre", style: { display: "none" } });
     outputEl = el("div", { className: "cw-out" });
+    dockEl = el("div", { className: "cw-dock", style: { display: "none" } });
+    docked = null;
     statusEl = el("div", { className: "cw-status" });
-    splits.left = makeSplit("left"); splits.right = makeSplit("right"); splits.output = makeSplit("output");
+    splits.left = makeSplit("left"); splits.right = makeSplit("right"); splits.output = makeSplit("output"); splits.dock = makeSplit("dock");
     // over the picture, its edges: the room's scrollbars (the camera), only while the picture shows
     picBars = el("div", { className: "cw-picbars" });
     picScroll = scrollbars(picBars, { span: () => (mounted ? null : viewSpan()), scrollTo: scrollView });
     panel = /** @type {HTMLDivElement} */ (el("div", { className: "cutaway-editor" }));
-    root.append(barEl, leftEl, centreEl, outputEl, statusEl, picBars, splits.left, splits.right, splits.output);
+    root.append(barEl, leftEl, centreEl, dockEl, outputEl, statusEl, picBars, splits.left, splits.right, splits.output, splits.dock);
     if (win) {
       const w = win;
       ensureCss(w.document);
@@ -2015,7 +2034,7 @@ Cutaway.editor = (function () {
     cancelAnimationFrame(raf);
     closeMenu();
     root?.remove(); panel?.remove();
-    root = panel = null; barEl = barRight = leftEl = statusEl = outputEl = centreEl = null; mounted = null;
+    root = panel = null; barEl = barRight = leftEl = statusEl = outputEl = centreEl = dockEl = docked = null; mounted = null;
     for (const k of Object.keys(statusParts)) delete statusParts[k];
     clearInterval(pollTimer);
     if (win && !win.closed) { const w = win; win = null; w.close(); }
@@ -2047,7 +2066,8 @@ Cutaway.editor = (function () {
     if (active === "room") render(ctx); else tabs.find((t) => t.id === active)?.render?.(ctx);
     ctx.restore();
   });
-  Cutaway.events.on("room.enter", (/** @type {{id: string}} */ e) => { if (isOpen && e.id !== knownRoom) roomChanged(); });
+  // (not the rooms a film shows while it seeks: the Film tab's picture is the film's)
+  Cutaway.events.on("room.enter", (/** @type {{id: string}} */ e) => { if (isOpen && e.id !== knownRoom && !Cutaway.film?.busy) roomChanged(); });
   Cutaway.events.on("room.entered", () => { panelDirty = true; });
 
   const api = {

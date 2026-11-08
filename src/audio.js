@@ -31,7 +31,7 @@ Cutaway.audio = (function () {
   const volume = { master: 0.8, music: 0.7, voice: 0.8, sfx: 0.8 };
   /** @type {(() => void)[]} */
   const readyFns = [];
-  let muted = false, held = false;
+  let muted = false, held = false, quiet = false;
 
   /**
    * A reverb impulse: decaying stereo noise, darker towards the end.
@@ -182,6 +182,14 @@ Cutaway.audio = (function () {
     init, hook, impulse, speaker, autoplay, hold,
     /** Is the sound held (the editor)? */
     get held() { return held; },
+    /**
+     * Quiet: what the game says to the sound is heard but nothing sounds that happens once (sounds, stingers,
+     * lines' voices); the music and the rooms' loops still follow what they are told, to sound from there
+     * (the editor's film while it seeks).
+     */
+    get quiet() { return quiet; },
+    /** @param {boolean} v */
+    set quiet(v) { quiet = v; },
     /** How much the music sounds like a small speaker now (the last value asked for). */
     get speakerAmount() { return speakerAmount; },
     /** The current context and buses, to put back after an offline render. */

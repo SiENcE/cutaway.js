@@ -119,15 +119,16 @@ Cutaway.cinema = (function () {
 
   Cutaway.script.action("letterbox", (s) => {
     const done = letterbox(s.letterbox, { ms: s.ms, ease: s.ease });
-    return s.wait === false ? undefined : done;
+    return Cutaway.script.goOn(s, done);
   });
   Cutaway.script.action("caption", (s) => {
     const done = show(s);
-    return s.wait === false ? undefined : done;
+    return Cutaway.script.goOn(s, done);
   });
   Cutaway.script.action("dissolve", (s) => { if (!Cutaway.script.fast) Cutaway.fx.dissolve(Number(s.dissolve) || 800); });
   Cutaway.events.on("frame.ui", render);
   Cutaway.clock.onUpdate(update);
+  Cutaway.clock.onRewind((d) => { if (caption) caption.start += d; });
 
   return {
     letterbox, reset, wide, PLACES,

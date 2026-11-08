@@ -204,7 +204,7 @@ Cutaway.voice = (function () {
     setEnabled(on) { enabled = on; if (!on) { current?.stop(); current = null; } },
     get enabled() { return enabled; },
     init() {
-      Cutaway.events.on("say", (e) => speak(e));
+      Cutaway.events.on("say", (e) => { if (!Cutaway.audio.quiet) speak(e); });
       Cutaway.events.on("say.end", () => { current?.stop(); current = null; });
     },
   };

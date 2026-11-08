@@ -242,7 +242,7 @@ Cutaway.music = (function () {
         if (m) set(m);
       });
       Cutaway.events.on("music", (s) => set(s));
-      Cutaway.events.on("stinger", (id) => stinger(id));
+      Cutaway.events.on("stinger", (id) => { if (!Cutaway.audio.quiet) stinger(id); });
       Cutaway.events.on("say", () => duck(true));
       Cutaway.events.on("say.end", () => duck(false));
     },

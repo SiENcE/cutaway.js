@@ -294,6 +294,7 @@ Cutaway.sfx = (function () {
     stopAll() { for (const l of loops) l.stop(); loops = []; },
     init() {
       Cutaway.events.on("sfx", (s) => {
+        if (Cutaway.audio.quiet) return;
         if (typeof s === "string") play(s);
         else if (s && s.sfx) play(s.sfx, s);
       });

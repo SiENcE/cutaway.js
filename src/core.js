@@ -69,6 +69,8 @@ Cutaway.clock = (function () {
   const renderers = [];
   /** @type {{at: number, done: () => void}[]} */
   let timers = [];
+  /** @type {((delta: number) => void)[]} what keeps absolute times of its own (tweens), told when the clock is set */
+  const rewinders = [];
 
   function tick() {
     for (const fn of updaters) fn(STEP);
@@ -133,14 +135,31 @@ Cutaway.clock = (function () {
     wait(ms) { return new Promise((done) => timers.push({ at: time + ms, done })); },
     /**
      * Advance the clock by `ms` (in whole logic steps) and draw once: a manual clock, or a held one
-     * stepped by hand (the editor's Step).
+     * stepped by hand (the editor's Step). `draw: false` only steps (the editor's film, seeking).
      * @param {number} ms
+     * @param {boolean} [draw]
      */
-    advance(ms) {
+    advance(ms, draw = true) {
       const steps = Math.round(ms / STEP);
       for (let i = 0; i < steps; i++) tick();
-      render();
+      if (draw) render();
     },
+    /**
+     * Set the game time to `t` (back or on), as the editor's film does before each run so that whatever
+     * draws by the clock (animated sprites, a game's own drawers) looks the same at the same moment of
+     * the film. Waiting timers and running tweens keep what they have left. Meant for a scene at rest:
+     * fades, lines and captions started before keep their absolute times.
+     * @param {number} t
+     */
+    rewind(t) {
+      const delta = t - time;
+      if (!delta) return;
+      time = t;
+      for (const q of timers) q.at += delta;
+      for (const fn of rewinders) fn(delta);
+    },
+    /** Something that keeps absolute game times is told when the clock is set (rewind). @param {(delta: number) => void} fn */
+    onRewind(fn) { rewinders.push(fn); },
   };
 })();
 
@@ -185,6 +204,9 @@ Cutaway.tween = (function () {
   /** @type {Tween[]} */
   let list = [];
   let instant = false;
+  /** @type {((t: {key: string, ms: number, done: Promise<void>}) => void) | null} */
+  let watcher = null;
+  Cutaway.clock.onRewind((d) => { for (const t of list) t.start += d; });
 
   /** @param {Tween} t */
   function end(t) { list = list.filter((q) => q !== t); t.done(); }
@@ -196,11 +218,14 @@ Cutaway.tween = (function () {
    */
   function to(o) {
     if (o.key) stop(o.key);
-    return new Promise((done) => {
+    const p = /** @type {Promise<void>} */ (new Promise((done) => {
       const ms = Number(o.ms) || 0;
-      if (instant || ms <= 0) { o.step(1); done(); return; }
-      list.push({ key: o.key ?? "", start: Cutaway.clock.time, ms, ease: Cutaway.util.ease(o.ease), step: o.step, done });
-    });
+      if (instant || ms <= 0) { o.step(1); done(undefined); return; }
+      list.push({ key: o.key ?? "", start: Cutaway.clock.time, ms, ease: Cutaway.util.ease(o.ease), step: o.step, done: () => done(undefined) });
+    }));
+    // the editor's film hears it: a step that goes on at once (wait: false) still runs as long as its tweens
+    if (watcher) watcher({ key: o.key ?? "", ms: instant ? 0 : Number(o.ms) || 0, done: p });
+    return p;
   }
 
   /** Stop tweens where they are (all, or the one with this key); their promises resolve. @param {string} [key] */
@@ -227,5 +252,10 @@ Cutaway.tween = (function () {
     get instant() { return instant; },
     /** Every tween arrives at once (tools, skipped cutscenes). @param {boolean} v */
     set instant(v) { instant = v; if (v) finish(); },
+    /**
+     * Hear every tween as it starts (the editor's film: its key, its length, its promise); null stops.
+     * @param {((t: {key: string, ms: number, done: Promise<void>}) => void) | null} fn
+     */
+    watch(fn) { watcher = fn; },
   };
 })();

@@ -67,6 +67,7 @@ Cutaway.fx = (function () {
   const masks = [];
   /** @type {{from: number, to: number, start: number, ms: number}} */
   let tapeState = { from: 0, to: 0, start: 0, ms: 0 };
+  Cutaway.clock.onRewind((d) => { fadeState.start += d; tapeState.start += d; if (dissolving) dissolving.start += d; });
   /** @type {HTMLCanvasElement | null} the frame as it was, rows are copied back from it shifted */
   let tapeCopy = null;
 
@@ -245,7 +246,9 @@ Cutaway.fx = (function () {
     g.fillRect(0, 0, W, H);
     Cutaway.scene.render(g);
     dissolving = { old, temp, start: Cutaway.clock.time, ms };
-    return Cutaway.clock.wait(ms);
+    const done = Cutaway.clock.wait(ms);
+    Cutaway.script.goOn({ wait: false }, done);             // the step that began it still runs it (the editor's film)
+    return done;
   }
 
   /** The mask of a step as a repeating pattern: opaque where the old picture stays. @param {CanvasRenderingContext2D} ctx @param {number} step */
@@ -408,11 +411,11 @@ Cutaway.fx = (function () {
         changing = null;                                    // a script's own fade is a plain one
         const v = s.fade, to = v === "in" ? 0 : v === "out" ? 1 : Number(v);
         const done = fade(Number.isFinite(to) ? to : 1, Cutaway.script.fast ? 0 : s.ms ?? 400, s.color);
-        return s.wait === false ? undefined : done;
+        return Cutaway.script.goOn(s, done);
       });
       Cutaway.script.action("tape", (s) => {
         const done = tape(Number(s.tape) || 0, Cutaway.script.fast ? 0 : Number(s.ms) || 0);
-        return s.wait === false ? undefined : done;
+        return Cutaway.script.goOn(s, done);
       });
     },
   };

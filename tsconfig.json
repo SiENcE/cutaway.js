@@ -68,6 +68,8 @@
     "src/editor-map.js",
     "src/editor-timetable.js",
     "src/editor-literal.js",
-    "src/editor-guide.js"
+    "src/editor-guide.js",
+    "src/film.js",
+    "src/editor-film.js"
   ]
 }

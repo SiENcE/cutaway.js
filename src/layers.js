@@ -10,7 +10,7 @@
 // list of things with ids (a room's props, lamps, effects) takes an object keyed by those ids and merges
 // into the matching ones; a thing without an id goes by its place in the list ("0", "1", ...), as the
 // editor names it. A dialogue is kept whole (its nodes in order): the layer's tree replaces the game's.
-// A sequence's `steps` and `after` are scripts: they replace the game's. The layer as loaded is kept, so the editor can save it back with its own changes added, and
+// A sequence's `steps` and `after` are scripts: they replace the game's; a sequence the game doesn't have is made. The layer as loaded is kept, so the editor can save it back with its own changes added, and
 // what the game's own data said before is kept too, so the editor can go back to it (revert).
 // (Texts have their own layer, Cutaway.i18n.layer; shapes theirs, Cutaway.room.geometry.)
 "use strict";
@@ -81,7 +81,12 @@ Cutaway.edits = (function () {
       remember("dialogs", id);
       if (tree) Cutaway.dialog(id, clone(tree));
     }
-    for (const [id, s] of Object.entries(p.sequences ?? {})) { const d = live("sequences", id); if (d) { remember("sequences", id); merge(d, s); } }
+    for (const [id, s] of Object.entries(p.sequences ?? {})) {
+      const d = live("sequences", id);
+      remember("sequences", id);
+      if (d) merge(d, s);
+      else if (s && Array.isArray(s.steps)) Cutaway.sequence?.(id, clone(s));     // a sequence the editor made (the Film tab's New)
+    }
   }
 
   /** The actor keeps copies of these. @param {any} act */
