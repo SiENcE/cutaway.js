@@ -184,6 +184,22 @@ Cutaway.time.mark("01:00");
     t.ok("time: a moment's days changed", days.ok && JSON.stringify(days.day) === "[1,2]", JSON.stringify(days));
     await chrome.ev(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
     t.ok("time: Ctrl+Z undoes the last change, in the game and the text", (await chrome.ev(`Cutaway.time.moments.get("bell").day`)) === 1 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("day: [1, 2]"));
+    // a real click on a bar picks it (the bar takes the pointer when pressed, for a drag: the click must still pick)
+    const mouseAt = async (fn, double = false) => {
+      const p = await chrome.ev(`(() => { const b = [...${E}.centre.querySelectorAll("[title]")].find(${fn}), r = b.getBoundingClientRect(); return { x: r.left + Math.min(20, r.width / 2), y: r.top + r.height / 2 }; })()`);
+      for (const n of double ? [1, 2] : [1]) {
+        await chrome.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: p.x, y: p.y });
+        await chrome.send("Input.dispatchMouseEvent", { type: "mousePressed", x: p.x, y: p.y, button: "left", buttons: 1, clickCount: n });
+        await chrome.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: p.x, y: p.y, button: "left", buttons: 0, clickCount: n });
+      }
+      await sleep(200);
+    };
+    await chrome.ev(`(() => { ${M}.select(null); ${M}.day = 1; return 1; })()`);
+    await sleep(200);
+    await mouseAt(`(e) => /^bell:/.test(e.title)`);
+    t.ok("time: a click on a moment's bar picks it: its times and its scripts in the inspector", JSON.stringify(await chrome.ev(`${M}.selected`)) === JSON.stringify({ kind: "moment", id: "bell" }) &&
+      /play \(\d+ steps?\)/.test(await chrome.ev("document.querySelector('.cutaway-editor').textContent")), JSON.stringify(await chrome.ev(`${M}.selected`)));
+
     // a moment's script as blocks in the centre, written into its file (only the steps that changed)
     await chrome.ev(`${M}.select({ kind: "moment", id: "bell" }); ${M}.openScript("bell", "play")`);
     await sleep(300);
@@ -227,6 +243,9 @@ Cutaway.time.mark("01:00");
       await new Promise((ok) => setTimeout(ok, 100));
       return Cutaway.time.routines.get("guard")[0].to; })()`);
     t.ok("time: a bar dragged by its end: two quarter hours later", dragged === "22:30", String(dragged));
+    await mouseAt(`(e) => /^bell:/.test(e.title)`, true);
+    t.ok("time: a double click on a bar opens its room", (await chrome.ev(`${E}.activeTab`)) === "room" && (await chrome.ev("Cutaway.scene.room.id")) === "yard",
+      `${await chrome.ev(`${E}.activeTab`)} ${await chrome.ev("Cutaway.scene.room.id")}`);
     t.ok("map: no page errors", chrome.errors.length === 0, chrome.errors.join("\n"));
   } finally {
     await chrome.close();

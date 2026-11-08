@@ -121,7 +121,7 @@
       b.addEventListener("pointermove", (e) => { if (!drag) b.style.cursor = edge(e) === "move" ? "grab" : "ew-resize"; });
       b.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;
-        drag = { who, el: b, x0: e.clientX, from, to, nf: from, nt: to, mode: edge(e), left: x(from) + 1 };
+        drag = { who, el: b, x0: e.clientX, from, to, nf: from, nt: to, mode: edge(e), left: x(from) + 1, pick, room: room ?? null };
         box.setPointerCapture(e.pointerId);
       });
       return b;
@@ -173,8 +173,12 @@
     box.replaceChildren(head, el("div", { style: { position: "relative", width: `${W}px`, height: `${H - HEAD}px`, marginTop: `-${HEAD}px` } }, [...grid, ...rows]));
     [box.scrollLeft, box.scrollTop] = keep;
   }
-  box.addEventListener("click", () => { if (sel) { sel = null; E.refresh(); draw(); } });
-  box.addEventListener("dblclick", (/** @type {MouseEvent} */ e) => { if (e.target === box || !(/** @type {any} */ (e.target).title)) fit(); });
+  // (a bar takes the pointer when it is pressed, so its drag goes on off it: its click and double click come here)
+  box.addEventListener("click", () => { if (onBar) { onBar = null; return; } if (sel) { sel = null; E.refresh(); draw(); } });
+  box.addEventListener("dblclick", (/** @type {MouseEvent} */ e) => {
+    if (lastBar && performance.now() - lastBar.at < 600) return;          // a bar's double click (below), not the table's
+    if (e.target === box || !(/** @type {any} */ (e.target).title)) fit();
+  });
 
   /**
    * Zoom the time axis, the time at `px` (from the box's left edge) staying where it is.
@@ -216,10 +220,15 @@
 
   // ---- dragging a bar
 
-  /** @type {{who: {kind: "routine" | "moment", id: string, i: number}, el: HTMLElement, x0: number, from: number, to: number, nf: number, nt: number, mode: string, left: number} | null} */
+  /** @type {{who: {kind: "routine" | "moment", id: string, i: number}, el: HTMLElement, x0: number, from: number, to: number, nf: number, nt: number, mode: string, left: number, pick: () => void, room: string | null} | null} */
   let drag = null;
   /** a drag just ended: the click that follows it doesn't pick */
   let dragged = false;
+  /** @type {object | null} a bar was let go without moving: the click that follows picked it, it doesn't let go of it */
+  let onBar = null;
+  /** @type {{room: string | null, at: number, key: string} | null} the bar picked last: a second click on it soon opens its room (picked, the
+   * bars are drawn again, so the browser's own double click doesn't come) */
+  let lastBar = null;
   box.addEventListener("pointermove", (/** @type {PointerEvent} */ e) => {
     if (!drag) return;
     const q = Math.round((e.clientX - drag.x0) / tw) * 15, d = drag;
@@ -235,7 +244,15 @@
     drag = null;
     if (!d) return;
     E.setCursor(null);
-    if (d.nf === d.from && d.nt === d.to) return;
+    // let go where it was pressed: a click on the bar picks it
+    if (d.nf === d.from && d.nt === d.to) {
+      const key = `${d.who.kind}:${d.who.id}:${d.who.i}`, now = performance.now(), twice = !!lastBar && lastBar.key === key && now - lastBar.at < 450;
+      onBar = d;
+      lastBar = { room: d.room, at: now, key };
+      if (twice && d.room && Cutaway.room.ids().includes(d.room)) { E.openRoom(d.room); E.show("room"); return; }
+      d.pick();
+      return;
+    }
     dragged = true;
     sel = d.who.kind === "routine" ? { kind: "routine", actor: d.who.id, i: d.who.i } : { kind: "moment", id: d.who.id };
     /** @type {Record<string, any>} */

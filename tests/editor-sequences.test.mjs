@@ -66,6 +66,17 @@ export default async function (t) {
     const played = await chrome.ev(`${M}.time`);
     t.ok("sequences tab: Space plays from the playhead, and again holds it", played > 1300 && played < 2500 && !(await chrome.ev("Cutaway.timeline.playing")), String(played));
 
+    // a double click on a bar: the playhead to its start (real clicks: a picked bar is drawn again between them)
+    const capBar = await chrome.ev(`(() => { const d = [...${M}.box.querySelectorAll("div[title]")].find((x) => x.title.startsWith("“Outside")); const r = d.getBoundingClientRect(); return { x: r.left + 10, y: r.top + r.height / 2 }; })()`);
+    for (const n of [1, 2]) {
+      await chrome.send("Input.dispatchMouseEvent", { type: "mousePressed", x: capBar.x, y: capBar.y, button: "left", buttons: 1, clickCount: n });
+      await chrome.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: capBar.x, y: capBar.y, button: "left", buttons: 0, clickCount: n });
+    }
+    await idle();
+    const capStart = await chrome.ev(`${M}.trace.steps.find((x) => x.path === "sequence.intro.8").start`);
+    t.ok("sequences tab: a click picks a bar, a double click takes the playhead to its start", (await chrome.ev(`${M}.selected`)) === "sequence.intro.8" && Math.abs((await chrome.ev(`${M}.time`)) - capStart) < 20,
+      `${await chrome.ev(`${M}.selected`)} ${await chrome.ev(`${M}.time`)} ${capStart}`);
+
     // the camera drive's bar: its right end dragged 400 ms on
     const S0 = await steps();
     const camBar = await chrome.ev(`(() => { const d = [...${M}.box.querySelectorAll("div[title]")].find((x) => x.title.startsWith("→ [0,120]")); const r = d.getBoundingClientRect(); return { x: r.right - 2, y: r.top + r.height / 2 }; })()`);

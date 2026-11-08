@@ -225,6 +225,8 @@
   /** @type {{rec: TimelineStep, el: HTMLElement, x0: number, left: number, width: number, mode: "len" | "body", d: number, alt: boolean} | null} */
   let drag = null;
   let scrub = false;
+  /** @type {{path: string, at: number} | null} the bar clicked last */
+  let lastClick = null;
   box.addEventListener("pointermove", (e) => {
     if (scrub) { seekTo(snap(msAt(e.clientX - box.getBoundingClientRect().left + box.scrollLeft), e)); return; }
     const g = drag;
@@ -243,7 +245,14 @@
     drag = null;
     if (!g) return;
     E.setCursor(null);
-    if (Math.abs(g.d) < 1) { sel = g.rec.path; E.refresh(); draw(); return; }
+    if (Math.abs(g.d) < 1) {
+      // a click picks it; a second one soon goes to its start (picked, the bars are drawn again: no double click of the browser's)
+      const now = performance.now(), twice = lastClick?.path === g.rec.path && now - lastClick.at < 450;
+      lastClick = { path: g.rec.path, at: now };
+      sel = g.rec.path; E.refresh(); draw();
+      if (twice) seekTo(g.rec.start);
+      return;
+    }
     sel = g.rec.path;
     const r = g.rec, ed = F().edits, S = steps();
     let next = null, what = "";
