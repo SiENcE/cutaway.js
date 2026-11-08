@@ -20,6 +20,7 @@ export default async function (t) {
       const E = Cutaway.editor, got = [];
       E.tab({ id: "mytab", label: "Mine", build(box) { box.append("mine"); }, drag(p, phase) { got.push(phase + ":" + Math.round(p.x) + "," + Math.round(p.y)); return true; } });
       E.modules.mytab = { got };
+      E.roomNote((id) => (id === "yard" ? "The yard's shapes are made elsewhere." : null));
     })();`);
   writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { edits: "layers/edits.js" }, editor: ["mytab.js"], tasks: {} }));
   const s = await studio(page, { quiet: true }).start(0);
@@ -53,6 +54,13 @@ export default async function (t) {
     await chrome.ev(`${E}.modules.map.select("yard"); 1`);
     await sleep(300);
     t.ok("map: a picked room lists its ways", /ways in/.test(await chrome.ev("document.body.textContent")) && /← hall/.test(await chrome.ev("document.body.textContent")));
+    // a game's note on a room shows on top of the Room tab there, and nowhere else
+    await chrome.ev(`${E}.openRoom("hall").then(() => ${E}.show("room"))`);
+    await sleep(300);
+    const inHall = /made elsewhere/.test(await chrome.ev("document.body.textContent"));
+    await chrome.ev(`${E}.openRoom("yard")`);
+    await sleep(300);
+    t.ok("editor: a game's note on a room shows in the Room tab there only", !inHall && /The yard's shapes are made elsewhere/.test(await chrome.ev("document.body.textContent")));
     // the Art tab opens a pxl source at a line
     await chrome.ev(`${E}.modules.art.openSource("art/demo.px.js", 5)`);
     await sleep(300);

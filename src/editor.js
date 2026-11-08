@@ -174,6 +174,12 @@ Cutaway.editor = (function () {
   let panDrag = null;
   /** @type {EditorTab | null} a tab that took a drag on the picture (its drag hook) */
   let tabDrag = null;
+  /** @type {((room: string) => string | null | undefined)[]} what games say about a room in the Room tab (roomNote) */
+  const notes = [];
+  /** @type {Set<string>} rooms whose note was said at a change this session */
+  const warned = new Set();
+  /** What the games say about a room (a warning for the Room tab), or null. @param {string} id */
+  const roomNote = (id) => notes.map((f) => { try { return f(id); } catch { return null; } }).filter(Boolean).join("\n") || null;
   /** @type {string | null} the room the editor knows (another one comes: its undo goes) */
   let knownRoom = null;
   /** Tabs where you listen: the sound isn't held there. */
@@ -524,6 +530,9 @@ Cutaway.editor = (function () {
   function pushUndo() {
     const d = room();
     if (d) dirtyRooms.add(d.id);
+    // a room whose shapes another tool makes (a game's note says so): said once, at the first change
+    const note = d ? roomNote(d.id) : null;
+    if (d && note && !warned.has(d.id)) { warned.add(d.id); setStatus(`${d.id}: ${note}`); }
     undoStack.push(JSON.stringify(geometry(d, { all: true })));
     if (undoStack.length > 200) undoStack.shift();
     redoStack = [];
@@ -1653,6 +1662,8 @@ Cutaway.editor = (function () {
   /** The Room tab: the room's shapes. @param {HTMLElement} panel */
   function buildRoom(panel) {
     const d = room();
+    const note = d ? roomNote(d.id) : null;
+    if (note) panel.append(el("div", { style: { margin: "6px 0", padding: "4px 6px", border: "1px solid #c98500", color: "#ffd27a", whiteSpace: "pre-wrap" } }, [note]));
     panel.append(
       el("div", { style: { margin: "6px 0" } }, [button("Save", save, "write rooms/<id>.geo.js (Ctrl+S)"), button("Copy", () => { navigator.clipboard?.writeText(text()); setStatus("copied the shapes file"); }, "the rooms/<id>.geo.js text"),
         button("Undo", () => undoRedo(true), "Ctrl+Z"), button("Redo", () => undoRedo(false), "Ctrl+Y")]),
@@ -1859,6 +1870,12 @@ Cutaway.editor = (function () {
     tab(t) { const i = tabs.findIndex((x) => x.id === t.id); if (i >= 0) tabs[i] = t; else tabs.push(t); panelDirty = true; },
     /** Show a tab. @param {string} id */
     show: showTab,
+    /**
+     * Say something about rooms in the Room tab: `fn(roomId)` gives a warning (or null), shown on top of its
+     * panel and said once at the first change there; a game whose rooms' shapes are made elsewhere (baked
+     * from a map) says where to change them. @param {(room: string) => string | null | undefined} fn
+     */
+    roomNote(fn) { notes.push(fn); panelDirty = true; },
     get activeTab() { return active; },
     /** Rebuild the inspector and the browser (a tab after its data changed). */
     refresh() { panelDirty = true; },

@@ -357,6 +357,9 @@ phase, e)` gets the pointer on the room picture: "down" first (return true to ta
 `Cutaway.editor.runTask("art: room", { room: "hall" })` for `"art: room": ["sh", "tools/build_art.sh",
 "room", "{room}"]` (plain names only: letters, digits, `_ . -`). `Cutaway.editor.modules.things.reveal(room,
 key, path)` shows a thing and its script, `modules.art.openSource(path, line)` a pxl source at a line.
+`Cutaway.editor.roomNote((room) => text | null)` says something about rooms in the Room tab: shown on top of
+its panel there, and once at the first change (a room whose shapes a game bakes from a map says where to
+change them, as the next bake would undo a change made here).
 
 ## Files the editor writes
 
