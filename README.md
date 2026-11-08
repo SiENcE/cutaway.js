@@ -130,7 +130,20 @@ hand, or opened as a file) gets no studio. The guide: **[docs/editor.md](docs/ed
 ## Making a game
 
 A game keeps a pinned copy of `src/` (and the tools it uses) in its own repository, never the other
-way round: this repository holds no game's content. A good start is a copy of `demo/`:
+way round: this repository holds no game's content. The quickest start:
+
+```sh
+node tools/new-game.mjs ../my-game --title "My Game"
+cd ../my-game
+node lib/cutaway/tools/studio.mjs      # the game with the editor in the browser
+```
+
+It makes a folder with the engine copied into `lib/cutaway/` (and `tools/sync-engine.sh` for a newer one),
+`index.html` in the load order, placeholder art (`assets/art.js`), a small game in `game/game.js` (two rooms,
+a hero, a key in a crate, a locked door, an act, hints, the title screen), the editor's layer and `studio.json`
+with the tasks validate, solve and play. It passes all three at once; change everything from there.
+
+By hand, a copy of `demo/` is a start too:
 
 1. `index.html` loads the engine's files in order, your art, your data, and last a script with
    `Cutaway.start`.
