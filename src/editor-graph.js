@@ -97,19 +97,7 @@
   }
 
   /** Open a thing in the Things tab, and a script of it in the centre. @param {string} room @param {string} key @param {string[]} [path] */
-  async function openThing(room, key, path) {
-    const things = E.modules.things;
-    if (!things) return;
-    if (room && Cutaway.room.get(room) && Cutaway.scene.room?.id !== room && !/^(actor|item):/.test(key)) await E.openRoom(room);
-    E.show("things");
-    things.select(key);
-    if (path && path.length) {
-      const obj = things.target();
-      const has = path.reduce((/** @type {any} */ v, k) => (v == null ? undefined : v[k]), obj) !== undefined;
-      if (has) things.openScript(path, path.join(" "));
-    }
-    E.refresh();
-  }
+  const openThing = (room, key, path) => E.modules.things?.reveal(room, key, path);
 
   /** Open where a step happens: its hotspot, actor or item with the script the move runs. @param {GraphNode} n */
   function openStep(n) {

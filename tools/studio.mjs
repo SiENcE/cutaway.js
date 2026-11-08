@@ -11,7 +11,9 @@
 //                 "edits": "game/edits.js", "sounds": "game/sounds.edit.js",
 //                 "art": "art/import", "artAtlas": "assets/imported.js", "audio": "assets/audio.js",
 //                 "voices": "assets/voices.{lang}.js", "graph": "out/graph" },   graph: the connections' data (tools/graph.mjs)
-//     "tasks": { "validate": ["node", "lib/cutaway/tools/validate.mjs", "index.html"], ... },
+//     "tasks": { "validate": ["node", "lib/cutaway/tools/validate.mjs", "index.html"], ... },   a {name} part is filled by the
+//                                                     editor when it runs the task ("art: room": [..., "{room}"])
+//     "editor": ["game/editor/map.js"],               the game's own editor tabs (scripts, loaded after the engine's)
 //     "palette": ["art/palette.px.js"] }               files whose "#rrggbb" colours are the paint view's game palette
 // The editor's Art tab runs the task "art: imported" (when there is one) after it writes into the
 // "art" layer: it should pack that folder into "artAtlas" (tools/build-atlas.mjs art/import assets/imported.js).
@@ -21,7 +23,7 @@
 //   PUT write?path=p           write the request's body (folders are made as needed)
 //   DELETE remove?path=p       remove a file (only where write may write: a reverted import)
 //   GET list?dir=d             [{ name, dir, size }]
-//   POST run?task=t            run a task: { code, output }
+//   POST run?task=t[&vars=json] run a task: { code, output }; vars fill its {name} parts (letters, digits, _ . - only)
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -121,8 +123,16 @@ export function studio(pagePath, { quiet = false, root = "" } = {}) {
     if (what === "run" && req.method === "POST") {
       const t = config().tasks[q.get("task") ?? ""];
       if (!Array.isArray(t) || !t.length) return send(res, 404, { error: `no task "${q.get("task")}" in studio.json` });
-      log(`task ${q.get("task")}: ${t.join(" ")}`);
-      return send(res, 200, await runTask(t.map(String)));
+      /** @type {Record<string, string>} */
+      let vars = {};
+      try { vars = JSON.parse(q.get("vars") || "{}"); } catch { return send(res, 400, { error: "vars: not JSON" }); }
+      // a part filled in must stay one plain word: no path out of the folder, nothing a shell would read
+      for (const v of Object.values(vars)) if (!/^[A-Za-z0-9_.-]+$/.test(String(v)) || String(v).includes("..")) return send(res, 400, { error: `vars: "${v}" is not a plain name` });
+      const argv = t.map((a) => String(a).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)));
+      const left = argv.find((a) => /\{\w+\}/.test(a));
+      if (left) return send(res, 400, { error: `task "${q.get("task")}" needs ${left.match(/\{\w+\}/)?.[0]}` });
+      log(`task ${q.get("task")}: ${argv.join(" ")}`);
+      return send(res, 200, await runTask(argv));
     }
     send(res, 404, { error: "unknown request" });
   }

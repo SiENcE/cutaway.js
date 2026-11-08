@@ -84,6 +84,8 @@
  * @property {(box: HTMLElement) => void} build       fill the inspector (again when the tab asks: refresh)
  * @property {(ctx: CanvasRenderingContext2D) => void} [render]  draw over the room (room pixels)
  * @property {(p: Pt, button: number) => void} [pick] a click on the room picture (room pixels)
+ * @property {(p: Pt, phase: "down" | "move" | "up", e: PointerEvent) => boolean | void} [drag]  the pointer on the room
+ *   picture: "down" first (true: the tab takes the drag, and its moves and the up come here; else pick follows)
  * @property {() => void} [onRoom]                    another room was opened
  * @property {(all?: boolean) => any} [save]          File > Save, Ctrl+S (all: File > Save all, everything it has)
  * @property {() => void} [undo]                      Edit > Undo, Ctrl+Z
@@ -126,7 +128,7 @@
 Cutaway.editor = (function () {
   const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170;
   const MODULES = ["editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
-    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-help.js", "editor-guide.js"];
+    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
   let isOpen = false, showHud = false;
   /** @type {string | null} */
@@ -170,6 +172,8 @@ Cutaway.editor = (function () {
   let holding = false, audioHeld = false, panned = false;
   /** @type {{x: number, y: number, cam: Pt} | null} the camera dragged with the middle button */
   let panDrag = null;
+  /** @type {EditorTab | null} a tab that took a drag on the picture (its drag hook) */
+  let tabDrag = null;
   /** @type {string | null} the room the editor knows (another one comes: its undo goes) */
   let knownRoom = null;
   /** Tabs where you listen: the sound isn't held there. */
@@ -233,8 +237,11 @@ Cutaway.editor = (function () {
       async remove(path) { await call("remove?path=" + enc(path), { method: "DELETE" }); },
       /** @param {string} dir @returns {Promise<{name: string, dir: boolean, size: number}[]>} */
       async list(dir) { return (await call("list?dir=" + enc(dir))).json(); },
-      /** Run one of the game's tasks (studio.json). @param {string} task @returns {Promise<{code: number, output: string}>} */
-      async run(task) { return (await call("run?task=" + enc(task), { method: "POST" })).json(); },
+      /**
+       * Run one of the game's tasks (studio.json); `vars` fill its {name} parts (a room's id: "art: room": [..., "{room}"]).
+       * @param {string} task @param {Record<string, string>} [vars] @returns {Promise<{code: number, output: string}>}
+       */
+      async run(task, vars) { return (await call("run?task=" + enc(task) + (vars ? "&vars=" + enc(JSON.stringify(vars)) : ""), { method: "POST" })).json(); },
     };
   })();
 
@@ -714,7 +721,12 @@ Cutaway.editor = (function () {
     e.stopPropagation(); e.preventDefault();
     if (e.button === 1) { const c = Cutaway.scene.camera; panDrag = { x: e.clientX, y: e.clientY, cam: { x: c.x, y: c.y } }; return; }
     const p = worldOf(e);
-    if (active !== "room") { tabs.find((t) => t.id === active)?.pick?.(p, e.button); return; }
+    if (active !== "room") {
+      const t = tabs.find((x) => x.id === active);
+      if (t?.drag?.(p, "down", e)) { tabDrag = t; return; }
+      t?.pick?.(p, e.button);
+      return;
+    }
     if (drawing) {
       const first = drawing.pts[0];
       if (e.button === 2) { drawing = null; return; }
@@ -747,6 +759,7 @@ Cutaway.editor = (function () {
       panned = true;
       return;
     }
+    if (tabDrag) { e.stopPropagation(); cursor = worldOf(e); tabDrag.drag?.(cursor, "move", e); panelDirty = true; return; }
     if (e.target !== Cutaway.display.screen && !drag) return;
     cursor = worldOf(e);
     if (!drag || active !== "room") return;
@@ -765,6 +778,7 @@ Cutaway.editor = (function () {
   /** @param {PointerEvent} e */
   function onUp(e) {
     if (panDrag) { e.stopPropagation(); panDrag = null; }
+    if (tabDrag) { e.stopPropagation(); const t = tabDrag; tabDrag = null; t.drag?.(worldOf(e), "up", e); panelDirty = true; }
     if (drag) { e.stopPropagation(); drag = null; }
   }
 
@@ -1087,15 +1101,15 @@ Cutaway.editor = (function () {
   }
 
   /**
-   * Run one of the game's tasks (studio.json) with its output in the output pane.
-   * @param {string} task @returns {Promise<{code: number, output: string}>}
+   * Run one of the game's tasks (studio.json) with its output in the output pane; `vars` fill its {name} parts.
+   * @param {string} task @param {Record<string, string>} [vars] @returns {Promise<{code: number, output: string}>}
    */
-  async function runTask(task) {
+  async function runTask(task, vars) {
     if (!studio.available) { setStatus("the tasks run in the studio (tools/studio.mjs)"); return { code: -1, output: "" }; }
     setLayout("output", true);
     setStatus(`${task} ...`);
     try {
-      const r = await studio.run(task);
+      const r = await studio.run(task, vars);
       output(`$ ${task}\n${r.output.trim() || "(no output)"}`);
       setStatus(`${task}: ${r.code === 0 ? "done" : "FAILED (exit " + r.code + ")"}`);
       return r;
@@ -1717,15 +1731,17 @@ Cutaway.editor = (function () {
   async function loadModules() {
     if (modulesLoaded) return;
     modulesLoaded = true;
-    for (const m of MODULES) {
-      await new Promise((resolve) => {
-        const sc = document.createElement("script");
-        sc.src = Cutaway.base + m;
-        sc.onload = resolve;
-        sc.onerror = () => { console.warn("Cutaway editor: no module " + m); resolve(undefined); };
-        document.head.append(sc);
-      });
-    }
+    /** @param {string} src */
+    const load = (src) => new Promise((resolve) => {
+      const sc = document.createElement("script");
+      sc.src = src;
+      sc.onload = resolve;
+      sc.onerror = () => { console.warn("Cutaway editor: no module " + src); resolve(undefined); };
+      document.head.append(sc);
+    });
+    for (const m of MODULES) await load(Cutaway.base + m);
+    // the game's own tabs (studio.json "editor": paths from the game's page), after the engine's: they may use its modules
+    if (await studio.connect()) for (const m of /** @type {string[]} */ (studio.config?.editor ?? [])) await load(m);
     panelDirty = true;
   }
 

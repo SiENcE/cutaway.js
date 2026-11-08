@@ -580,7 +580,7 @@ The page loads each layer file after the game's own data.
 | `node tools/solve.mjs index.html --full` | proves the game can be finished, lists soft-locks, checks hints (`--workers N`: threads that search, default one less than the cores, at most 12; `--max N` states) |
 | `node tools/play.mjs index.html [--touch] [--intro]` | plays it through in headless Chrome with real clicks (or taps); `--intro` plays the intro first |
 | `node tools/graph.mjs index.html [--act id] [--set f,g] [--out f.js]` | the game's connections: every state searched, every move watched (what it needs, what it brings about), as a puzzle dependency chart with the winning way, and how much each flag, item or once-mark multiplies the states; into `out/graph/<act>.js` (the studio's `graph` folder), shown by the editor's Connections tab and by `tools/graph.html` |
-| `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks (`studio.json`: write, layers, tasks, palette) |
+| `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks (`studio.json`: write, layers, tasks with `{name}` parts the editor fills, palette, editor: the game's own tabs) |
 | `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`; `--intro` lets the intro play) |
 | `node tools/build-atlas.mjs dir... out.js` | packs PNGs (pxl output) into an atlas script (an animation too big for a page goes frame by frame over several) |
 | `node tools/render-music.mjs index.html --out f.wav` | renders the music offline |

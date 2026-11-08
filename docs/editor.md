@@ -31,7 +31,7 @@ The editor docks around the game in its own page, like most editors:
 - **The menu bar** on top: File, Edit, View, Room, Art, Play, Tools, Help (below). On its right: the
   room to open, **▶ Play**, and whether the studio is connected.
 - **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
-  Issues, Checks, Connections, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what
+  Issues, Checks, Connections, Map, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what
   is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
   Things (its properties and scripts; actors always, and anything while Things is open). In the Art
   workspace the list shows the sprites instead (click: select, double-click: paint), in Voices the
@@ -77,7 +77,7 @@ the same way at their headings (also with Enter or Space on the heading).
 | Room | the rooms (open one), **+ Walk area**, **+ Hole**, **+ Hotspot**, save the shapes |
 | Art | **Edit pixels** (the selected sprite), **New sprite**, **Revert** to the game's art, **Import PNG**, **Export PNG**, **Reload art**, the pxl sources (with the studio) |
 | Play | **Pause game** (Ctrl+P), **Step** (F8: 100 ms), **Play from here** (F10); the **sequences**: each one, and each from one of its shot marks (the game runs while it plays, then is paused again), **Stop sequence** (as Esc in the game: `after` runs), **Next shot** (as Space); begin an act as a new game, **Test dialogue** (the one picked in Dialogue) |
-| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, State |
+| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, Map, State |
 | Help | the editor guide (F1), the reference, the keys |
 
 **Inspector in its own window** moves the inspector into a window of its own (the game gets the room
@@ -331,6 +331,33 @@ The wheel zooms, a drag moves, a double click fits everything in.
 
 The same chart opens as a page of its own: `tools/graph.html?data=<the file's URL>` (graph.mjs prints the link).
 
+## Map
+Every room at once, each as a picture of its background with its name, and the ways between them:
+**exits** (a hotspot's `exit`, solid), **script warps** (a `goto` in any script: a room's entering, a
+hotspot's or an actor's scripts, a dialogue an actor in that room opens; dashed) and, when shown,
+**sequences** (the rooms a sequence goes through). From the rooms the acts begin in, the ways are followed:
+a room none of them reaches is **unreachable** (dashed red; the title screen's rooms and a sequence's own
+are seen elsewhere, so they don't count), a way to a room that doesn't exist is **broken**. The line on
+top counts them.
+
+- Click a room: its **ways out** and **ways in**, each with where it is in the data (a hotspot, a script,
+  a dialogue) and the condition it is under (`if ...`); click one to open it there. **Open** (or a double
+  click) shows the room in the Room tab, **Things** its properties and scripts.
+- Drag a room to place it (kept for this game in the browser); **Re-layout** lays them out again, a column
+  per step from the start. The wheel zooms, a drag on the ground moves the view, **Fit** (or a double click
+  on the ground) shows everything.
+- **only the picked room's ways** hides the rest; **light up what is unreachable** dims the others.
+
+## A game's own tabs
+A game can bring tabs of its own (a map editor for its own room format, a tool only it needs): the scripts
+listed in its `studio.json` under `"editor"` (paths from the game's page) load after the engine's tabs and
+add themselves with `Cutaway.editor.tab({ id, label, build, view, render, pick, drag, ... })`. `drag(p,
+phase, e)` gets the pointer on the room picture: "down" first (return true to take the drag), then each
+"move" and the "up", in room pixels. A task's `{name}` parts are filled when the tab runs it:
+`Cutaway.editor.runTask("art: room", { room: "hall" })` for `"art: room": ["sh", "tools/build_art.sh",
+"room", "{room}"]` (plain names only: letters, digits, `_ . -`). `Cutaway.editor.modules.things.reveal(room,
+key, path)` shows a thing and its script, `modules.art.openSource(path, line)` a pxl source at a line.
+
 ## Files the editor writes
 
 | layer | file (the studio's `layers`) | what |
@@ -350,7 +377,9 @@ The page must load each layer after the game's own data (the game's `index.html`
 ```json
 { "write": ["game", "art", "assets"],
   "layers": { "art": "art/import", "artAtlas": "assets/imported.js" },
-  "tasks": { "art: imported": ["node", "lib/cutaway/tools/build-atlas.mjs", "art/import", "assets/imported.js"] },
+  "tasks": { "art: imported": ["node", "lib/cutaway/tools/build-atlas.mjs", "art/import", "assets/imported.js"],
+             "art: room": ["sh", "tools/build_art.sh", "room", "{room}"] },
+  "editor": ["game/editor/rooms.js"],
   "palette": ["art/palette.px.js"] }
 ```
 

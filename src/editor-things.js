@@ -120,6 +120,19 @@
     E.refresh();
   }
 
+  /**
+   * Show a thing from elsewhere (the Connections and Map tabs): its room opened, the thing picked here, and a
+   * script of it in the centre when it has one there. @param {string} room "" for actors, items, sequences
+   * @param {string} key "room", "hot:<id>", "actor:<id>", "item:<id>", "seq:<id>" @param {string[]} [path]
+   */
+  async function reveal(room, key, path) {
+    if (room && Cutaway.room.get(room) && Cutaway.scene.room?.id !== room && !/^(actor|item|seq):/.test(key)) await E.openRoom(room);
+    E.show("things");
+    sel = key;
+    if (path && path.length && path.reduce((/** @type {any} */ v, k) => (v == null ? undefined : v[k]), target()) !== undefined) openScript(path, path.join(" "));
+    E.refresh();
+  }
+
   async function save() {
     const text = `// What the Cutaway editor changed in the game's data (Things and Dialogue tabs): rooms, hotspots, props,\n` +
       `// light, effects, music, items, actors, their scripts, and dialogues. Loaded after the game's own data;\n` +
@@ -271,5 +284,5 @@
     selectNone() { if (open) open = null; else sel = "room"; E.refresh(); }, view: () => open?.view ?? null });
   E.modules.things = { get unsaved() { return dirty; }, save, target, get selected() { return sel; }, openScript, get script() { return open; },
     /** Another tab changed the edits layer (the Dialogue tab): it is saved with this one. */
-    touch() { dirty = true; }, select(/** @type {string} */ key) { sel = key; E.refresh(); }, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
+    touch() { dirty = true; }, select(/** @type {string} */ key) { sel = key; E.refresh(); }, reveal, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
 })();

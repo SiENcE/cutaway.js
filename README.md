@@ -114,7 +114,9 @@ hand-written is overwritten). Its workspaces:
 - **Dialogue** (the structure: nodes, choices, gotos and their scripts; what is offered now, test it)
 - **State** (go anywhere, set flags, give items: the developer's menu)
 - **Issues** (the validator on the live data), **Checks** (the game's tasks), **Connections** (the puzzle
-  dependency chart and the state budget; a step opens its script, a fact lists where it is set and asked)
+  dependency chart and the state budget; a step opens its script, a fact lists where it is set and asked),
+  **Map** (every room as a picture with its exits and script warps; what can't be reached, what leads nowhere)
+- A game's own tabs (`studio.json` "editor"), which can take a drag on the picture and run its tasks with names filled in
 - **Help** (F1: the editor guide and this reference, with search)
 
 Every list goes by keys (arrows, letters, Enter, / to filter) and folds its groups.

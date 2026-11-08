@@ -10,7 +10,7 @@ export default async function (t) {
   writeFileSync(join(dir, "index.html"), "<!doctype html><title>game</title>");
   mkdirSync(join(dir, "game"));
   writeFileSync(join(dir, "game", "a.js"), "// a");
-  writeFileSync(join(dir, "studio.json"), JSON.stringify({ write: ["game"], tasks: { hello: ["node", "-e", "console.log(6 * 7)"] } }));
+  writeFileSync(join(dir, "studio.json"), JSON.stringify({ write: ["game"], tasks: { hello: ["node", "-e", "console.log(6 * 7)"], echo: ["node", "-e", "console.log(process.argv[1])", "{room}"] } }));
   const s = await studio(join(dir, "index.html"), { quiet: true }).start(0);
   const call = (path, o = {}) => fetch(s.url + "__studio/" + path, { ...o, headers: { "x-studio-token": s.token, ...(o.headers ?? {}) } });
   try {
@@ -34,6 +34,11 @@ export default async function (t) {
     const r = await (await call("run?task=hello", { method: "POST" })).json();
     t.ok("studio: runs a task", r.code === 0 && r.output.trim() === "42", JSON.stringify(r));
     t.ok("studio: unknown tasks are refused", (await call("run?task=rm", { method: "POST" })).status === 404);
+    // a task's {name} parts are filled by the editor, with plain names only
+    const v = await (await call("run?task=echo&vars=" + encodeURIComponent(JSON.stringify({ room: "kessel_lobby" })), { method: "POST" })).json();
+    t.ok("studio: a task's {room} filled in", v.code === 0 && v.output.trim() === "kessel_lobby", JSON.stringify(v));
+    const bad = await Promise.all(["../x", "a b", "x;rm", "$(y)"].map(async (room) => (await call("run?task=echo&vars=" + encodeURIComponent(JSON.stringify({ room })), { method: "POST" })).status));
+    t.ok("studio: refuses what isn't a plain name, and a part left unfilled", bad.every((c) => c === 400) && (await call("run?task=echo", { method: "POST" })).status === 400, bad.join(" "));
   } finally {
     s.close();
     rmSync(dir, { recursive: true, force: true });

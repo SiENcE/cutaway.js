@@ -223,17 +223,21 @@
 
   // ------------------------------------------------------------------ the pxl source, in the centre
 
-  /** @param {string} path */
-  async function openSource(path) {
+  /** Open a pxl source in the centre, at a line (1-based: it is selected and scrolled to). @param {string} path @param {number} [line] */
+  async function openSource(path, line) {
     try {
-      const text = await E.studio.read(path);
-      source = { path, text, saved: text };
-      srcArea.value = text;
-      srcArea.setSelectionRange(0, 0);
-      srcArea.scrollTop = 0;
+      const text = source?.path === path && source.text !== source.saved ? source.text : await E.studio.read(path);
+      if (source?.path !== path || source.text === source.saved) source = { path, text, saved: text };
+      srcArea.value = source.text;
       centre = "source";
       E.show("art");
       buildSourceBar();
+      const lines = source.text.split("\n"), n = Math.max(1, Math.min(line ?? 1, lines.length));
+      const at = lines.slice(0, n - 1).reduce((s, l) => s + l.length + 1, 0);
+      srcArea.setSelectionRange(at, line ? at + lines[n - 1].length : at);
+      // the line a third down the view (13 px at 1.4: about 18 px a line)
+      srcArea.scrollTop = line ? Math.max(0, (n - 1) * 18.2 - srcArea.clientHeight / 3) : 0;
+      if (line) requestAnimationFrame(() => { srcArea.focus(); srcArea.scrollTop = Math.max(0, (n - 1) * 18.2 - srcArea.clientHeight / 3); });
     } catch (e) { E.setStatus(`${path}: ${/** @type {any} */ (e).message}`); }
   }
 
