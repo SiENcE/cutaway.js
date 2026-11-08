@@ -379,6 +379,12 @@ time now.
   moves them all. A value the file computes (a variable, `from: start`) is left to the file: the status line
   says so and the link opens it there. A time off the quarter hours is allowed, with a word: every stop of
   the clock is another state for the solver.
+- **A moment's scripts:** a picked moment shows **play** (what it plays when watched) and **unseen** (what it leaves
+  when nobody watched) with their number of steps; a click opens one as blocks in the centre (as the Things tab's
+  scripts; Close or Esc gives the timetable back). Each change goes into the game at once and into the game's file
+  where the moment is written: only the steps that changed, the file's comments and layout kept (as the Sequences
+  tab writes a sequence). A script the file computes (a variable, a helper that makes several moments) is left to
+  the file: the status line says so and the file opens there. Ctrl+Z / Ctrl+Y and Save as for the times.
 - **Zoom:** the wheel zooms the time axis round the pointer (the time there stays where it is), **+** and
   **−** (the keys or the buttons) step it, **Fit** (or **0**, or a double click on the empty table) puts the
   whole day in view; zoomed in, the quarter hours get their labels too. The zoom is kept.

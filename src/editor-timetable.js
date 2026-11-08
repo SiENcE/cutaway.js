@@ -8,7 +8,9 @@
 // Times and days can be changed here (the inspector's fields, or a bar dragged: whole, or by an end, in quarter
 // hours): the change goes into the game's file where the routine or the moment is written (Cutaway.time.source
 // says where; only that value changes, the file's comments and layout stay) and into the game at once. A value
-// the file computes (a variable, a loop's) is left to the file. Undo and redo; Save (Ctrl+S) writes the files.
+// the file computes (a variable, a loop's) is left to the file. A picked moment's scripts (what it plays when watched,
+// what it leaves when nobody watched) open as blocks in the centre and are written back the same way: only the steps
+// that changed (editor-literal.js), unless the file computes them. Undo and redo; Save (Ctrl+S) writes the files.
 "use strict";
 
 (function () {
@@ -273,9 +275,18 @@
   }
   /** A value as the data writes it. @param {any} v @returns {string} */
   const lit = (v) => (Array.isArray(v) ? `[${v.map(lit).join(", ")}]` : typeof v === "string" ? JSON.stringify(v) : String(v));
-  /** The object of a routine's entry i or of a moment in its file's text, or null (computed there). @param {string} src @param {"routine" | "moment"} kind @param {number} line @param {number} i */
-  function locate(src, kind, line, i) {
-    const L = E.modules.literal, c = L?.call(src, line, RE[kind]);
+  /**
+   * The object of a routine's entry i or of a moment in its file's text, or null (computed there). The call is found by
+   * its id where it names it (a moment's script changed above it moves the lines), else on its line.
+   * @param {string} src @param {"routine" | "moment"} kind @param {number} line @param {number} i @param {string} [id]
+   */
+  function locate(src, kind, line, i, id) {
+    const L = E.modules.literal;
+    if (id) {
+      const m = new RegExp(`Cutaway\\.(?:time\\.)?${kind}\\s*\\(\\s*["'\`]${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'\`]`).exec(src);
+      if (m) line = L.lineOf(src, m.index);
+    }
+    const c = L?.call(src, line, RE[kind]);
     if (!c || c.args.length < 2) return null;
     const a = c.args[1];
     if (kind === "moment") return a.t === "obj" ? a : null;
@@ -298,7 +309,7 @@
     const f = /** @type {{src: string, saved: string}} */ (files.get(w.path));
     let src = f.src;
     for (const [key, v] of Object.entries(values)) {
-      const o = locate(src, kind, w.line, i), n = o ? L.field(o, key) : null;
+      const o = locate(src, kind, w.line, i, id), n = o ? L.field(o, key) : null;
       if (!o || n?.t === "code") { E.setStatus(`time: ${what} has its ${o ? key : "values"} computed in the code (${w.path}:${w.line}): change it there`); return false; }
       src = v === undefined ? (n ? L.removeKey(src, o, key) : src) : L.setKey(src, o, key, lit(v));
     }
@@ -315,11 +326,68 @@
     E.setStatus(`time: ${what} ${Object.entries(values).map(([k, v]) => `${k} ${v === undefined ? "(every day)" : lit(v)}`).join(", ")} in ${w.path}:${w.line} (not saved)`);
     return true;
   }
+  // ---- a moment's scripts as blocks in the centre
+
+  /** @type {{id: string, key: "play" | "unseen", view: EditorView} | null} the script open in the centre */
+  let open = null;
+  const SCRIPT = { play: "what it plays when watched", unseen: "what it leaves when nobody watched" };
+  /**
+   * Where a moment's script is written: the file's text, the moment's object and the script's node there; or why it can't
+   * be changed here (no studio, not known, made for several moments by one text, computed in the code).
+   * @param {string} id @param {"play" | "unseen"} key
+   */
+  async function scriptAt(id, key) {
+    if (!E.studio.available) return { why: "changing a script needs the studio (it writes the game's file)" };
+    const w = where("moment", id);
+    if (!w) return { why: "where the moment is written isn't known" };
+    if (sharing("moment", id).length > 1) return { why: `one text makes ${sharing("moment", id).join(", ")} (${w.path}:${w.line}): change it there`, w };
+    if (!files.has(w.path)) { try { const t = await E.studio.read(w.path); files.set(w.path, { src: t, saved: t }); } catch (e) { return { why: `${w.path}: ${/** @type {any} */ (e).message}` }; } }
+    const f = /** @type {{src: string, saved: string}} */ (files.get(w.path)), L = E.modules.literal, o = locate(f.src, "moment", w.line, 0, id);
+    if (!o) return { why: `the moment's data is computed in the code (${w.path}:${w.line})`, w };
+    const n = L.field(o, key);
+    if (n && n.t !== "arr" && n.t !== "str") return { why: `its ${key} is computed in the code (${w.path}:${w.line}): change it there`, w };
+    return { w, f, o, n };
+  }
+  /** Open a moment's script in the centre (computed in the code: the file opens there instead). @param {string} id @param {"play" | "unseen"} key */
+  async function openScript(id, key) {
+    const S = E.modules.script, m = T().moments.get(id);
+    if (!S || !m) return;
+    const at = await scriptAt(id, key);
+    if ("why" in at) { E.setStatus(`time: ${id}'s ${key}: ${at.why}`); if (at.w) E.modules.art?.openSource(at.w.path, at.w.line); return; }
+    const view = S.view({ title: `moment ${id}: ${key} (${SCRIPT[key]})`, value: m[key] ?? [],
+      change: (/** @type {any[] | null} */ v) => { changeScript(id, key, v ?? []); },
+      close: () => { open = null; E.refresh(); draw(); } });
+    open = { id, key, view };
+    E.refresh();
+  }
+  /** Write a moment's script: in its file (only the steps that changed) and in the game. @param {string} id @param {"play" | "unseen"} key @param {any[]} v */
+  async function changeScript(id, key, v) {
+    const m = T().moments.get(id), at = await scriptAt(id, key), L = E.modules.literal;
+    if (!m) return false;
+    if ("why" in at) { E.setStatus(`time: ${id}'s ${key}: ${at.why}`); return false; }
+    const now = m[key] === undefined ? [] : Array.isArray(m[key]) ? m[key] : [m[key]];
+    /** @type {{text: string} | {why: string}} */
+    let r;
+    if (!at.n) r = { text: L.setKey(at.f.src, at.o, key, L.lit(v)) };
+    else if (at.n.t !== "arr") r = { text: L.put(at.f.src, at.n, L.lit(v)) };
+    else r = L.replaceList(at.f.src, at.n, now, v, (/** @type {string} */ text) => L.field(locate(text, "moment", at.w.line, 0, id), key) ?? null);
+    if (!("text" in r)) { E.setStatus(`time: ${id}'s ${key}: ${r.why}`); return false; }
+    const ed = { path: at.w.path, before: at.f.src, after: r.text, live: [{ o: m, key, before: m[key], after: JSON.parse(JSON.stringify(v)) }] };
+    undo.push(ed); if (undo.length > 200) undo.shift();
+    redo = [];
+    put(ed, true);
+    E.setStatus(`time: ${id}'s ${key} (${v.length} steps) in ${at.w.path} (not saved)`);
+    return true;
+  }
+
   /** An edit done (true) or undone. @param {TimeEdit} ed @param {boolean} on */
   function put(ed, on) {
     const f = files.get(ed.path);
     if (f) f.src = on ? ed.after : ed.before;
     for (const c of ed.live) { const v = on ? c.after : c.before; if (v === undefined) delete c.o[c.key]; else c.o[c.key] = v; }
+    // the script open in the centre shows what it holds now (an undo from the tab)
+    const shown = open ? T().moments.get(open.id) : null;
+    if (open && shown && ed.live.some((c) => c.o === shown && c.key === open?.key)) /** @type {any} */ (open.view).blocks.value = shown[open.key] ?? [];
     T().apply();
     E.refresh(); draw();
   }
@@ -389,13 +457,17 @@
         fields("moment", s.id, 0, m),
         ...(condText(m.if) ? [el("div", { style: { color: "#ffd27a" } }, [`if ${condText(m.if)}`])] : []),
         el("div", { className: "cw-dim" }, [`${m.play ? "plays when watched" : "nothing to play"}${m.unseen ? "; leaves something behind when nobody watched" : ""}${done ? `; happened (${done})` : "; not yet"}`]),
+        el("div", { style: { marginTop: "4px" } }, /** @type {("play" | "unseen")[]} */ (["play", "unseen"]).map((key) => {
+          const v = m[key], n = v === undefined ? 0 : Array.isArray(v) ? v.length : 1;
+          return button(`${open?.id === s.id && open.key === key ? "● " : ""}${key} (${n} step${n === 1 ? "" : "s"})`, () => { openScript(s.id, key); }, `${SCRIPT[key]}: as blocks in the centre, written into the game's file (what the code computes opens the file instead)`);
+        })),
         ...(Cutaway.room.ids().includes(m.room) ? [el("div", { style: { marginTop: "4px" } }, [button("Open room", () => { E.openRoom(m.room); E.show("room"); }, "its room in the Room tab")])] : [])]));
     }
     draw();
   }
 
-  E.tab({ id: "time", label: "Time", build, view: () => view, selectNone: () => view.selectNone?.(), save: () => save(),
+  E.tab({ id: "time", label: "Time", build, view: () => open?.view ?? view, selectNone: () => view.selectNone?.(), save: () => save(),
     undo: () => step(undo, redo, false), redo: () => step(redo, undo, true), get unsaved() { return unsaved(); } });
-  E.modules.time = { table, days, zoom, fit, change, save, where, sharing, get unsaved() { return unsaved(); }, files, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
+  E.modules.time = { table, days, zoom, fit, change, save, where, sharing, openScript, changeScript, get script() { return open; }, get unsaved() { return unsaved(); }, files, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
     select(/** @type {any} */ s) { sel = s; E.refresh(); draw(); } };
 })();

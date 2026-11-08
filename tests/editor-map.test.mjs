@@ -37,6 +37,14 @@ Cutaway.routine("guard", [
 for (const id of ["cat_a", "cat_b"]) Cutaway.routine(id, [{ day: 1, from: "19:00", to: "19:30", room: "yard" }]);
 const BELL = "22:30";
 Cutaway.moment("bell", { room: "yard", day: 1, from: BELL, to: "22:45", play: [] });
+const RING = [{ sfx: "_tick" }];
+Cutaway.moment("ring", { room: "hall", day: 2, from: "19:00", to: "19:15", play: RING });
+const SPOT = [60, 140];
+Cutaway.moment("dog", { room: "yard", day: 2, from: "20:00", to: "20:15", play: [
+  { say: "pip", text: "Here." },   // pip calls
+  { walk: "pip", to: SPOT },
+] });
+Cutaway.moment("gong", { room: "hall", day: 2, from: "21:00", to: "21:15", play: [...RING, { set: "gonged" }] });
 Cutaway.time.mark("01:00");
 `);
   writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { edits: "layers/edits.js" }, editor: ["mytab.js"], tasks: { where: ["node", "-e", "console.log('in ' + process.argv[1])", "{room}"] } }));
@@ -176,10 +184,37 @@ Cutaway.time.mark("01:00");
     t.ok("time: a moment's days changed", days.ok && JSON.stringify(days.day) === "[1,2]", JSON.stringify(days));
     await chrome.ev(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
     t.ok("time: Ctrl+Z undoes the last change, in the game and the text", (await chrome.ev(`Cutaway.time.moments.get("bell").day`)) === 1 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("day: [1, 2]"));
+    // a moment's script as blocks in the centre, written into its file (only the steps that changed)
+    await chrome.ev(`${M}.select({ kind: "moment", id: "bell" }); ${M}.openScript("bell", "play")`);
+    await sleep(300);
+    t.ok("time: a moment's play opens as blocks in the centre", /moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)) && (await chrome.ev(`${M}.script?.id`)) === "bell");
+    const sc = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { set: "bell_rang" }]); return { ok, live: Cutaway.time.moments.get("bell").play, text: ${M}.files.get("layers/times.js").src }; })()`);
+    t.ok("time: its steps changed: in the game and in the file", sc.ok && sc.live.length === 2 && sc.text.includes('play: [{ sfx: "_tick" }, { set: "bell_rang" }] });'), sc.text);
+    const sc2 = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { wait: 500 }, { set: "bell_rang" }]); return { ok, text: ${M}.files.get("layers/times.js").src }; })()`);
+    t.ok("time: a step put in between: only it is added, the others stay as written", sc2.ok && /\{ sfx: "_tick" \},\s*\{ wait: 500 \},\s*\{ set: "bell_rang" \}/.test(sc2.text) && sc2.text.includes("// a guard and two cats"), sc2.text);
+    const ring = await chrome.ev(`(async () => ({ ok: await ${M}.changeScript("ring", "play", [{ wait: 100 }]), live: Cutaway.time.moments.get("ring").play.length }))()`);
+    // steps that hold code: kept as written; a change to their code is left to the file; a list spread into it too
+    const dog = await chrome.ev(`(async () => {
+      const a = await ${M}.changeScript("dog", "play", [{ say: "pip", text: "Here, boy." }, { walk: "pip", to: [60, 140] }, { set: "dog_called" }]);
+      const textA = ${M}.files.get("layers/times.js").src;
+      const b = await ${M}.changeScript("dog", "play", [{ say: "pip", text: "Here, boy." }, { walk: "pip", to: [70, 140] }, { set: "dog_called" }]);
+      const g = await ${M}.changeScript("gong", "play", [{ sfx: "_tick" }]);
+      return { a, b, g, textA, textB: ${M}.files.get("layers/times.js").src, gong: Cutaway.time.moments.get("gong").play.length }; })()`);
+    t.ok("time: a step that holds code stays as written while another changes (its comment too)", dog.a && /text: "Here, boy\." \},\s+\/\/ pip calls\n\s+\{ walk: "pip", to: SPOT \},\s*\{ set: "dog_called" \}/.test(dog.textA), dog.textA.slice(dog.textA.indexOf('"dog"'), dog.textA.indexOf('"gong"')));
+    t.ok("time: a change to a value the code computes (to: SPOT) is left to the file", !dog.b && dog.textB === dog.textA, JSON.stringify(dog.b) + dog.textB.slice(dog.textB.indexOf('"dog"'), dog.textB.indexOf('"gong"')));
+    t.ok("time: a list spread into a script (...RING) is left to the file", !dog.g && dog.gong === 2);
+    t.ok("time: a script the file computes (a variable) is left to the file", !ring.ok && ring.live === 1, JSON.stringify(ring));
+    await chrome.ev(`${M}.script.view.selectNone(); 1`);
+    await sleep(200);
+    t.ok("time: closed, the timetable is back in the centre", !(await chrome.ev(`${M}.script`)) && !/moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)));
+    // Ctrl+Z twice: the dog's change, then the step put into the bell's
+    await chrome.ev(`(() => { for (let i = 0; i < 2; i++) document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
+    await sleep(200);
+    t.ok("time: Ctrl+Z: the changes go again, in the game and the file", (await chrome.ev(`Cutaway.time.moments.get("dog").play.length`)) === 2 && (await chrome.ev(`Cutaway.time.moments.get("bell").play.length`)) === 2 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("wait: 500"));
     await chrome.ev(`${M}.save()`);
     await sleep(300);
     const saved = readFileSync(file, "utf8");
-    t.ok("time: Save writes the file: the changes there, its comments kept", saved.includes('from: "20:15"') && saved.includes('to: "19:45"') && saved.includes("// a guard and two cats") && (await chrome.ev(`${M}.unsaved`)) === 0, saved.slice(0, 400));
+    t.ok("time: Save writes the file: the changes there, its comments kept", saved.includes('from: "20:15"') && saved.includes('to: "19:45"') && saved.includes('{ set: "bell_rang" }') && saved.includes("// a guard and two cats") && (await chrome.ev(`${M}.unsaved`)) === 0, saved.slice(0, 400));
     // a bar dragged by its right end, two quarter hours on
     await chrome.ev(`(() => { ${M}.day = 1; ${M}.fit(); return 1; })()`);
     await sleep(200);

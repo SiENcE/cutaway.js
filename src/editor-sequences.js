@@ -386,104 +386,6 @@
   /** Where a sequence is written: its file in the game's folder (null: in the edits layer, or nowhere known). @param {string} id */
   function where(id) { const s = Cutaway.sequence.source?.(id); return s ? relPath(s.file) : null; }
 
-  /** The value a literal's node writes (an Error for code: computed there). @param {string} src @param {Lit} n @returns {any} */
-  function valueOf(src, n) {
-    const raw = src.slice(n.s, n.e);
-    switch (n.t) {
-      case "num": return n.v;
-      case "lit": return raw === "true" ? true : raw === "false" ? false : raw === "null" ? null : undefined;
-      case "str": return raw[0] === '"' ? JSON.parse(raw) : raw[0] === "'" ? JSON.parse(`"${raw.slice(1, -1).replace(/\\'/g, "'").replace(/"/g, '\\"')}"`) : raw.slice(1, -1);
-      case "arr": return (n.items ?? []).map((x) => valueOf(src, x));
-      case "obj": {
-        /** @type {Record<string, any>} */
-        const o = {};
-        for (const p of n.props ?? []) { if (p.key === null || p.node.t === "code") throw new Error("computed"); o[p.key] = valueOf(src, p.node); }
-        return o;
-      }
-      default: throw new Error("computed");
-    }
-  }
-  /** A value written as the game writes its data ({ wait: 500 }, "text", [0, 120]). @param {any} v @returns {string} */
-  function lit(v) {
-    if (Array.isArray(v)) return `[${v.map(lit).join(", ")}]`;
-    if (v && typeof v === "object") {
-      const e = Object.entries(v).filter(([, x]) => x !== undefined);
-      return e.length ? `{ ${e.map(([k, x]) => `${/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k)}: ${lit(x)}`).join(", ")} }` : "{}";
-    }
-    return typeof v === "string" ? JSON.stringify(v) : String(v);
-  }
-  /** The spaces a line begins with. @param {string} src @param {number} at */
-  function indentAt(src, at) { const ls = src.lastIndexOf("\n", at - 1) + 1; return /^[ \t]*/.exec(src.slice(ls))?.[0] ?? ""; }
-  /** Is a node alone on its line (only spaces before it)? @param {string} src @param {Lit} n */
-  const alone = (src, n) => /^[ \t]*$/.test(src.slice(src.lastIndexOf("\n", n.s - 1) + 1, n.s));
-
-  /**
-   * The edits (text ranges replaced) that turn an array's items from old into new: items kept stay as written, an
-   * item changed in a few keys gets those keys (an if's branches the same way, deeper), others are put or taken.
-   * @param {string} src @param {Lit} arr @param {any[]} ov @param {any[]} nv @param {{s: number, e: number, text: string}[]} out
-   */
-  function patchArr(src, arr, ov, nv, out) {
-    const items = arr.items ?? [], J = (/** @type {any} */ x) => JSON.stringify(x);
-    if (!items.length) { out.push({ s: arr.s, e: arr.e, text: lit(nv) }); return; }
-    // the longest run kept, in order
-    const n = ov.length, m = nv.length, dp = [...Array(n + 1)].map(() => new Array(m + 1).fill(0));
-    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = J(ov[i]) === J(nv[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    /** @type {[number, number][]} */
-    const keep = [];
-    for (let i = 0, j = 0; i < n && j < m;) { if (J(ov[i]) === J(nv[j])) { keep.push([i, j]); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) i++; else j++; }
-    keep.push([n, m]);
-    let oi = 0, ni = 0;
-    for (const [ko, kn] of keep) {
-      const pairs = Math.min(ko - oi, kn - ni);
-      for (let p = 0; p < pairs; p++) patchItem(src, items[oi + p], ov[oi + p], nv[ni + p], out);
-      for (let o = oi + pairs; o < ko; o++) out.push(takeOut(src, items, o));
-      if (kn - ni > pairs) {
-        const add = nv.slice(ni + pairs, kn), after = oi + pairs - 1;
-        if (after >= 0) { const ref = items[after], ind = indentAt(src, ref.s); out.push({ s: ref.e, e: ref.e, text: add.map((x) => `,\n${ind}${lit(x)}`).join("") }); }
-        else { const ref = items[0], ind = indentAt(src, ref.s); out.push({ s: ref.s, e: ref.s, text: add.map((x) => `${lit(x)},${alone(src, ref) ? "\n" + ind : " "}`).join("") }); }
-      }
-      oi = ko + 1; ni = kn + 1;
-    }
-  }
-  /** The edit that takes item i out of a list (its line with it, when it is alone there). @param {string} src @param {Lit[]} items @param {number} i */
-  function takeOut(src, items, i) {
-    const it = items[i];
-    let e = L().skip(src, it.e);
-    if (src[e] === ",") e++;
-    const rest = src.slice(e, src.indexOf("\n", e) < 0 ? src.length : src.indexOf("\n", e));
-    const ls = src.lastIndexOf("\n", it.s - 1) + 1;
-    // alone on its line (perhaps with a comment after it): the line goes
-    if (alone(src, it) && /^[ \t]*(\/\/.*)?$/.test(rest) && !(items[i + 1] && items[i + 1].s < e + rest.length)) return { s: ls, e: e + rest.length + 1, text: "" };
-    while (src[e] === " ") e++;
-    return { s: it.s, e, text: "" };
-  }
-  /** @param {string} src @param {Lit} node @param {any} ov @param {any} nv @param {{s: number, e: number, text: string}[]} out */
-  function patchItem(src, node, ov, nv, out) {
-    const plain = (/** @type {any} */ x) => x && typeof x === "object" && !Array.isArray(x);
-    if (!(node.t === "obj" && plain(ov) && plain(nv))) { out.push({ s: node.s, e: node.e, text: lit(nv) }); return; }
-    const gone = Object.keys(ov).filter((k) => !(k in nv)), added = Object.keys(nv).filter((k) => !(k in ov));
-    if (gone.length && added.length) { out.push({ s: node.s, e: node.e, text: lit(nv) }); return; }
-    for (const k of Object.keys(nv)) {
-      if (k in ov && JSON.stringify(ov[k]) === JSON.stringify(nv[k])) continue;
-      const f = L().field(node, k);
-      if (f && ["then", "else", "once"].includes(k) && f.t === "arr" && Array.isArray(ov[k]) && Array.isArray(nv[k])) { patchArr(src, f, ov[k], nv[k], out); continue; }
-      if (f) out.push({ s: f.s, e: f.e, text: lit(nv[k]) });
-    }
-    if (added.length) { const last = node.props?.[node.props.length - 1]?.node, at = last ? last.e : node.s + 1; out.push({ s: at, e: at, text: added.map((k) => `${last ? ", " : " "}${/^[A-Za-z_$][\w$]*$/.test(k) ? k : JSON.stringify(k)}: ${lit(nv[k])}`).join("") }); }
-    for (const k of gone) {
-      const props = node.props ?? [], i = props.findIndex((p) => p.key === k), it = props[i], prev = props[i - 1], next = props[i + 1];
-      if (prev) out.push({ s: prev.node.e, e: it.node.e, text: "" });
-      else if (next && next.ks !== undefined && it.ks !== undefined) out.push({ s: it.ks, e: next.ks, text: "" });
-      else out.push({ s: node.s, e: node.e, text: lit(nv) });
-    }
-  }
-  /** The text with the edits made (from the end, so the places stay right); null if two of them meet. @param {string} src @param {{s: number, e: number, text: string}[]} ed */
-  function applyEdits(src, ed) {
-    const list = ed.slice().sort((a, b) => b.s - a.s || b.e - a.e);
-    for (let i = 1; i < list.length; i++) if (list[i].e > list[i - 1].s) return null;
-    for (const x of list) src = src.slice(0, x.s) + x.text + src.slice(x.e);
-    return src;
-  }
   /** The `steps` list of a sequence's call in a file's text. @param {string} src @param {string} id */
   function stepsNode(src, id) {
     const m = new RegExp(`Cutaway\\.sequence\\s*\\(\\s*["'\`]${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'\`]`).exec(src);
@@ -498,17 +400,8 @@
   function fileText(src, id, next) {
     const n = stepsNode(src, id);
     if (!n) return { why: "its steps aren't a list written in the file" };
-    let cur;
-    try { cur = valueOf(src, n); } catch { return { why: "its steps are computed in the code" }; }
-    if (JSON.stringify(cur) !== JSON.stringify(steps())) return { why: "the file's steps aren't the ones the game plays (changed elsewhere)" };
-    /** @type {{s: number, e: number, text: string}[]} */
-    const ed = [];
-    patchArr(src, n, cur, next, ed);
-    const text = applyEdits(src, ed);
-    if (text === null) return { why: "two changes meet" };
-    const back = stepsNode(text, id);
-    try { if (!back || JSON.stringify(valueOf(text, back)) !== JSON.stringify(next)) return { why: "the text wouldn't read back the same" }; } catch { return { why: "the text wouldn't read back" }; }
-    return { text };
+    // only the steps that changed (editor-literal.js): comments and layout stay
+    return L().replaceList(src, n, steps(), next, (/** @type {string} */ text) => stepsNode(text, id));
   }
 
   /** @param {any[]} next @param {string} what */
