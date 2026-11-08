@@ -50,6 +50,28 @@ export default async function (t) {
     // a task with a {room} part run without it asks, the open room offered
     const asked = await chrome.ev(`(async () => { let offered = ""; window.prompt = (q, d) => { offered = d; return d; }; const r = await ${E}.runTask("where"); return { offered, out: r.output.trim() }; })()`);
     t.ok("editor: a task's {room} left open is asked for, the room open offered", asked.offered === "hall" && asked.out === "in hall", JSON.stringify(asked));
+    // a room wider than the screen gets a scrollbar under the picture; its thumb moves the camera
+    await chrome.ev(`Cutaway.room.get("hall").size = [480, 180]; ${E}.openRoom("hall").then(() => ${E}.show("room"))`);
+    await sleep(300);
+    const sb = await chrome.ev(`(async () => {
+      const h = document.querySelector(".cw-picbars .cw-sb.h"), v = document.querySelector(".cw-picbars .cw-sb.v"), th = h.querySelector(".cw-sb-thumb"), t = th.getBoundingClientRect();
+      const ev = (type, x) => th.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: t.top + 3, bubbles: true, pointerId: 5, button: 0, buttons: 1 }));
+      const x0 = Cutaway.scene.camera.x; ev("pointerdown", t.left + 4); ev("pointermove", t.left + 300); ev("pointerup", t.left + 300);
+      await new Promise((r) => setTimeout(r, 100));
+      const pic = Cutaway.display.toClient(0, Cutaway.display.height), hr = h.getBoundingClientRect();
+      return { h: getComputedStyle(h).display !== "none", v: getComputedStyle(v).display !== "none", moved: Cutaway.scene.camera.x > x0, atPicture: Math.abs(hr.bottom - pic.y) < 2 };
+    })()`);
+    t.ok("editor: a room wider than the screen has a scrollbar along the picture's bottom (none up the side); its thumb moves the camera", sb.h && !sb.v && sb.moved && sb.atPicture, JSON.stringify(sb));
+    await chrome.ev(`delete Cutaway.room.get("hall").size; 1`);
+    // the panels' edges resize them, and the sizes are kept
+    const sized = await chrome.ev(`(async () => {
+      const e = document.querySelector(".cw-split.col"), r = e.getBoundingClientRect(), x = r.left + 3, y = r.top + 200;
+      const ev = (type, px) => e.dispatchEvent(new PointerEvent(type, { clientX: px, clientY: y, bubbles: true, pointerId: 6, button: 0, buttons: 1 }));
+      const w0 = ${E}.layout.leftW; ev("pointerdown", x); ev("pointermove", x + 50); ev("pointerup", x + 50);
+      await new Promise((r) => setTimeout(r, 100));
+      return { w0, w1: ${E}.layout.leftW, kept: JSON.parse(localStorage.getItem("cutaway.editor.layout")).leftW, panel: Math.round(document.querySelector(".cw-left").getBoundingClientRect().width) };
+    })()`);
+    t.ok("editor: dragging the left panel's edge widens it, and the width is kept", sized.w1 === sized.w0 + 50 && sized.kept === sized.w1 && sized.panel === sized.w1, JSON.stringify(sized));
     // the Map tab
     await chrome.ev(`${E}.show("map"); 1`);
     await sleep(400);
@@ -61,6 +83,9 @@ export default async function (t) {
     await chrome.ev(`Cutaway.room("attic", { background: Cutaway.room.get("hall").background }); Cutaway.room.get("hall").hotspots.plant.look = [{ goto: "cellar" }]; 1`);
     const d2 = await chrome.ev(`(() => { const d = ${E}.modules.map.collect(); return { unreachable: d.unreachable, broken: d.broken.map((w) => w.from + ">" + w.to + " " + w.label) }; })()`);
     t.ok("map: a room nothing leads to is unreachable, a goto to no room is broken", d2.unreachable.join() === "attic" && d2.broken.join() === "hall>cellar plant: look", JSON.stringify(d2));
+    // zoomed in, the map has scrollbars
+    const mapBars = await chrome.ev(`(async () => { ${E}.modules.map.fit(); const box = ${E}.centre.querySelector("canvas").parentElement; box.querySelector("canvas").dispatchEvent(new WheelEvent("wheel", { deltaY: -800, clientX: 600, clientY: 300, bubbles: true, cancelable: true })); await new Promise((r) => setTimeout(r, 100)); return [...box.querySelectorAll(".cw-sb")].map((b) => getComputedStyle(b).display !== "none"); })()`);
+    t.ok("map: zoomed in, it has scrollbars both ways", mapBars.length === 2 && mapBars.every(Boolean), JSON.stringify(mapBars));
     await chrome.ev(`${E}.modules.map.select("yard"); 1`);
     await sleep(300);
     t.ok("map: a picked room lists its ways", /ways in/.test(await chrome.ev("document.body.textContent")) && /← hall/.test(await chrome.ev("document.body.textContent")));

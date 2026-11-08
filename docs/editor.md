@@ -49,7 +49,9 @@ The editor docks around the game in its own page, like most editors:
   the room (or the pixel and its colour while painting), what isn't saved, the studio. **Output** opens
   the output pane above it: every message, and the output of the tasks.
 
-The panels scroll on their own; View shows or hides each of them (kept for the next time).
+The panels scroll on their own; View shows or hides each of them (kept for the next time). **Drag a
+panel's inner edge** to make it wider or narrower (the left panel's right edge, the inspector's left edge,
+the output pane's top edge; a double click on the edge gives back its first size); the sizes are kept too.
 
 ## Lists and the keyboard
 Every list (the workspaces, the rooms, the room's things, the sprites, the sounds, the things to pick
@@ -99,8 +101,9 @@ the whole picture (a black fade or the letterbox doesn't hide them).
   is selected; its own baseline goes along. The handle on its baseline moves only the baseline. A prop
   moved here (or whose place the shapes file already has) keeps its place in the shapes file.
 - **+ Walk area / + Hole / + Hotspot**: click the corners, then the first one again (or Enter).
-- **The camera**: in a room wider or taller than the screen, drag with the **middle button**, turn the
-  **wheel** (Shift+wheel: across), or press the **arrows** while nothing is selected. Closing the editor
+- **The camera**: in a room wider or taller than the screen, **scrollbars** lie along the picture's bottom
+  and right edges (drag the thumb, or click beside it for a screen's width); or drag with the **middle
+  button**, turn the **wheel** (Shift+wheel: across), or press the **arrows** while nothing is selected. Closing the editor
   gives the camera back to the one playing.
 - Ctrl+Z / Ctrl+Y undo and redo (in the room on screen: when another room comes, by the game or a
   sequence, the undo starts again). **Save** (Ctrl+S) writes `rooms/<id>.geo.js`, and that of any other
@@ -348,8 +351,8 @@ top counts them.
   a dialogue) and the condition it is under (`if ...`); click one to open it there. **Open** (or a double
   click) shows the room in the Room tab, **Things** its properties and scripts.
 - Drag a room to place it (kept for this game in the browser); **Re-layout** lays them out again, a column
-  per step from the start. The wheel zooms, a drag on the ground moves the view, **Fit** (or a double click
-  on the ground) shows everything.
+  per step from the start. The wheel zooms, a drag on the ground or the **scrollbars** move the view, **Fit**
+  (or a double click on the ground) shows everything.
 - **only the picked room's ways** hides the rest; **light up what is unreachable** dims the others.
 
 ## A game's own tabs

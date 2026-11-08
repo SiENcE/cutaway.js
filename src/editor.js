@@ -126,7 +126,7 @@
  */
 
 Cutaway.editor = (function () {
-  const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170;
+  const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170, SPLIT = 6;
   const MODULES = ["editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
     "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-map.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
@@ -152,8 +152,8 @@ Cutaway.editor = (function () {
   let panel = null;
   /** @type {Window | null} the inspector's own window (null: docked beside the game) */
   let win = null;
-  /** @type {{left: boolean, right: boolean, output: boolean, window: boolean}} what is shown (kept in localStorage) */
-  const layout = { left: true, right: true, output: false, window: false };
+  /** @type {{left: boolean, right: boolean, output: boolean, window: boolean, leftW: number, rightW: number, outH: number}} what is shown and how big (kept in localStorage) */
+  const layout = { left: true, right: true, output: false, window: false, leftW: LEFT_W, rightW: RIGHT_W, outH: OUT_H };
   try { Object.assign(layout, JSON.parse(localStorage.getItem("cutaway.editor.layout") ?? "{}")); } catch { /* none kept */ }
   let wantWindow = layout.window, pollTimer = 0, raf = 0;
   let status = "", panelDirty = true, outputDirty = true;
@@ -174,6 +174,10 @@ Cutaway.editor = (function () {
   let panDrag = null;
   /** @type {EditorTab | null} a tab that took a drag on the picture (its drag hook) */
   let tabDrag = null;
+  /** @type {HTMLElement | null} the box over the picture that holds its scrollbars */
+  let picBars = null;
+  /** @type {{update: () => void} | null} */
+  let picScroll = null;
   /** @type {string[]} the tabs the game brought (studio.json "editor"), for the Tools menu */
   let gameTabs = [];
   /** @type {((room: string) => string | null | undefined)[]} what games say about a room in the Room tab (roomNote) */
@@ -996,6 +1000,18 @@ Cutaway.editor = (function () {
 .cw-out { background: #100d18; border-top: 1px solid #3a3350; overflow: auto; padding: 4px 8px; white-space: pre-wrap; color: #ccc; }
 .cw-out .e { border-bottom: 1px solid #221c30; padding: 2px 0; }
 .cw-centre { background: #0e0b14; overflow: hidden; }
+.cw-ed > .cw-picbars { pointer-events: none; }
+.cw-sb { position: absolute; background: rgba(16, 13, 24, 0.55); pointer-events: auto; z-index: 3; }
+.cw-sb.h { left: 0; right: 10px; bottom: 0; height: 10px; }
+.cw-sb.v { top: 0; bottom: 10px; right: 0; width: 10px; }
+.cw-sb-thumb { position: absolute; background: #6a5f8a; border-radius: 5px; cursor: grab; }
+.cw-sb-thumb:hover, .cw-sb-thumb:active { background: #9a8cc0; }
+.cw-sb.h .cw-sb-thumb { top: 2px; bottom: 2px; }
+.cw-sb.v .cw-sb-thumb { left: 2px; right: 2px; }
+.cw-ed > .cw-split { z-index: 4; background: transparent; }
+.cw-split.col { cursor: col-resize; }
+.cw-split.row { cursor: row-resize; }
+.cw-split:hover, .cw-split.on { background: #4a4066; }
 .cw-menu { position: fixed; z-index: 30; min-width: 230px; max-height: calc(100vh - 40px); overflow: auto; background: #221c30;
   border: 1px solid #4a4066; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5); padding: 3px 0; user-select: none; }
 .cw-menu .it { display: flex; gap: 28px; padding: 3px 12px 3px 24px; position: relative; white-space: nowrap; cursor: default; }
@@ -1166,12 +1182,100 @@ Cutaway.editor = (function () {
     keepLayout();
     place();
   }
+  /** @param {number} v @param {number} a @param {number} b */
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, Number(v) || a));
+
+  /** @type {{left: HTMLElement | null, right: HTMLElement | null, output: HTMLElement | null}} the panels' edges to drag */
+  const splits = { left: null, right: null, output: null };
+  /** An edge of a panel that resizes it when dragged. @param {"left" | "right" | "output"} which */
+  function makeSplit(which) {
+    const e = el("div", { className: "cw-split " + (which === "output" ? "row" : "col"), title: "drag to resize (a double click: the size it had at first)" });
+    /** @type {{x: number, y: number, size: number} | null} */
+    let d = null;
+    e.addEventListener("pointerdown", (/** @type {PointerEvent} */ ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      d = { x: ev.clientX, y: ev.clientY, size: which === "left" ? layout.leftW : which === "right" ? layout.rightW : layout.outH };
+      try { e.setPointerCapture(ev.pointerId); } catch { /* a pointer the page made */ } e.classList.add("on");
+    });
+    e.addEventListener("pointermove", (/** @type {PointerEvent} */ ev) => {
+      if (!d) return;
+      if (which === "left") layout.leftW = Math.round(d.size + ev.clientX - d.x);
+      else if (which === "right") layout.rightW = Math.round(d.size - (ev.clientX - d.x));
+      else layout.outH = Math.round(d.size - (ev.clientY - d.y));
+      place();
+    });
+    e.addEventListener("pointerup", () => { if (d) { d = null; e.classList.remove("on"); keepLayout(); } });
+    e.addEventListener("dblclick", () => { if (which === "left") layout.leftW = LEFT_W; else if (which === "right") layout.rightW = RIGHT_W; else layout.outH = OUT_H; place(); keepLayout(); });
+    return e;
+  }
+
+  /**
+   * Scrollbars over a box, for what is bigger than it shows (a room wider than the screen, the map of the
+   * rooms): `span()` gives the whole (x0..x1, y0..y1) and the part in view (vx, vy, vw, vh) in its own units,
+   * or null (no bars); `scrollTo(vx, vy)` moves the view. A thumb drags, a click beside it moves a page.
+   * The host needs a position (relative or absolute); update() after the view moved.
+   * @param {HTMLElement} host
+   * @param {{span: () => {x0: number, x1: number, y0: number, y1: number, vx: number, vy: number, vw: number, vh: number} | null, scrollTo: (vx: number, vy: number) => void}} model
+   */
+  function scrollbars(host, model) {
+    const bars = [true, false].map((horiz) => {
+      const track = el("div", { className: "cw-sb " + (horiz ? "h" : "v") }), thumb = el("div", { className: "cw-sb-thumb" });
+      track.append(thumb);
+      host.append(track);
+      return { horiz, track, thumb };
+    });
+    /** @type {{horiz: boolean, start: number, v: number, s: any} | null} */
+    let d = null;
+    for (const b of bars) {
+      b.thumb.addEventListener("pointerdown", (/** @type {PointerEvent} */ e) => {
+        e.preventDefault(); e.stopPropagation();
+        const s = model.span();
+        if (!s) return;
+        d = { horiz: b.horiz, start: b.horiz ? e.clientX : e.clientY, v: b.horiz ? s.vx : s.vy, s };
+        try { b.thumb.setPointerCapture(e.pointerId); } catch { /* a pointer the page made */ }
+      });
+      b.thumb.addEventListener("pointermove", (/** @type {PointerEvent} */ e) => {
+        if (!d || d.horiz !== b.horiz) return;
+        const s = d.s, len = b.horiz ? b.track.clientWidth : b.track.clientHeight, whole = b.horiz ? s.x1 - s.x0 : s.y1 - s.y0;
+        const v = d.v + (((b.horiz ? e.clientX : e.clientY) - d.start) * whole) / Math.max(1, len);
+        if (b.horiz) model.scrollTo(v, s.vy); else model.scrollTo(s.vx, v);
+        update();
+      });
+      b.thumb.addEventListener("pointerup", () => { d = null; });
+      b.track.addEventListener("pointerdown", (/** @type {PointerEvent} */ e) => {
+        if (e.target !== b.track) return;
+        e.preventDefault(); e.stopPropagation();
+        const s = model.span();
+        if (!s) return;
+        const t = b.thumb.getBoundingClientRect(), before = b.horiz ? e.clientX < t.left : e.clientY < t.top, page = (b.horiz ? s.vw : s.vh) * (before ? -1 : 1);
+        if (b.horiz) model.scrollTo(s.vx + page, s.vy); else model.scrollTo(s.vx, s.vy + page);
+        update();
+      });
+    }
+    function update() {
+      const s = model.span();
+      for (const b of bars) {
+        const whole = s ? (b.horiz ? s.x1 - s.x0 : s.y1 - s.y0) : 0, view = s ? (b.horiz ? s.vw : s.vh) : 0;
+        const show = !!s && view < whole - 0.5;
+        b.track.style.display = show ? "" : "none";
+        if (!show || !s) continue;
+        const at = clamp(((b.horiz ? s.vx - s.x0 : s.vy - s.y0) / whole) * 100, 0, 100), size = Math.max(4, Math.min(100, (view / whole) * 100));
+        Object.assign(b.thumb.style, b.horiz ? { left: Math.min(at, 100 - size) + "%", width: size + "%" } : { top: Math.min(at, 100 - size) + "%", height: size + "%" });
+      }
+    }
+    return { update };
+  }
+
   function keepLayout() { try { localStorage.setItem("cutaway.editor.layout", JSON.stringify(layout)); } catch { /* private mode */ } }
 
   /** Size the parts and keep their room free in the display (the picture fits into the centre). */
   function place() {
     if (!root) return;
-    const L = layout.left ? LEFT_W : 0, R = layout.right && !win ? RIGHT_W : 0, O = layout.output ? OUT_H : 0;
+    // the sizes the user dragged, kept within what leaves the picture room (and the panels usable)
+    layout.leftW = clamp(layout.leftW, 120, Math.max(120, innerWidth * 0.4));
+    layout.rightW = clamp(layout.rightW, 220, Math.max(220, innerWidth * 0.6));
+    layout.outH = clamp(layout.outH, 60, Math.max(60, innerHeight - MENU_H - STATUS_H - 120));
+    const L = layout.left ? layout.leftW : 0, R = layout.right && !win ? layout.rightW : 0, O = layout.output ? layout.outH : 0;
     /** @param {HTMLElement | null} e @param {Record<string, string>} st */
     const at = (e, st) => { if (e) Object.assign(e.style, st); };
     at(barEl, { height: MENU_H + "px" });
@@ -1180,6 +1284,10 @@ Cutaway.editor = (function () {
     at(outputEl, { display: O ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + "px", height: O + "px" });
     at(centreEl, { left: L + "px", right: R + "px", top: MENU_H + "px", bottom: STATUS_H + O + "px" });
     at(statusEl, { height: STATUS_H + "px" });
+    // the edges to drag: the left panel's right edge, the inspector's left edge, the output pane's top edge
+    at(splits.left, { display: L ? "" : "none", left: L - SPLIT / 2 + "px", top: MENU_H + "px", bottom: STATUS_H + "px", width: SPLIT + "px" });
+    at(splits.right, { display: R ? "" : "none", right: R - SPLIT / 2 + "px", top: MENU_H + "px", bottom: STATUS_H + "px", width: SPLIT + "px" });
+    at(splits.output, { display: O ? "" : "none", left: L + "px", right: R + "px", bottom: STATUS_H + O - SPLIT / 2 + "px", height: SPLIT + "px" });
     Cutaway.display.reserve({ left: L, top: MENU_H, right: R, bottom: STATUS_H + O });
     mounted?.shown?.();
   }
@@ -1592,7 +1700,7 @@ Cutaway.editor = (function () {
       fold("left.ws", "WORKSPACES", () => [list({ id: "workspaces", selected: active, pick: showTab,
         items: tabs.map((t) => ({ key: t.id, label: t.label, mark: unsavedOf(t) ? "●" : "", title: unsavedOf(t) ? "not saved" : t.label })) }),
         // without the studio: saves go through the browser and the game's own tabs are missing; how to get it
-        ...(studio.available ? [] : [el("div", { style: { color: "#ffd27a", padding: "4px 6px", whiteSpace: "normal", lineHeight: "1.35" }, title: studio.why },
+        ...(studio.available ? [] : [el("div", { style: { color: "#ffd27a", padding: "4px 6px", whiteSpace: "normal", lineHeight: "1.35", overflowWrap: "anywhere" }, title: studio.why },
           [`No studio: saves go through the browser, the game's own tabs are missing. ${location.protocol === "file:" ? "Start it in the game's folder: node lib/cutaway/tools/studio.mjs" : "Open the address the studio printed (…?edit&studio=…)."}`])])]),
       fold("left.rooms", "ROOMS", () => [list({ id: "rooms", selected: d?.id, pick: (id) => { openRoom(id); }, filter: Cutaway.room.ids().length > 12,
         height: Cutaway.room.ids().length > 12 ? "200px" : undefined,
@@ -1652,6 +1760,12 @@ Cutaway.editor = (function () {
     if (!isOpen) return;
     raf = requestAnimationFrame(tick);
     const v = currentView();
+    if (picBars) {
+      // the picture's own place on the page (the canvas may be larger: the picture sits in it, fitted)
+      const a = Cutaway.display.toClient(0, 0), b = Cutaway.display.toClient(Cutaway.display.width, Cutaway.display.height);
+      Object.assign(picBars.style, { left: a.x + "px", top: a.y + "px", width: b.x - a.x + "px", height: b.y - a.y + "px", display: v ? "none" : "" });
+      picScroll?.update();
+    }
     if (v !== mounted && centreEl) {
       centreEl.replaceChildren(...(v ? [v.el] : []));
       centreEl.style.display = v ? "" : "none";
@@ -1810,8 +1924,20 @@ Cutaway.editor = (function () {
     centreEl = el("div", { className: "cw-centre", style: { display: "none" } });
     outputEl = el("div", { className: "cw-out" });
     statusEl = el("div", { className: "cw-status" });
+    splits.left = makeSplit("left"); splits.right = makeSplit("right"); splits.output = makeSplit("output");
+    // over the picture, its edges: the room's scrollbars (the camera), only while the picture shows
+    picBars = el("div", { className: "cw-picbars" });
+    picScroll = scrollbars(picBars, {
+      span() {
+        const r = Cutaway.scene.room, c = Cutaway.scene.camera, W = Cutaway.display.width, H = Cutaway.display.height;
+        if (!r || mounted) return null;
+        const [rw, rh] = r.size ?? [W, H];
+        return { x0: 0, x1: rw, y0: 0, y1: rh, vx: c.x, vy: c.y, vw: W, vh: H };
+      },
+      scrollTo(x, y) { Cutaway.scene.cameraTo(Math.round(x), Math.round(y), { ms: 0 }); panned = true; },
+    });
     panel = /** @type {HTMLDivElement} */ (el("div", { className: "cutaway-editor" }));
-    root.append(barEl, leftEl, centreEl, outputEl, statusEl);
+    root.append(barEl, leftEl, centreEl, outputEl, statusEl, picBars, splits.left, splits.right, splits.output);
     if (win) {
       const w = win;
       ensureCss(w.document);
@@ -1882,7 +2008,7 @@ Cutaway.editor = (function () {
 
   const api = {
     open, close, text, geometry, items, problems, save, openRoom, studio, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
-    list, fold, prefixGroups, playSequence, step, pan, notLoaded, relTo,
+    list, fold, prefixGroups, playSequence, step, pan, notLoaded, relTo, scrollbars,
     /** Is the game paused by the editor? */
     get paused() { return holding; },
     /** Pause the game or let it run (Play > Pause game). @param {boolean} on */

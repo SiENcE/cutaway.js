@@ -128,7 +128,20 @@
   // ---- the view: a canvas in the centre
 
   const canvas = /** @type {HTMLCanvasElement} */ (el("canvas", { style: { width: "100%", height: "100%", display: "block", cursor: "grab" } }));
-  const box = el("div", { style: { width: "100%", height: "100%", background: COL.ground } }, [canvas]);
+  const box = el("div", { style: { width: "100%", height: "100%", background: COL.ground, position: "relative" } }, [canvas]);
+  // scrollbars over the rooms: the whole is every room's picture and a margin round them
+  const bars = E.scrollbars(box, {
+    span() {
+      if (!data) return null;
+      const r = box.getBoundingClientRect();
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const id of data.rooms) { const p = pos[id], [w, h] = sizeOf(id); if (!p) continue; x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + w); y1 = Math.max(y1, p.y + h); }
+      if (!isFinite(x0) || !r.width) return null;
+      const vx = -zoom.x / zoom.k, vy = -zoom.y / zoom.k, vw = r.width / zoom.k, vh = r.height / zoom.k, m = 100;
+      return { x0: Math.min(x0 - m, vx), x1: Math.max(x1 + m, vx + vw), y0: Math.min(y0 - m, vy), y1: Math.max(y1 + m, vy + vh), vx, vy, vw, vh };
+    },
+    scrollTo(vx, vy) { zoom.x = -vx * zoom.k; zoom.y = -vy * zoom.k; draw(); },
+  });
   /** @type {ReturnType<typeof collect> | null} */
   let data = null;
 
@@ -191,6 +204,7 @@
       if (!b) { ctx.fillStyle = COL.broken; ctx.font = `${12 * lw}px Consolas, monospace`; ctx.fillText(`${w.to}?`, pb[0] + 4 * lw, pb[1]); }
     }
     ctx.globalAlpha = 1;
+    bars.update();
   }
 
   /** Everything in view. */
