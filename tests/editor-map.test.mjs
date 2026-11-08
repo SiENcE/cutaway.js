@@ -140,6 +140,18 @@ export default async function (t) {
     await chrome.ev(`${E}.modules.time.day = 2; 1`);
     await sleep(150);
     t.ok("time: another day", (await chrome.ev(`${E}.modules.time.table(2).actors[0].lanes[0].length`)) === 1);
+    // the zoom: Fit puts the day in the view's width; the wheel zooms round the pointer, the time under it staying
+    const zm = await chrome.ev(`(async () => {
+      const M = ${E}.modules.time, box = ${E}.centre.firstElementChild ?? ${E}.centre, d = M.table(2), q = (d.t1 - d.t0) / 15;
+      M.fit(); await new Promise((r) => setTimeout(r, 50));
+      const fitted = Math.abs(150 + q * M.width + 12 - box.clientWidth) <= 2;
+      const r = box.getBoundingClientRect(), px = 400, before = (box.scrollLeft + px - 150) / M.width;
+      box.dispatchEvent(new WheelEvent("wheel", { deltaY: -500, clientX: r.left + px, clientY: r.top + 60, bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 50));
+      const after = (box.scrollLeft + px - 150) / M.width;
+      return { fitted, wider: M.width > (box.clientWidth - 162) / q * 2, kept: Math.abs(after - before) < 0.05, w: M.width };
+    })()`);
+    t.ok("time: Fit puts the day in the view; the wheel zooms round the pointer, the time there staying", zm.fitted && zm.wider && zm.kept, JSON.stringify(zm));
     t.ok("map: no page errors", chrome.errors.length === 0, chrome.errors.join("\n"));
   } finally {
     await chrome.close();

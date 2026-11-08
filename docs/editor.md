@@ -369,7 +369,10 @@ time now.
 
 - Click a bar: its times, its room and place, its condition; **Open room** (or a double click on the bar)
   shows the room. Esc or a click on the empty table lets go.
-- The table scrolls both ways; the names and the hours stay.
+- **Zoom:** the wheel zooms the time axis round the pointer (the time there stays where it is), **+** and
+  **−** (the keys or the buttons) step it, **Fit** (or **0**, or a double click on the empty table) puts the
+  whole day in view; zoomed in, the quarter hours get their labels too. The zoom is kept.
+- The table scrolls both ways (Shift+wheel across); the names and the hours stay.
 
 ## A game's own tabs
 A game can bring tabs of its own (a map editor for its own room format, a tool only it needs): the scripts

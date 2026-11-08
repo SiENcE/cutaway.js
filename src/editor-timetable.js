@@ -9,7 +9,11 @@
 
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
-  const NAME_W = 150, TW = 26, ROW = 18, HEAD = 22;
+  const NAME_W = 150, ROW = 18, HEAD = 22, TW_MIN = 6, TW_MAX = 320, KEY = "cutaway.editor.time:" + location.pathname;
+  /** the width of a quarter hour, px: the wheel, + and - zoom it (kept for this game in the browser) */
+  let tw = 26;
+  try { tw = Number(localStorage.getItem(KEY)) || 26; } catch { /* none kept */ }
+
   const COL = { ground: "#100d18", grid: "#221c30", hour: "#3a3150", stop: "rgba(255, 225, 74, 0.35)", now: "#ff5ad8", sel: "#ffe14a", nowhere: "#3a3450" };
   /** @type {number | null} the day shown (null: today's) */
   let shownDay = null;
@@ -84,13 +88,14 @@
   const box = el("div", { style: { width: "100%", height: "100%", overflow: "auto", background: COL.ground, position: "relative", font: "11px Consolas, monospace", color: "#d8d0f0" } });
 
   function draw() {
-    const d = table(shownDay ?? T().now.day), span = (d.t1 - d.t0) / 15, W = NAME_W + span * TW;
-    const x = (/** @type {number} */ min) => NAME_W + ((min - d.t0) / 15) * TW;
+    const d = table(shownDay ?? T().now.day), span = (d.t1 - d.t0) / 15, W = NAME_W + span * tw;
+    const x = (/** @type {number} */ min) => NAME_W + ((min - d.t0) / 15) * tw;
     /** @type {HTMLElement[]} */
     const rows = [];
     let y = HEAD;
     /** @param {string} text */
-    const heading = (text) => { rows.push(el("div", { style: { position: "absolute", left: "0", top: `${y}px`, width: `${W}px`, height: `${ROW}px`, background: "#1a1526", color: "#9a92b4", padding: "2px 6px", boxSizing: "border-box", letterSpacing: "1px" } }, [text])); y += ROW; };
+    const heading = (text) => { rows.push(el("div", { style: { position: "absolute", left: "0", top: `${y}px`, width: `${W}px`, height: `${ROW}px`, background: "#1a1526", color: "#9a92b4", boxSizing: "border-box", letterSpacing: "1px" } },
+      [el("span", { style: { position: "sticky", left: "0", display: "inline-block", padding: "2px 6px", whiteSpace: "nowrap" } }, [text])])); y += ROW; };
     /**
      * A bar. @param {number} from @param {number} to @param {string | null | undefined} room @param {string} cond
      * @param {boolean} on @param {string} title @param {() => void} pick
@@ -101,8 +106,10 @@
         ondblclick: () => { if (room && Cutaway.room.ids().includes(room)) { E.openRoom(room); E.show("room"); } },
         style: { position: "absolute", left: `${x(from) + 1}px`, top: `${y + 2}px`, width: `${Math.max(3, x(to) - x(from) - 2)}px`, height: `${ROW - 4}px`, boxSizing: "border-box",
           background: cond ? `repeating-linear-gradient(135deg, ${c} 0 5px, #1a1526 5px 8px)` : c, border: `1px solid ${on ? COL.sel : "rgba(0,0,0,.5)"}`,
-          outline: on ? `1px solid ${COL.sel}` : "", borderRadius: "2px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", padding: "0 3px", lineHeight: `${ROW - 6}px`,
-          color: "#fff", textShadow: "0 1px 0 #000", cursor: "pointer" } }, [`${cond ? "? " : ""}${room ?? "—"}`]);
+          outline: on ? `1px solid ${COL.sel}` : "", borderRadius: "2px", overflow: "clip", whiteSpace: "nowrap", lineHeight: `${ROW - 6}px`,
+          color: "#fff", textShadow: "0 1px 0 #000", cursor: "pointer" } },
+        // its name stays at the view's left edge while a long bar runs on past it (clip, not hidden: that would stop the sticky)
+        [el("span", { style: { position: "sticky", left: `${NAME_W + 2}px`, padding: "0 3px" } }, [`${cond ? "? " : ""}${room ?? "—"}`])]);
     };
     /** @param {string} name @param {string} [title] */
     const name = (name, title) => el("div", { title: title ?? name, style: { position: "sticky", left: "0", width: `${NAME_W - 4}px`, height: `${ROW}px`, padding: "2px 6px", boxSizing: "border-box", background: COL.ground, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", zIndex: "2" } }, [name]);
@@ -138,17 +145,58 @@
     if (now.day === d.day && now.minutes >= d.t0 && now.minutes <= d.t1) grid.push(el("div", { title: `now: ${now.text}`, style: { position: "absolute", left: `${x(now.minutes)}px`, top: "0", width: "2px", height: `${H}px`, background: COL.now, zIndex: "1" } }));
     // the hours along the top, staying while the table scrolls down
     const head = el("div", { style: { position: "sticky", top: "0", height: `${HEAD}px`, width: `${W}px`, background: COL.ground, zIndex: "3" } }, [
-      el("div", { style: { position: "sticky", left: "0", width: `${NAME_W - 4}px`, height: `${HEAD}px`, padding: "4px 6px", boxSizing: "border-box", background: COL.ground, color: "#ffe14a" } }, [`day ${d.day}`])]);
-    for (let m = d.t0; m < d.t1; m += 60) head.append(el("div", { style: { position: "absolute", left: `${x(m) + 3}px`, top: "4px", color: "#9a92b4" } }, [T().format(m)]));
+      el("div", { style: { position: "sticky", left: "0", width: `${NAME_W - 4}px`, height: `${HEAD}px`, padding: "4px 6px", boxSizing: "border-box", background: COL.ground, color: "#ffe14a", zIndex: "1" } }, [`day ${d.day}`])]);
+    // the hours (every second or third when they would crowd), the quarters too when there is room
+    const every = Math.max(1, Math.ceil(44 / (4 * tw)));
+    for (let m = d.t0; m < d.t1; m += 15) {
+      const hour = m % 60 === 0;
+      if (hour ? ((m - d.t0) / 60) % every : tw < 36) continue;
+      head.append(el("div", { style: { position: "absolute", left: `${x(m) + 3}px`, top: "4px", color: hour ? "#9a92b4" : "#5c5470" } }, [hour ? T().format(m) : `:${String(m % 60).padStart(2, "0")}`]));
+    }
     for (const s of d.stops) head.append(el("div", { style: { position: "absolute", left: `${x(s) - 2}px`, top: "15px", width: "5px", height: "5px", background: "#ffe14a", borderRadius: "50%" }, title: `the clock stops at ${T().format(s)}` }));
     const keep = [box.scrollLeft, box.scrollTop];
     box.replaceChildren(head, el("div", { style: { position: "relative", width: `${W}px`, height: `${H - HEAD}px`, marginTop: `-${HEAD}px` } }, [...grid, ...rows]));
     [box.scrollLeft, box.scrollTop] = keep;
   }
   box.addEventListener("click", () => { if (sel) { sel = null; E.refresh(); draw(); } });
+  box.addEventListener("dblclick", (/** @type {MouseEvent} */ e) => { if (e.target === box || !(/** @type {any} */ (e.target).title)) fit(); });
+
+  /**
+   * Zoom the time axis, the time at `px` (from the box's left edge) staying where it is.
+   * @param {number} f the factor @param {number} [px]
+   */
+  function zoom(f, px = (box.clientWidth + NAME_W) / 2) {
+    const at = (box.scrollLeft + px - NAME_W) / tw, next = Math.min(TW_MAX, Math.max(TW_MIN, tw * f));
+    if (next === tw) return;
+    tw = next;
+    try { localStorage.setItem(KEY, String(tw)); } catch { /* private mode */ }
+    draw();
+    box.scrollLeft = Math.max(0, at * tw + NAME_W - px);
+    E.refresh();
+  }
+  /** The whole day in the width of the view. */
+  function fit() {
+    const d = table(shownDay ?? T().now.day), quarters = (d.t1 - d.t0) / 15;
+    tw = Math.min(TW_MAX, Math.max(TW_MIN, (box.clientWidth - NAME_W - 12) / quarters));
+    try { localStorage.setItem(KEY, String(tw)); } catch { /* private mode */ }
+    draw(); box.scrollLeft = 0; E.refresh();
+  }
+  // the wheel zooms round the pointer (as the picture and the map); Shift+wheel scrolls across
+  box.addEventListener("wheel", (/** @type {WheelEvent} */ e) => {
+    if (e.shiftKey || !e.deltaY) return;
+    e.preventDefault(); e.stopPropagation();
+    zoom(Math.exp(-e.deltaY * 0.002), e.clientX - box.getBoundingClientRect().left);
+  }, { passive: false });
 
   /** @type {EditorView} */
-  const view = { el: box, shown() { draw(); }, selectNone() { sel = null; E.refresh(); draw(); } };
+  const view = { el: box, shown() { draw(); }, selectNone() { sel = null; E.refresh(); draw(); },
+    /** + and - zoom, 0 (or Ctrl+0) fits the day */
+    key(e) {
+      if (e.key === "+" || e.code === "NumpadAdd" || e.code === "Equal") { zoom(1.5); return true; }
+      if (e.key === "-" || e.code === "NumpadSubtract" || e.code === "Minus") { zoom(1 / 1.5); return true; }
+      if (e.code === "Digit0" || e.code === "Numpad0") { fit(); return true; }
+      return false;
+    } };
 
   // ---- the inspector
 
@@ -156,9 +204,11 @@
     const t = T();
     if (!t.used) { panel.append(el("div", { className: "cw-dim" }, ["This game has no game time: no routine, no moment (Cutaway.time, the reference's \"Game time\")."])); draw(); return; }
     const ds = days(), day = shownDay ?? t.now.day, d = table(day);
+    panel.append(el("div", { style: { margin: "4px 0" } }, ["zoom ", button("−", () => zoom(1 / 1.5), "narrower (-, or the wheel)"), button("+", () => zoom(1.5), "wider (+, or the wheel round the pointer)"),
+      button("Fit", fit, "the whole day in view (0, or a double click on the empty table)"), el("span", { className: "cw-dim" }, [` ${Math.round(tw)} px a quarter hour`])]));
     panel.append(el("div", { style: { margin: "4px 0" } }, ["day ", ...ds.map((n) => button(n === day ? `● ${n}` : String(n), () => { shownDay = n; sel = null; E.refresh(); draw(); }, `day ${n}${n === t.now.day ? " (today)" : ""}`))]));
     panel.append(el("div", { className: "cw-dim", style: { margin: "2px 0 6px" } }, [`${d.actors.length} actors · ${d.moments.length} moments · the clock stops ${d.stops.length} times: ${d.stops.map((s) => t.format(s)).join(" ")}`]));
-    panel.append(el("div", { className: "cw-dim" }, ["A bar is where an actor is (its room's name and colour) or a moment's window; striped: only under a condition. The yellow lines are the stops of the clock (where waiting stops: every start and end, the marks), the pink one now. A click picks a bar, a double click opens its room."]));
+    panel.append(el("div", { className: "cw-dim" }, ["A bar is where an actor is (its room's name and colour) or a moment's window; striped: only under a condition. The yellow lines are the stops of the clock (where waiting stops: every start and end, the marks), the pink one now. A click picks a bar, a double click opens its room. The wheel zooms round the pointer, Shift+wheel scrolls across."]));
     if (sel?.kind === "routine") {
       const s = sel, e = t.routines.get(s.actor)?.[s.i];
       if (e) panel.append(el("div", { className: "cw-sec" }, [
@@ -182,6 +232,6 @@
   }
 
   E.tab({ id: "time", label: "Time", build, view: () => view, selectNone: () => view.selectNone?.() });
-  E.modules.time = { table, days, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
+  E.modules.time = { table, days, zoom, fit, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
     select(/** @type {any} */ s) { sel = s; E.refresh(); draw(); } };
 })();
