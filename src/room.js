@@ -28,6 +28,8 @@
  *                                   orders the props among themselves.
  * @property {boolean} [flip]
  * @property {boolean} [hidden]      starts hidden (a script can { show: id })
+ * @property {Cond} [if]             only there while this holds (a gate standing open from a day on): no state of
+ *                                   its own, unlike hidden; a scene's { open } shows it all the same
  * @property {number} [alpha]         how much of it shows, 0 to 1 (default 1): a projection, a reflection, smoke
  * @property {boolean} [seeThrough]  where it hides an actor standing behind it, it is drawn see-through
  *                                   over that actor's figure (every other pixel, a checkerboard): an
@@ -395,8 +397,10 @@ Cutaway.scene = (function () {
     /** @type {{def: PropDef, image: string}[]} */
     const out = [];
     for (const p of current?.props ?? []) {
-      if (p.id && Cutaway.state.isHidden(p.id, !!p.hidden) && !live.get(p)?.shown) continue;
+      const shown = live.get(p)?.shown;
+      if (p.id && Cutaway.state.isHidden(p.id, !!p.hidden) && !shown) continue;
       if (!p.id && p.hidden) continue;
+      if (p.if !== undefined && !shown && !Cutaway.state.test(p.if)) continue;
       const st = p.id && p.states ? Cutaway.state.objState(p.id) : "";
       out.push({ def: p, image: live.get(p)?.play?.image ?? ((st && p.states?.[st]) || p.image) });
     }
@@ -492,7 +496,7 @@ Cutaway.scene = (function () {
       if (!poly && h.rect) { const [x, y, w, hh] = h.rect; poly = rectPoly(x, y, w, hh); }
       if (!poly) {
         const p = (current?.props ?? []).find((q) => q.id === (h.prop ?? id));
-        const box = p && !Cutaway.state.isHidden(p.id ?? "", !!p.hidden) ? propBox(p) : null;
+        const box = p && !Cutaway.state.isHidden(p.id ?? "", !!p.hidden) && Cutaway.state.test(p.if) ? propBox(p) : null;
         if (box) poly = rectPoly(...box);
       }
       if (poly) out.push({ id, def: h, poly });

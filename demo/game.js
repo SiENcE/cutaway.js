@@ -34,7 +34,8 @@
     props: [
       { id: "crate", image: "crate", at: [160, 151] },
       { id: "plant", image: "plant", at: [40, 174] },
-      { id: "door", image: "hall_door_open", at: [284, 119], baseline: 0, hidden: true },
+      // the door stands open once it is unlocked: a condition, no state of the prop's own
+      { id: "door", image: "hall_door_open", at: [284, 119], baseline: 0, if: "door_open" },
     ],
     hotspots: {
       window: { name: "window", rect: [118, 20, 64, 52], walkTo: [150, 128], face: "up",
@@ -50,7 +51,7 @@
         take: [{ take: "leaf" }, { stinger: "pickup" }, "A plastic leaf. Might be useful. Probably not."] },
       door: { name: "door", if: "!door_open", rect: [262, 30, 44, 89], walkTo: [284, 130], face: "up",
         look: "The door to the yard.", use: "Locked.",
-        with: { key: [{ remove: "key" }, { sfx: "door", at: [284, 100] }, { show: "door" }, { set: "door_open" }, { music: { intensity: 0.75 } }, "Click. Open!"] } },
+        with: { key: [{ remove: "key" }, { sfx: "door", at: [284, 100] }, { set: "door_open" }, { music: { intensity: 0.75 } }, "Click. Open!"] } },
       doorway: { name: "yard", if: "door_open", rect: [262, 30, 44, 89], walkTo: [284, 130],
         look: "Sunshine out there.", exit: { to: "yard", at: [40, 150], face: "right" } },
     },

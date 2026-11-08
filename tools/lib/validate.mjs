@@ -239,6 +239,7 @@ export function validate(C, o = {}) {
       asset(p.image, pw);
       for (const img of Object.values(p.states ?? {})) asset(img, pw + ".states");
       xy(p.at, pw + ".at");
+      if (p.if !== undefined) cond(p.if, id, pw + ".if");
       if (p.front !== undefined && (!Array.isArray(p.front) || p.front.length < 4 || p.front.length % 2 || p.front.some((v) => !Number.isFinite(v))))
         err(pw + ".front", "a front line is a list of room points [x1, y1, x2, y2, ...], at least two");
     }

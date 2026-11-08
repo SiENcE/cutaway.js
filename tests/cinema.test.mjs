@@ -291,6 +291,11 @@ export default async function (t) {
     const here = doorShown();
     await C.script.run([{ close: "door" }]);
     t.ok("script: open and close a door for the scene, by room/id too (not in another room)", !elsewhere && here && !doorShown());
+    // a prop with `if` is there while its condition holds, without a state of its own (the demo's door: if door_open)
+    C.state.set("door_open");
+    const open = doorShown(), noState = !C.state.isHidden("door", false) && C.state.isHidden("door", true);
+    C.state.unset("door_open");
+    t.ok("scene: a prop with if shows while it holds, no state of its own", open && noState && !doorShown());
 
     // { tape } is an action everywhere (the screen's own where there is one)
     let ran = false;
