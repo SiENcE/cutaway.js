@@ -101,10 +101,11 @@ the whole picture (a black fade or the letterbox doesn't hide them).
   is selected; its own baseline goes along. The handle on its baseline moves only the baseline. A prop
   moved here (or whose place the shapes file already has) keeps its place in the shapes file.
 - **+ Walk area / + Hole / + Hotspot**: click the corners, then the first one again (or Enter).
-- **The camera**: in a room wider or taller than the screen, **scrollbars** lie along the picture's bottom
-  and right edges (drag the thumb, or click beside it for a screen's width); or drag with the **middle
-  button**, turn the **wheel** (Shift+wheel: across), or press the **arrows** while nothing is selected. Closing the editor
-  gives the camera back to the one playing.
+- **Zoom and scroll the picture**: the **wheel** zooms it by whole steps round the pointer (every pixel
+  stays a sharp square), **Ctrl+0** fits it again (also View > Zoom in, Zoom out, Zoom to fit). When the room
+  is wider or taller than the screen, or the picture zoomed larger than the work area, **scrollbars** lie
+  along the work area's bottom and right edges: drag the thumb, or click beside it for a page. The **middle
+  button** drags the view, **Shift+wheel** scrolls across, the **arrows** scroll while nothing is selected.
 - Ctrl+Z / Ctrl+Y undo and redo (in the room on screen: when another room comes, by the game or a
   sequence, the undo starts again). **Save** (Ctrl+S) writes `rooms/<id>.geo.js`, and that of any other
   room changed since it was saved. If the game's page doesn't load that file, it says so (in the output
@@ -419,7 +420,8 @@ The page must load each layer after the game's own data (the game's `index.html`
 | Delete | remove the selected corner or shape (Room), clear the selection (Paint), remove a step, a choice or a recording |
 | Esc | close a menu, cancel drawing, clear the selection |
 | arrows, Shift | nudge 1 or 10 px (Room); pan the camera (nothing selected: 8 or 40 px); move a floating selection (Paint) |
-| middle button, wheel | pan the camera over the picture (Shift+wheel: across) |
+| wheel, Ctrl+0 | zoom the picture round the pointer, fit it again |
+| scrollbars, middle button, Shift+wheel | scroll the picture (the room, and the picture when zoomed in) |
 | B E G L R I M | the paint tools: pencil, eraser, fill, line, rectangle, picker, select |
 | X, Shift+M, Shift+H, Shift+V | swap the colours, mirror, flip H, flip V (Paint) |
 | wheel, + -, 0, Space | zoom, fit, pan (Paint) |

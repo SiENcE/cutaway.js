@@ -26,6 +26,10 @@ Cutaway.display = (function () {
   let overlay = null;
   /** CSS pixels kept free on each side (the editor's panels); the picture fits into the rest. */
   let reserved = { left: 0, top: 0, right: 0, bottom: 0 };
+  /** the editor's own view: a whole scale of its own (0: fit), and how far a picture larger than its area is moved (device pixels) */
+  let zoom = 0, panX = 0, panY = 0;
+  /** the area the picture fits into (device pixels) */
+  let area = { l: 0, t: 0, w: 1, h: 1 };
 
   /**
    * @typedef {object} DisplayOptions
@@ -78,9 +82,13 @@ Cutaway.display = (function () {
     const aw = Math.max(1, dw - l - Math.round(reserved.right * dpr)), ah = Math.max(1, dh - t - Math.round(reserved.bottom * dpr));
     screen.width = dw; screen.height = dh;
     const most = Math.min(maxScale, aw / width, ah / height);
-    scale = fixedScale || (fit === "fill" && !reserved.left && !reserved.right ? Math.max(1, most) : Math.max(1, Math.floor(most)));
-    offX = l + Math.floor((aw - width * scale) / 2);
-    offY = t + Math.floor((ah - height * scale) / 2);
+    scale = zoom || fixedScale || (fit === "fill" && !reserved.left && !reserved.right ? Math.max(1, most) : Math.max(1, Math.floor(most)));
+    area = { l, t, w: aw, h: ah };
+    // a picture smaller than its area is centred in it; a larger one (the editor zoomed in) is moved by the pan
+    const pw = Math.round(width * scale), ph = Math.round(height * scale);
+    panX = Math.max(0, Math.min(panX, pw - aw)); panY = Math.max(0, Math.min(panY, ph - ah));
+    offX = pw <= aw ? l + Math.floor((aw - pw) / 2) : l - Math.round(panX);
+    offY = ph <= ah ? t + Math.floor((ah - ph) / 2) : t - Math.round(panY);
     overlay = makeOverlay();
     screenCtx.imageSmoothingEnabled = false;
     Cutaway.events.emit("resize", { scale, width, height });
@@ -170,6 +178,14 @@ Cutaway.display = (function () {
         : { left: r.left ?? 0, top: r.top ?? 0, right: r.right ?? 0, bottom: r.bottom ?? 0 };
       resize();
     },
+    /**
+     * The editor's view of the picture: a whole scale of its own (0: fit the area again) and, for a picture
+     * larger than its area, how far it is moved (device pixels from its left and top edge; kept within it).
+     * @param {number} z @param {number} [x] @param {number} [y]
+     */
+    setZoom(z, x = panX, y = panY) { zoom = Math.max(0, Math.round(z)); panX = x; panY = y; resize(); },
+    /** The editor's zoom (0: fitted) and pan, and the area the picture fits into (device pixels). */
+    get view() { return { zoom, panX, panY, area: { ...area }, dpr }; },
     /** Whole-number scaling only ("sharp", the default) or fill the window ("fill"). @param {"sharp" | "fill"} v */
     setFit(v) { if (v !== fit) { fit = v; resize(); } },
     /** The look of an old screen: "off", "scanlines" or "crt". @param {"off" | "scanlines" | "crt"} v */

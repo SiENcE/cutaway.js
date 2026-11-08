@@ -718,21 +718,61 @@ Cutaway.editor = (function () {
 
   /** Move the camera by room pixels; true if it moved. @param {number} dx @param {number} dy */
   function pan(dx, dy) {
-    const c = Cutaway.scene.camera, x = c.x, y = c.y;
-    Cutaway.scene.cameraTo(x + dx, y + dy, { ms: 0 });
+    const v = viewSpan(), c = Cutaway.scene.camera, x = c.x, y = c.y, p = Cutaway.display.view;
+    if (!v) return false;
+    scrollView(v.vx + dx, v.vy + dy);
+    return c.x !== x || c.y !== y || p.panX !== Cutaway.display.view.panX || p.panY !== Cutaway.display.view.panY;
+  }
+
+  /**
+   * What of the room shows: the room is the whole (its size in logical pixels), the part in view is the
+   * camera's screen, or less of it when the editor has zoomed the picture larger than its area.
+   * @returns {{x0: number, x1: number, y0: number, y1: number, vx: number, vy: number, vw: number, vh: number} | null}
+   */
+  function viewSpan() {
+    const r = Cutaway.scene.room, c = Cutaway.scene.camera, D = Cutaway.display, W = D.width, H = D.height, v = D.view;
+    if (!r) return null;
+    const [rw, rh] = r.size ?? [W, H], s = D.scale;
+    const vw = Math.min(W, v.area.w / s), vh = Math.min(H, v.area.h / s);
+    return { x0: 0, x1: Math.max(rw, W), y0: 0, y1: Math.max(rh, H), vx: c.x + (vw < W ? v.panX / s : 0), vy: c.y + (vh < H ? v.panY / s : 0), vw, vh };
+  }
+  /** Show the room from (vx, vy) (logical pixels): the camera, and the zoomed picture's pan for the rest. @param {number} vx @param {number} vy */
+  function scrollView(vx, vy) {
+    const r = Cutaway.scene.room, D = Cutaway.display, W = D.width, H = D.height, v = D.view, s = D.scale;
+    if (!r) return;
+    const [rw, rh] = r.size ?? [W, H], vw = Math.min(W, v.area.w / s), vh = Math.min(H, v.area.h / s);
+    // the camera keeps what is seen in the middle of its screen; the pan moves the picture over the rest
+    const cx = Math.max(0, Math.min(Math.max(0, rw - W), Math.round(vx - (W - vw) / 2))), cy = Math.max(0, Math.min(Math.max(0, rh - H), Math.round(vy - (H - vh) / 2)));
+    Cutaway.scene.cameraTo(cx, cy, { ms: 0 });
+    const c = Cutaway.scene.camera;
+    D.setZoom(v.zoom, (vx - c.x) * s, (vy - c.y) * s);
     panned = true;
-    return c.x !== x || c.y !== y;
+  }
+  /** Zoom the picture by whole steps (0 steps: fit), keeping the room's point under (clientX, clientY) where it is. @param {number} steps @param {number} [clientX] @param {number} [clientY] */
+  function zoomBy(steps, clientX, clientY) {
+    const D = Cutaway.display, v = D.view, before = viewSpan();
+    if (!before) return;
+    const ax = clientX ?? (v.area.l + v.area.w / 2) / v.dpr, ay = clientY ?? (v.area.t + v.area.h / 2) / v.dpr;
+    const at = D.toLogical(ax, ay), c = Cutaway.scene.camera, px = c.x + at.x, py = c.y + at.y;
+    const next = steps === 0 ? 0 : Math.max(1, Math.min(24, D.scale + steps));
+    D.setZoom(next, 0, 0);
+    if (!next) { scrollView(before.vx, before.vy); setStatus("zoom: fitted"); return; }
+    // the point under the pointer stays under it
+    const s = D.scale, k = v.dpr;
+    scrollView(px - (ax * k - D.view.area.l) / s, py - (ay * k - D.view.area.t) / s);
+    setStatus(`zoom: ${s}x (each pixel ${s} device pixels)`);
   }
 
   /** The wheel over the picture pans (Shift, or a room only as high as the screen: across). @param {WheelEvent} e */
   function onWheel(e) {
     if (e.target !== Cutaway.display.screen || e.ctrlKey) return;
     e.preventDefault(); e.stopPropagation();
+    // the wheel zooms round the pointer; Shift+wheel (or a sideways wheel) scrolls across
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 160 : 0.25;
     /** @param {number} d */
     const px = (d) => (d ? Math.sign(d) * Math.max(1, Math.round(Math.abs(d * k))) : 0);
-    const across = px(e.shiftKey ? e.deltaY || e.deltaX : e.deltaX), down = e.shiftKey ? 0 : px(e.deltaY);
-    if (!pan(across, down) && down && !across) pan(down, 0);
+    if (e.shiftKey || (e.deltaX && !e.deltaY)) { pan(px(e.deltaX || e.deltaY), 0); return; }
+    if (e.deltaY) zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY);
   }
 
   /** @param {PointerEvent} e */
@@ -740,7 +780,7 @@ Cutaway.editor = (function () {
     if (menuOutside(e) && e.target === Cutaway.display.screen) { e.stopPropagation(); e.preventDefault(); return; }
     if (e.target !== Cutaway.display.screen) return;
     e.stopPropagation(); e.preventDefault();
-    if (e.button === 1) { const c = Cutaway.scene.camera; panDrag = { x: e.clientX, y: e.clientY, cam: { x: c.x, y: c.y } }; return; }
+    if (e.button === 1) { const v = viewSpan(); panDrag = { x: e.clientX, y: e.clientY, cam: { x: v?.vx ?? 0, y: v?.vy ?? 0 } }; return; }
     const p = worldOf(e);
     if (active !== "room") {
       const t = tabs.find((x) => x.id === active);
@@ -775,9 +815,8 @@ Cutaway.editor = (function () {
   function onMove(e) {
     if (panDrag) {
       e.stopPropagation();
-      const a = Cutaway.display.toLogical(panDrag.x, panDrag.y), b = Cutaway.display.toLogical(e.clientX, e.clientY);
-      Cutaway.scene.cameraTo(panDrag.cam.x - (b.x - a.x), panDrag.cam.y - (b.y - a.y), { ms: 0 });
-      panned = true;
+      const k = Cutaway.display.scale / (Cutaway.display.view.dpr || 1);
+      scrollView(panDrag.cam.x - (e.clientX - panDrag.x) / k, panDrag.cam.y - (e.clientY - panDrag.y) / k);
       return;
     }
     if (tabDrag) { e.stopPropagation(); cursor = worldOf(e); tabDrag.drag?.(cursor, "move", e); panelDirty = true; return; }
@@ -853,6 +892,7 @@ Cutaway.editor = (function () {
     const mod = e.ctrlKey || e.metaKey;
     if (menuBox && e.code === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
     if (e.code === "F10") { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (mod && e.code === "Digit0" && !currentView()) { e.preventDefault(); e.stopPropagation(); zoomBy(0); return; }   // the picture fitted again
     if (e.code === "F1") {                               // the help, at the section for this tab; again: back
       e.preventDefault(); e.stopPropagation();
       if (active === "help") active = beforeHelp; else { beforeHelp = active; api.modules.help?.open(active); }
@@ -1327,6 +1367,10 @@ Cutaway.editor = (function () {
         { label: "Select none", key: "Esc", run: () => route("selectNone"), enabled: canRoute("selectNone") },
       ]],
       ["View", [
+        { label: "Zoom in", key: "Wheel", run: () => zoomBy(1), title: "the picture a whole step larger" },
+        { label: "Zoom out", run: () => zoomBy(-1) },
+        { label: `Zoom to fit${Cutaway.display.view.zoom ? "" : " (now)"}`, key: "Ctrl+0", run: () => zoomBy(0), title: "the picture as large as fits again" },
+        { sep: true },
         { label: "Debug overlay", key: "F9", checked: Cutaway.debug.on, run: () => Cutaway.debug.toggle() },
         { label: "Game interface", checked: showHud, run: () => { showHud = !showHud; Cutaway.ui.setHud(showHud); } },
         { sep: true }, { head: "Room shapes" },
@@ -1761,9 +1805,9 @@ Cutaway.editor = (function () {
     raf = requestAnimationFrame(tick);
     const v = currentView();
     if (picBars) {
-      // the picture's own place on the page (the canvas may be larger: the picture sits in it, fitted)
-      const a = Cutaway.display.toClient(0, 0), b = Cutaway.display.toClient(Cutaway.display.width, Cutaway.display.height);
-      Object.assign(picBars.style, { left: a.x + "px", top: a.y + "px", width: b.x - a.x + "px", height: b.y - a.y + "px", display: v ? "none" : "" });
+      // at the edges of the work area between the panels, like any editor's view (hidden while a view takes the centre)
+      const ar = Cutaway.display.view, k = ar.dpr || 1;
+      Object.assign(picBars.style, { left: ar.area.l / k + "px", top: ar.area.t / k + "px", width: ar.area.w / k + "px", height: ar.area.h / k + "px", display: v ? "none" : "" });
       picScroll?.update();
     }
     if (v !== mounted && centreEl) {
@@ -1820,7 +1864,7 @@ Cutaway.editor = (function () {
     panel.append(el("div", { style: { marginTop: "6px", color: probs.length ? "#ff6a5a" : "#7a7" } }, [probs.length ? probs.join("\n") : "no problems"]));
     panel.append(el("pre", { className: "cw-dim", style: { whiteSpace: "pre-wrap", marginTop: "8px", font: "inherit" } }, [
       "click: select   drag: move\ndrag a corner   right click: delete it\ndouble-click an edge: new corner\narrows: nudge (Shift 10)   Del: delete\n" +
-      "pan: the middle button, the wheel, the arrows (nothing selected)\nCtrl+Z / Ctrl+Y: undo / redo\nCtrl+P: pause or run   F8: step\nF10: play   F9: debug overlay"]));
+      "zoom: the wheel (Ctrl+0: fit)   pan: the scrollbars, the middle button, Shift+wheel, the arrows (nothing selected)\nCtrl+Z / Ctrl+Y: undo / redo\nCtrl+P: pause or run   F8: step\nF10: play   F9: debug overlay"]));
   }
 
   /** @param {EditItem} it */
@@ -1927,15 +1971,7 @@ Cutaway.editor = (function () {
     splits.left = makeSplit("left"); splits.right = makeSplit("right"); splits.output = makeSplit("output");
     // over the picture, its edges: the room's scrollbars (the camera), only while the picture shows
     picBars = el("div", { className: "cw-picbars" });
-    picScroll = scrollbars(picBars, {
-      span() {
-        const r = Cutaway.scene.room, c = Cutaway.scene.camera, W = Cutaway.display.width, H = Cutaway.display.height;
-        if (!r || mounted) return null;
-        const [rw, rh] = r.size ?? [W, H];
-        return { x0: 0, x1: rw, y0: 0, y1: rh, vx: c.x, vy: c.y, vw: W, vh: H };
-      },
-      scrollTo(x, y) { Cutaway.scene.cameraTo(Math.round(x), Math.round(y), { ms: 0 }); panned = true; },
-    });
+    picScroll = scrollbars(picBars, { span: () => (mounted ? null : viewSpan()), scrollTo: scrollView });
     panel = /** @type {HTMLDivElement} */ (el("div", { className: "cutaway-editor" }));
     root.append(barEl, leftEl, centreEl, outputEl, statusEl, picBars, splits.left, splits.right, splits.output);
     if (win) {
@@ -1967,6 +2003,7 @@ Cutaway.editor = (function () {
   function close() {
     if (!isOpen) return;
     isOpen = false;
+    Cutaway.display.setZoom(0, 0, 0);                   // the game gets its fitted picture back
     drawing = null; drag = null;
     cancelAnimationFrame(raf);
     closeMenu();

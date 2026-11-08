@@ -58,10 +58,22 @@ export default async function (t) {
       const ev = (type, x) => th.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: t.top + 3, bubbles: true, pointerId: 5, button: 0, buttons: 1 }));
       const x0 = Cutaway.scene.camera.x; ev("pointerdown", t.left + 4); ev("pointermove", t.left + 300); ev("pointerup", t.left + 300);
       await new Promise((r) => setTimeout(r, 100));
-      const pic = Cutaway.display.toClient(0, Cutaway.display.height), hr = h.getBoundingClientRect();
-      return { h: getComputedStyle(h).display !== "none", v: getComputedStyle(v).display !== "none", moved: Cutaway.scene.camera.x > x0, atPicture: Math.abs(hr.bottom - pic.y) < 2 };
+      const a = Cutaway.display.view, hr = h.getBoundingClientRect();
+      return { h: getComputedStyle(h).display !== "none", v: getComputedStyle(v).display !== "none", moved: Cutaway.scene.camera.x > x0, atEdge: Math.abs(hr.bottom - (a.area.t + a.area.h) / a.dpr) < 2 };
     })()`);
-    t.ok("editor: a room wider than the screen has a scrollbar along the picture's bottom (none up the side); its thumb moves the camera", sb.h && !sb.v && sb.moved && sb.atPicture, JSON.stringify(sb));
+    t.ok("editor: a room wider than the screen has a scrollbar along the work area's bottom (none up the side); its thumb moves the camera", sb.h && !sb.v && sb.moved && sb.atEdge, JSON.stringify(sb));
+    // the wheel zooms the picture by whole steps round the pointer, both scrollbars then; Ctrl+0 fits it again
+    const zoom = await chrome.ev(`(async () => {
+      const D = Cutaway.display, s0 = D.scale, p = D.toClient(160, 90), pt0 = Cutaway.scene.camera.x + 160;
+      for (let i = 0; i < 3; i++) { D.screen.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, clientX: p.x, clientY: p.y, bubbles: true, cancelable: true })); await new Promise((r) => setTimeout(r, 50)); }
+      const s1 = D.scale, pt1 = Cutaway.scene.camera.x + D.toLogical(p.x, p.y).x;
+      await new Promise((r) => setTimeout(r, 100));
+      const both = [...document.querySelectorAll(".cw-picbars .cw-sb")].every((b) => getComputedStyle(b).display !== "none");
+      document.dispatchEvent(new KeyboardEvent("keydown", { code: "Digit0", key: "0", ctrlKey: true, bubbles: true }));
+      await new Promise((r) => setTimeout(r, 50));
+      return { s0, s1, pt0, pt1, both, fitted: D.scale === s0 && D.view.zoom === 0 };
+    })()`);
+    t.ok("editor: the wheel zooms the picture round the pointer, scrollbars both ways; Ctrl+0 fits it again", zoom.s1 === zoom.s0 + 3 && Math.abs(zoom.pt1 - zoom.pt0) <= 1 && zoom.both && zoom.fitted, JSON.stringify(zoom));
     await chrome.ev(`delete Cutaway.room.get("hall").size; 1`);
     // the panels' edges resize them, and the sizes are kept
     const sized = await chrome.ev(`(async () => {
