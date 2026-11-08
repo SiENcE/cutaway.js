@@ -203,7 +203,14 @@
         button("↻", () => { listFiles(); }, "list the folder again")]));
       if (!tasks.length) sec.append(el("div", { className: "cw-dim" }, ['No tasks to make it: add one to studio.json, e.g. "graph": ["node", "lib/cutaway/tools/graph.mjs", "index.html"].']));
     } else {
-      sec.append(el("div", { className: "cw-dim" }, ["Without the studio: load a data file made by tools/graph.mjs."]));
+      // without the studio this page can't run a task nor list a folder: it says how to make a file, and where it goes
+      sec.append(el("div", { className: "cw-dim", style: { whiteSpace: "pre-wrap" } }, [
+        "Without the studio: load a data file. Make one in the game's folder:\n" +
+        "  node lib/cutaway/tools/graph.mjs index.html --act <act>\n" +
+        "(in the engine's own folder: tools/graph.mjs). It searches every state (minutes in a big game), " +
+        "writes out/graph/<act>.js (--out another file) and prints a link that opens the chart as a page.\n" +
+        "With the studio (node lib/cutaway/tools/studio.mjs) this tab lists the files of its \"graph\" folder " +
+        "and runs the game's \"graph\" tasks itself."]));
     }
     const input = /** @type {HTMLInputElement} */ (el("input", { type: "file", accept: ".js", style: { display: "none" }, onchange: async () => {
       const f = input.files?.[0];

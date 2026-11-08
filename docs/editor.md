@@ -31,7 +31,7 @@ The editor docks around the game in its own page, like most editors:
 - **The menu bar** on top: File, Edit, View, Room, Art, Play, Tools, Help (below). On its right: the
   room to open, **▶ Play**, and whether the studio is connected.
 - **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
-  Issues, Checks, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what
+  Issues, Checks, Connections, Help; a ● marks one with unsaved work), the **rooms** (click one to open it), and what
   is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
   Things (its properties and scripts; actors always, and anything while Things is open). In the Art
   workspace the list shows the sprites instead (click: select, double-click: paint), in Voices the
@@ -313,7 +313,9 @@ The wheel zooms, a drag moves, a double click fits everything in.
 
 - **The data:** the files in the studio's `graph` folder (`layers.graph`, default `out/graph`). The game's
   tasks whose names begin with "graph" make them from here (they search every state: minutes in a big
-  game) and the new file loads when done; without the studio, **Load a file …** takes one from anywhere.
+  game) and the new file loads when done; without the studio, **Load a file …** takes one from anywhere:
+  make it with `node lib/cutaway/tools/graph.mjs index.html --act <act>` in the game's folder (it writes
+  `out/graph/<act>.js`, or `--out` another file).
 - **Show:** only what the winning way needs; facts nothing needs; conditions on absence ("not yet …",
   red, dashed); facts read only sometimes; the clock; the search's own flags (what `--set` gave its start,
   such as one shutting a part of the game away). **Rooms:** click one to leave it out. Being in its room
