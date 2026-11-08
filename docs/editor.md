@@ -361,7 +361,8 @@ A game can bring tabs of its own (a map editor for its own room format, a tool o
 listed in its `studio.json` under `"editor"` (paths from the game's page) load after the engine's tabs and
 add themselves with `Cutaway.editor.tab({ id, label, build, view, render, pick, drag, ... })`. `drag(p,
 phase, e)` gets the pointer on the room picture: "down" first (return true to take the drag), then each
-"move" and the "up", in room pixels. A task's `{name}` parts are filled when the tab runs it:
+"move" and the "up", in room pixels. `hover(p)` gets the pointer moving over the picture with nothing
+dragged (null once it leaves), to light up what a click would take. A task's `{name}` parts are filled when the tab runs it:
 `Cutaway.editor.runTask("art: room", { room: "hall" })` for `"art: room": ["sh", "tools/build_art.sh",
 "room", "{room}"]` (plain names only: letters, digits, `_ . -`); run from the Tools menu or the Checks tab, the editor asks for each part (a room: the one open is offered). `Cutaway.editor.modules.things.reveal(room,
 key, path)` shows a thing and its script, `modules.art.openSource(path, line)` a pxl source at a line.

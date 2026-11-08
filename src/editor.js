@@ -86,6 +86,8 @@
  * @property {(p: Pt, button: number) => void} [pick] a click on the room picture (room pixels)
  * @property {(p: Pt, phase: "down" | "move" | "up", e: PointerEvent) => boolean | void} [drag]  the pointer on the room
  *   picture: "down" first (true: the tab takes the drag, and its moves and the up come here; else pick follows)
+ * @property {(p: Pt | null) => void} [hover]         the pointer moves over the room picture with nothing dragged
+ *   (room pixels; null when it leaves the picture): to light up what a click would take
  * @property {() => void} [onRoom]                    another room was opened
  * @property {(all?: boolean) => any} [save]          File > Save, Ctrl+S (all: File > Save all, everything it has)
  * @property {() => void} [undo]                      Edit > Undo, Ctrl+Z
@@ -140,6 +142,8 @@ Cutaway.editor = (function () {
   let drawing = null;
   /** @type {Pt} */
   let cursor = { x: 0, y: 0 };
+  /** the pointer is over the picture (a tab's hover was told so) */
+  let hovering = false;
   /** @type {string[]} geometry snapshots (JSON) */
   let undoStack = [];
   /** @type {string[]} */
@@ -820,8 +824,10 @@ Cutaway.editor = (function () {
       return;
     }
     if (tabDrag) { e.stopPropagation(); cursor = worldOf(e); tabDrag.drag?.(cursor, "move", e); panelDirty = true; return; }
-    if (e.target !== Cutaway.display.screen && !drag) return;
+    if (e.target !== Cutaway.display.screen && !drag) { if (hovering) { hovering = false; tabs.find((x) => x.id === active)?.hover?.(null); } return; }
     cursor = worldOf(e);
+    // a tab's hover: the pointer over the picture with nothing dragged (null once it leaves)
+    if (active !== "room" && !drag) { hovering = true; tabs.find((x) => x.id === active)?.hover?.(cursor); }
     if (!drag || active !== "room") return;
     e.stopPropagation();
     const it = find(drag.key);

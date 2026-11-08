@@ -18,7 +18,8 @@ export default async function (t) {
   writeFileSync(join(dir, "demo", "mytab.js"), `"use strict";
     (function () {
       const E = Cutaway.editor, got = [];
-      E.tab({ id: "mytab", label: "Mine", build(box) { box.append("mine"); }, drag(p, phase) { got.push(phase + ":" + Math.round(p.x) + "," + Math.round(p.y)); return true; } });
+      E.tab({ id: "mytab", label: "Mine", build(box) { box.append("mine"); }, drag(p, phase) { got.push(phase + ":" + Math.round(p.x) + "," + Math.round(p.y)); return true; },
+        hover(p) { got.push(p ? "hover:" + Math.round(p.x) + "," + Math.round(p.y) : "hover:out"); } });
       E.modules.mytab = { got };
       E.roomNote((id) => (id === "yard" ? "The yard's shapes are made elsewhere." : null));
       E.modules.help.addBook({ id: "mine", title: "My guide", file: "mine.md", md: "# Mine\\n\\nWhat it is.\\n\\n## How\\n\\nHow it goes." }, { mytab: "how" });
@@ -39,9 +40,11 @@ export default async function (t) {
       const scr = Cutaway.display.screen, a = Cutaway.display.toClient(100, 80), b = Cutaway.display.toClient(130, 90);
       const ev = (type, p, target) => (target ?? scr).dispatchEvent(new PointerEvent(type, { clientX: p.x, clientY: p.y, button: 0, buttons: 1, bubbles: true, pointerId: 1 }));
       ev("pointerdown", a); ev("pointermove", b, window); ev("pointerup", b, window);
+      ev("pointermove", a); ev("pointermove", a, document.body);
       return 1; })()`);
     const got = await chrome.ev(`${E}.modules.mytab.got`);
-    t.ok("editor: a tab's drag hook gets down, move and up (room pixels)", got.length === 3 && got[0].startsWith("down:") && got[1].startsWith("move:") && got[2].startsWith("up:"), got.join(" "));
+    t.ok("editor: a tab's drag hook gets down, move and up (room pixels)", got.length === 5 && got[0].startsWith("down:") && got[1].startsWith("move:") && got[2].startsWith("up:"), got.join(" "));
+    t.ok("editor: a tab's hover hook gets the pointer over the picture with nothing dragged, and null when it leaves", got[3] === got[0].replace("down:", "hover:") && got[4] === "hover:out", got.join(" "));
     // the game's tab in the Tools menu, its guide in the Help menu and at F1
     const menus = await chrome.ev(`Object.fromEntries(${E}.menus().map(([t, items]) => [t, items.map((i) => i.label ?? i.head ?? "")]))`);
     t.ok("editor: Tools lists Connections, Map and the game's tabs; Help the game's guide", menus.Tools.includes("Connections") && menus.Tools.includes("Map") && menus.Tools.includes("The game's tabs") && menus.Tools.includes("Mine") && menus.Help.includes("My guide"), JSON.stringify(menus.Tools) + JSON.stringify(menus.Help));
