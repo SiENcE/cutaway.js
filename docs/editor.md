@@ -77,8 +77,8 @@ the same way at their headings (also with Enter or Space on the heading).
 | Room | the rooms (open one), **+ Walk area**, **+ Hole**, **+ Hotspot**, save the shapes |
 | Art | **Edit pixels** (the selected sprite), **New sprite**, **Revert** to the game's art, **Import PNG**, **Export PNG**, **Reload art**, the pxl sources (with the studio) |
 | Play | **Pause game** (Ctrl+P), **Step** (F8: 100 ms), **Play from here** (F10); the **sequences**: each one, and each from one of its shot marks (the game runs while it plays, then is paused again), **Stop sequence** (as Esc in the game: `after` runs), **Next shot** (as Space); begin an act as a new game, **Test dialogue** (the one picked in Dialogue) |
-| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, Map, State |
-| Help | the editor guide (F1), the reference, the keys |
+| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, Map, State, and the game's own tabs |
+| Help | the editor guide (F1), the reference, the keys, and a game's own guides (its tabs') |
 
 **Inspector in its own window** moves the inspector into a window of its own (the game gets the room
 it took); the menus, the browser and the status bar stay with the game. Browsers block such a window
@@ -357,6 +357,10 @@ phase, e)` gets the pointer on the room picture: "down" first (return true to ta
 `Cutaway.editor.runTask("art: room", { room: "hall" })` for `"art: room": ["sh", "tools/build_art.sh",
 "room", "{room}"]` (plain names only: letters, digits, `_ . -`). `Cutaway.editor.modules.things.reveal(room,
 key, path)` shows a thing and its script, `modules.art.openSource(path, line)` a pxl source at a line.
+A game's tabs are listed in the Tools menu under "The game's tabs", and the game can bring its own guide
+for them: `Cutaway.editor.modules.help.addBook({ id, title, file, md }, { <tab>: "<section>" })` adds a book
+beside the editor guide and the reference (Markdown, cut at its `##` headings; in the Help menu too), and F1
+on one of those tabs opens it at its section (`"intro"`: the top).
 `Cutaway.editor.roomNote((room) => text | null)` says something about rooms in the Room tab: shown on top of
 its panel there, and once at the first change (a room whose shapes a game bakes from a map says where to
 change them, as the next bake would undo a change made here).

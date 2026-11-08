@@ -21,6 +21,7 @@ export default async function (t) {
       E.tab({ id: "mytab", label: "Mine", build(box) { box.append("mine"); }, drag(p, phase) { got.push(phase + ":" + Math.round(p.x) + "," + Math.round(p.y)); return true; } });
       E.modules.mytab = { got };
       E.roomNote((id) => (id === "yard" ? "The yard's shapes are made elsewhere." : null));
+      E.modules.help.addBook({ id: "mine", title: "My guide", file: "mine.md", md: "# Mine\\n\\nWhat it is.\\n\\n## How\\n\\nHow it goes." }, { mytab: "how" });
     })();`);
   writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { edits: "layers/edits.js" }, editor: ["mytab.js"], tasks: {} }));
   const s = await studio(page, { quiet: true }).start(0);
@@ -40,6 +41,12 @@ export default async function (t) {
       return 1; })()`);
     const got = await chrome.ev(`${E}.modules.mytab.got`);
     t.ok("editor: a tab's drag hook gets down, move and up (room pixels)", got.length === 3 && got[0].startsWith("down:") && got[1].startsWith("move:") && got[2].startsWith("up:"), got.join(" "));
+    // the game's tab in the Tools menu, its guide in the Help menu and at F1
+    const menus = await chrome.ev(`Object.fromEntries(${E}.menus().map(([t, items]) => [t, items.map((i) => i.label ?? i.head ?? "")]))`);
+    t.ok("editor: Tools lists Connections, Map and the game's tabs; Help the game's guide", menus.Tools.includes("Connections") && menus.Tools.includes("Map") && menus.Tools.includes("The game's tabs") && menus.Tools.includes("Mine") && menus.Help.includes("My guide"), JSON.stringify(menus.Tools) + JSON.stringify(menus.Help));
+    await chrome.ev(`${E}.modules.help.open("mytab"); 1`);
+    await sleep(200);
+    t.ok("editor: F1 on a game's tab opens its guide at its section", JSON.stringify(await chrome.ev(`${E}.modules.help.at`)) === '["mine","how"]' && /How it goes/.test(await chrome.ev("document.body.textContent")));
     // the Map tab
     await chrome.ev(`${E}.show("map"); 1`);
     await sleep(400);

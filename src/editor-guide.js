@@ -15,6 +15,9 @@
   const FOR_TAB = { room: "room-shapes", texts: "texts", things: "things", art: "art", paint: "paint", sound: "sound", dialogue: "dialogue",
     state: "state", issues: "issues", checks: "checks", voices: "voices", connections: "connections", map: "map" };
 
+  /** @type {Record<string, [string, string]>} a game's tabs and the book and section F1 opens for each (addBook) */
+  const GAME_TAB = {};
+
   /** @param {string} s */
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   /** @param {string} s */
@@ -194,10 +197,24 @@
   function open(tab, book, section) {
     if (book) { bookId = book; at = section ?? "intro"; }
     else if (tab === "art" && E.modules.art?.centre === "paint") { bookId = "editor"; at = FOR_TAB.paint; }   // painting: its section
+    else if (tab && GAME_TAB[tab]) { [bookId, at] = GAME_TAB[tab]; }
     else if (tab && FOR_TAB[tab]) { bookId = "editor"; at = FOR_TAB[tab]; }
     E.show("help");
   }
 
   E.tab({ id: "help", label: "Help", build });
-  E.modules.help = { open, markdown, books, get at() { return [bookId, at]; }, search(/** @type {string} */ s) { query = s; E.refresh(); } };
+  /**
+   * A game's own guide beside the engine's (its tabs': a game's editor module adds it), Markdown cut at its
+   * ## headings like the others; `tabs` maps its tabs to the section F1 opens there ("intro": the top).
+   * Added again with the same id, it replaces the one before.
+   * @param {{id: string, title: string, file: string, md: string}} book @param {Record<string, string>} [tabs]
+   */
+  function addBook(book, tabs = {}) {
+    const list = /** @type {Book[]} */ (/** @type {any} */ (Cutaway).editorHelp ??= []), i = list.findIndex((b) => b.id === book.id);
+    if (i >= 0) list[i] = { ...book }; else list.push({ ...book });
+    for (const [tab, sec] of Object.entries(tabs)) GAME_TAB[tab] = [book.id, sec];
+    E.refresh();
+  }
+
+  E.modules.help = { open, markdown, books, addBook, get at() { return [bookId, at]; }, search(/** @type {string} */ s) { query = s; E.refresh(); } };
 })();

@@ -174,6 +174,8 @@ Cutaway.editor = (function () {
   let panDrag = null;
   /** @type {EditorTab | null} a tab that took a drag on the picture (its drag hook) */
   let tabDrag = null;
+  /** @type {string[]} the tabs the game brought (studio.json "editor"), for the Tools menu */
+  let gameTabs = [];
   /** @type {((room: string) => string | null | undefined)[]} what games say about a room in the Room tab (roomNote) */
   const notes = [];
   /** @type {Set<string>} rooms whose note was said at a change this session */
@@ -1245,12 +1247,17 @@ Cutaway.editor = (function () {
         { sep: true },
         { label: "Issues", run: () => { showTab("issues"); mods.issues?.check(); }, title: "check the game as it is now" },
         { label: "Checks", run: () => showTab("checks") },
+        { label: "Connections", run: () => showTab("connections"), title: "the puzzle dependency chart and the state budget" },
+        { label: "Map", run: () => showTab("map"), title: "every room and the ways between them" },
         { label: "State (the developer's menu)", run: () => showTab("state") },
+        ...(gameTabs.length ? [{ sep: true }, { head: "The game's tabs" }, ...gameTabs.map((id) => ({ label: tabs.find((t) => t.id === id)?.label ?? id, run: () => showTab(id) }))] : []),
       ]],
       ["Help", [
         { label: "Editor guide", key: "F1", run: () => mods.help?.open(active === "help" ? beforeHelp : active) },
         { label: "Reference", run: () => mods.help?.open(undefined, "reference") },
         { label: "Keys", run: () => mods.help?.open(undefined, "editor", "keys") },
+        // the game's own guides (its tabs'), beside the engine's two
+        ...(mods.help?.books() ?? []).filter((/** @type {any} */ b) => b.id !== "editor" && b.id !== "reference").map((/** @type {any} */ b) => ({ label: b.title, run: () => mods.help?.open(undefined, b.id) })),
       ]],
     ];
     for (const [title, items] of list) {
@@ -1752,7 +1759,9 @@ Cutaway.editor = (function () {
     });
     for (const m of MODULES) await load(Cutaway.base + m);
     // the game's own tabs (studio.json "editor": paths from the game's page), after the engine's: they may use its modules
+    const engineTabs = new Set(tabs.map((t) => t.id));
     if (await studio.connect()) for (const m of /** @type {string[]} */ (studio.config?.editor ?? [])) await load(m);
+    gameTabs = tabs.filter((t) => !engineTabs.has(t.id)).map((t) => t.id);
     panelDirty = true;
   }
 
