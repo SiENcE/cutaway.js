@@ -297,6 +297,16 @@ Cutaway.time.mark("01:00");
     await asking4;
     const over = readFileSync(file, "utf8");
     t.ok("files: Overwrite writes the editor's text", prompted && over.includes('from: "20:45"') && !over.includes("a disk again"), over.slice(0, 300));
+    // a file with CRLF typed in in the source editor keeps its line ends (a textarea gives LF only)
+    const crlf = join(dir, "demo", "layers", "crlf.js");
+    writeFileSync(crlf, '"use strict";\r\n// one\r\n// two\r\n');
+    await chrome.ev(`${E}.modules.art.openSource("layers/crlf.js", 3).then(() => 1)`);
+    await sleep(300);
+    const crSel = await chrome.ev(`(() => { const a = [...document.querySelectorAll("textarea")].find((x) => x.value.includes("// two")); return [a.selectionStart, a.selectionEnd].join(); })()`);
+    t.ok("files: a CRLF file opened at a line: that line is selected", crSel === "21,27", crSel);
+    await chrome.ev(`(() => { const a = [...document.querySelectorAll("textarea")].find((x) => x.value.includes("// two")); a.value = a.value.replace("// two", "// two, three"); a.dispatchEvent(new Event("input")); return 1; })()`);
+    const typed = await chrome.ev(`${E}.files.text("layers/crlf.js")`);
+    t.ok("files: a file with CRLF keeps its line ends when typed in in the source editor", typed === '"use strict";\r\n// one\r\n// two, three\r\n', JSON.stringify(typed));
     t.ok("map: no page errors", chrome.errors.length === 0, chrome.errors.join("\n"));
   } finally {
     await chrome.close();

@@ -281,7 +281,7 @@ Cutaway.editor = (function () {
       const end = (v) => { box.remove(); document.removeEventListener("keydown", esc, true); done(v); };
       const esc = (/** @type {KeyboardEvent} */ e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); end(null); } };
       const box = el("div", { className: "cw-ask cutaway-editor", style: { position: "fixed", inset: "0", zIndex: "100000", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(8, 6, 14, 0.6)" } }, [
-        el("div", { style: { maxWidth: "560px", background: "#1c1729", color: "#e8e0f0", border: "1px solid #5a4f78", padding: "12px 14px", font: "13px/1.45 system-ui, sans-serif", whiteSpace: "pre-wrap" } }, [
+        el("div", { style: { maxWidth: "560px", background: "#1c1729", color: "#e8e0f0", border: "1px solid #5a4f78", padding: "12px 14px", whiteSpace: "pre-wrap" } }, [
           el("div", { style: { marginBottom: "10px" } }, [text]),
           el("div", { style: { display: "flex", gap: "6px", justifyContent: "flex-end" } }, answers.map((a) => button(a.label, () => end(a.value), a.title ?? ""))),
         ])]);

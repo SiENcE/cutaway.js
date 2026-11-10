@@ -199,7 +199,8 @@ the game shows that picture, not what its pxl source builds, until it is reverte
   **Save + build + reload art** does all three, and **Reload art** loads the game's atlas scripts again
   without reloading the page (so the editor and the game stay where they are). Another file opened keeps what
   this one has unsaved (● beside it in the list); a file another tab changes (a moment the Schedule tab writes, a
-  map) shows that tab's change here, as one text (see "The game's own files" under "Files the editor writes").
+  map) shows that tab's change here, as one text (see "The game's own files" under "Files the editor writes"). A file's line ends
+  (CRLF or LF) stay as they are.
 
 ### Three ways to change art
 1. **Paint it here** (Edit pixels): quick fixes, new frames, a new prop. Saved as an import.

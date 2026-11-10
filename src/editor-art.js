@@ -35,6 +35,9 @@
   /** the source's text is being typed (its own change, heard back from E.files) */
   let typing = false;
   const sourceUnsaved = () => [...opened].filter((p) => E.files.unsaved(p)).length;
+  /** A file's text as the textarea holds it (it gives LF only), and back with the file's own line ends. */
+  const toArea = (/** @type {string} */ t) => t.replace(/\r\n/g, "\n");
+  const fromArea = (/** @type {string} */ path, /** @type {string} */ v) => (/\r\n/.test(E.files.text(path) ?? "") ? v.replace(/\r?\n/g, "\r\n") : v);
   /** @type {string[] | null} */
   let sourceList = null;
   /** @type {Set<string>} the names in the studio's import folder */
@@ -236,11 +239,11 @@
     try {
       const text = await E.files.read(path);           // what isn't saved stays; else as on the disk now
       source = path; opened.add(path);
-      srcArea.value = text;
+      srcArea.value = toArea(text);
       centre = "source";
       E.show("art");
       buildSourceBar();
-      const lines = text.split("\n"), n = Math.max(1, Math.min(line ?? 1, lines.length));
+      const lines = srcArea.value.split("\n"), n = Math.max(1, Math.min(line ?? 1, lines.length));
       const at = lines.slice(0, n - 1).reduce((s, l) => s + l.length + 1, 0);
       srcArea.setSelectionRange(at, line ? at + lines[n - 1].length : at);
       // the line a third down the view (13 px at 1.4: about 18 px a line)
@@ -273,7 +276,7 @@
       if (!source) return;
       const was = E.files.unsaved(source);
       typing = true;
-      try { E.files.set(source, srcArea.value); } finally { typing = false; }
+      try { E.files.set(source, fromArea(source, srcArea.value)); } finally { typing = false; }
       if (was !== E.files.unsaved(source)) { buildSourceBar(); E.refresh(); }
     },
     onkeydown: (/** @type {KeyboardEvent} */ e) => {                // Tab: two spaces (Shift+Tab takes two away)
@@ -478,7 +481,7 @@
   // the open source shows what its file holds now: another tab's change, or the disk's text read again
   E.files.on((path) => {
     if (typing || path !== source) return;
-    const text = E.files.text(path) ?? "";
+    const text = toArea(E.files.text(path) ?? "");
     if (srcArea.value !== text) { const a = srcArea.selectionStart, b = srcArea.selectionEnd, top = srcArea.scrollTop; srcArea.value = text; srcArea.setSelectionRange(a, b); srcArea.scrollTop = top; }
     buildSourceBar();
   });
