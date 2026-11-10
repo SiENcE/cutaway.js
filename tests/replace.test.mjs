@@ -99,6 +99,17 @@ export default async function (t) {
     await pass(C, 3000);
     t.ok("a click's walk taken away (the actor put elsewhere) doesn't run the hotspot", !C.state.test("has:leaf") && !C.script.busy);
   }
+  {
+    // a line a game says while the actor walks to what was clicked (a tip, a remark) doesn't lose the click
+    const C = await live();
+    const clicked = C.ui.interact("plant", "act");
+    await pass(C, 250);
+    C.script.run(["A tip, said on the way."]);
+    await pass(C, 8000);
+    await finish(C);
+    await clicked;
+    t.ok("a script begun during a click's walk doesn't lose the click", C.state.test("has:leaf") && !C.script.busy);
+  }
 
   // ---- a save never holds a script half-way
   {
