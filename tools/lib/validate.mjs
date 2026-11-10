@@ -149,7 +149,13 @@ export function validate(C, o = {}) {
       case "remove": item(v, where); if (s.from) actor(s.from, where); break;
       case "set": case "unset": case "inc": flagsSet.add(String(v)); break;
       case "state": object(v, roomId, where); break;
-      case "show": case "hide": object(v, roomId, where); break;
+      case "show": case "hide": {
+        object(v, roomId, where);
+        const [r, id] = String(v).includes("/") ? String(v).split("/") : [roomId, String(v)];
+        const p = r ? (C.room.get(r)?.props ?? []).find((/** @type {any} */ q) => q.id === id) : null;
+        if (p && p.if !== undefined) warn(where, `{ ${name} } on the prop "${id}", a prop with if: its condition decides when it is there, and the state { ${name} } sets is one more`);
+        break;
+      }
       case "goto":
         room(v, where);
         if (filming) stills.add(v);
@@ -239,7 +245,7 @@ export function validate(C, o = {}) {
       asset(p.image, pw);
       for (const img of Object.values(p.states ?? {})) asset(img, pw + ".states");
       xy(p.at, pw + ".at");
-      if (p.if !== undefined) cond(p.if, id, pw + ".if");
+      cond(p.if, id, pw + ".if");
       if (p.front !== undefined && (!Array.isArray(p.front) || p.front.length < 4 || p.front.length % 2 || p.front.some((v) => !Number.isFinite(v))))
         err(pw + ".front", "a front line is a list of room points [x1, y1, x2, y2, ...], at least two");
     }

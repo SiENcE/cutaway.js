@@ -102,9 +102,13 @@ export function makeTracer(C, views) {
     begin(snap, m) {
       before = snap; reads = new Map(); quiet = 0;
       C.state.watch(watch);
-      // the clicked hotspot's own condition: what made it there to click
+      // the clicked hotspot's own condition: what made it there to click (and its prop's, when it takes the prop's box)
       const def = m.id && !m.id.startsWith("@") ? C.scene.room?.hotspots?.[m.id] : null;
-      if (def) { C.state.isHidden(m.id, !!def.hidden); C.state.test(def.if); }
+      if (def) {
+        C.state.isHidden(m.id, !!def.hidden); C.state.test(def.if);
+        const prop = !def.poly && !def.rect ? (C.scene.room?.props ?? []).find((/** @type {any} */ q) => q.id === (def.prop ?? m.id)) : null;
+        if (prop) C.scene.propThere(prop);
+      }
       // what is used must be carried (the solver offers only what is), and where it is done must be reached
       for (const it of [m.item, m.a, m.b]) if (it) reads.set(`has:${it}`, true);
       if (m.kind !== "combine" && m.kind !== "ilook" && m.kind !== "wait" && snap.state?.visited?.[snap.room]) reads.set(`visited:${snap.room}`, true);

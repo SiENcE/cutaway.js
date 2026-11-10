@@ -5,6 +5,7 @@ import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
 import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
 import { buildGraph } from "../tools/lib/graph.mjs";
+import { makeTracer } from "../tools/lib/trace.mjs";
 
 async function demo(patch) {
   const g = loadGame("demo/index.html");
@@ -172,5 +173,27 @@ export default async function (t) {
   t.ok("graph: one click, a step per outcome (the mailbox opens, gives the bulb, closes)", box.length === 3, box.map((m) => m.writes.join(",")).join(" | "));
   t.ok("graph: combining is the same step in every room", G.moves.filter((m) => m.move.startsWith("combine")).length === 1);
   t.ok("graph: the winning way runs through the steps and ends with the end", G.way.length > 3 && G.way.every((id) => G.moves.some((m) => m.id === id)) && !!G.moves.find((m) => m.id === G.way[G.way.length - 1])?.wins, G.way.join(" > "));
+  // the tracer: a hotspot that takes its box from a prop needs what makes the prop be there
+  {
+    const gt = await demo((/** @type {any} */ C) => { C.room.get("hall").props.find((/** @type {any} */ q) => q.id === "plant").if = "fern"; });
+    await boot(gt, { instant: true });
+    const C = gt.C;
+    await C.acts.begin("act1", { card: false });
+    C.state.set("fern");
+    const snap = C.save.capture({ live: true }), m = { kind: "act", id: "plant" }, tracer = makeTracer(C, []);
+    tracer.begin(snap, m);
+    tracer.end(snap, m, { ...snap, state: { ...snap.state, flags: { ...snap.state.flags, took: true } } }, false);
+    const step = Object.values(tracer.take())[0];
+    t.ok("trace: a hotspot on a prop's box needs the prop's if", !!step && (step.reads.fern ?? 0) > 0, JSON.stringify(step));
+  }
+  // validate: { show } or { hide } on a prop with if (its condition decides; the state they set is one more)
+  const warnsOf = async (/** @type {any} */ patch) => {
+    const g = await demo(patch);
+    await boot(g, { instant: true });
+    return validate(g.C, {}).issues.filter((i) => i.level === "warning").map((i) => `${i.where}: ${i.msg}`);
+  };
+  const showIf = await warnsOf((/** @type {any} */ C) => { C.room.get("hall").hotspots.window.use = [{ show: "door" }]; });
+  t.ok("validate warns: { show } on a prop with if", showIf.some((w) => /window/.test(w) && /if/.test(w) && /door/.test(w)), showIf.join(" | "));
+  t.ok("validate: the demo has no such warning", !(await warnsOf()).some((w) => /prop with if/.test(w)));
   t.ok("graph: the state budget names the once-mark that doubles the states", G.factors.some((f) => f.part === "once:hall.crate.use.0" && Math.abs(f.factor - 2) < 0.01), JSON.stringify(G.factors.slice(0, 3)));
 }

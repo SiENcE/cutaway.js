@@ -145,6 +145,7 @@
         for (const v of VERBS) if (says(h[v])) out.push({ label: `${id}/${hid}: ${v}`, go: () => { openThing(id, `hot:${hid}`, [v]); } });
         for (const [it, s] of Object.entries(/** @type {Record<string, any>} */ (h.with ?? {}))) if (says(s)) out.push({ label: `${id}/${hid}: with ${it}`, go: () => { openThing(id, `hot:${hid}`, ["with", it]); } });
       }
+      for (const p of /** @type {any[]} */ (r.props ?? [])) if (p.id && says(p.if)) out.push({ label: `${id}/${p.id}: prop there if`, go: () => { openThing(id, `prop:${p.id}`); } });
     }
     for (const a of Cutaway.actors.all()) {
       for (const v of /** @type {const} */ (["look", "talk"])) if (says(a.def[v])) out.push({ label: `${a.id}: ${v}`, go: () => { openThing("", `actor:${a.id}`, [v]); } });

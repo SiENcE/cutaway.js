@@ -296,6 +296,31 @@ export default async function (t) {
     const open = doorShown(), noState = !C.state.isHidden("door", false) && C.state.isHidden("door", true);
     C.state.unset("door_open");
     t.ok("scene: a prop with if shows while it holds, no state of its own", open && noState && !doorShown());
+    // one rule for a prop being there (scene.propThere): hidden, if and the scene's showProp, the same for its hotspot
+    {
+      const hall = C.room.get("hall"), plant = hall.props.find((q) => q.id === "plant"), door = hall.props.find((q) => q.id === "door");
+      const plantShown = () => C.scene.props().some((q) => q.def.id === "plant"), plantSpot = () => C.scene.hotspots().some((h) => h.id === "leafy");
+      hall.hotspots.leafy = { name: "leafy", prop: "plant", look: "Leafy." };          // its box is the plant's (the plant's own hotspot shares its hidden state)
+      await C.scene.load("hall", { enter: false });                      // (a backdrop has no hotspots)
+      C.state.setHidden("plant", true);
+      const hiddenGone = !plantShown() && !plantSpot() && !C.scene.propThere(plant);
+      C.scene.showProp("plant");
+      t.ok("scene: a hidden prop shown for the scene is there, and so is the hotspot with its box", hiddenGone && plantShown() && plantSpot() && C.scene.propThere(plant));
+      C.scene.showProp("plant", false);
+      C.state.setHidden("plant", false);
+      plant.if = "fern";
+      const ifGone = !plantShown() && !plantSpot() && !C.scene.propThere(plant);
+      C.scene.showProp("plant");
+      const ifShown = plantShown() && plantSpot();
+      C.scene.showProp("plant", false);
+      C.state.set("fern");
+      t.ok("scene: a prop with if, shown for the scene, is there with its hotspot; and while its condition holds", ifGone && ifShown && plantShown() && plantSpot() && C.scene.propThere(plant));
+      C.state.unset("fern");
+      t.ok("scene: the hotspot goes with its prop when the condition stops holding", !plantSpot() && !plantShown());
+      delete plant.if;
+      delete hall.hotspots.leafy;
+      t.ok("scene: propThere knows the door's if too", C.scene.propThere(door) === C.state.test("door_open"));
+    }
 
     // { tape } is an action everywhere (the screen's own where there is one)
     let ran = false;

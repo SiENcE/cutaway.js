@@ -392,15 +392,24 @@ Cutaway.scene = (function () {
   /** Actors in the current room. */
   function actorsHere() { return current ? Cutaway.actors.all().filter((a) => a.room === current?.id) : []; }
 
+  /**
+   * Is a prop of the room shown there now? The one rule, for the picture, the hotspots that take their box from
+   * a prop, and the editor: shown for the scene (showProp: a door standing open) it is; else not while hidden
+   * (its state, or `hidden` in its data), and only while its `if` holds.
+   * @param {PropDef} p
+   */
+  function propThere(p) {
+    if (live.get(p)?.shown) return true;
+    if (p.id ? Cutaway.state.isHidden(p.id, !!p.hidden) : p.hidden) return false;
+    return Cutaway.state.test(p.if);
+  }
+
   /** Visible props with their current image (an animation played by a script, its state's, its own). */
   function props() {
     /** @type {{def: PropDef, image: string}[]} */
     const out = [];
     for (const p of current?.props ?? []) {
-      const shown = live.get(p)?.shown;
-      if (p.id && Cutaway.state.isHidden(p.id, !!p.hidden) && !shown) continue;
-      if (!p.id && p.hidden) continue;
-      if (p.if !== undefined && !shown && !Cutaway.state.test(p.if)) continue;
+      if (!propThere(p)) continue;
       const st = p.id && p.states ? Cutaway.state.objState(p.id) : "";
       out.push({ def: p, image: live.get(p)?.play?.image ?? ((st && p.states?.[st]) || p.image) });
     }
@@ -496,7 +505,7 @@ Cutaway.scene = (function () {
       if (!poly && h.rect) { const [x, y, w, hh] = h.rect; poly = rectPoly(x, y, w, hh); }
       if (!poly) {
         const p = (current?.props ?? []).find((q) => q.id === (h.prop ?? id));
-        const box = p && !Cutaway.state.isHidden(p.id ?? "", !!p.hidden) && Cutaway.state.test(p.if) ? propBox(p) : null;
+        const box = p && propThere(p) ? propBox(p) : null;
         if (box) poly = rectPoly(...box);
       }
       if (poly) out.push({ id, def: h, poly });
@@ -689,7 +698,7 @@ Cutaway.scene = (function () {
   Cutaway.events.on("sequence.end", () => { filming = false; });
 
   return {
-    load, go, update, render, follow, actorsHere, hotspots, hotspotAt, props, propBox, scaleAt, refresh, scrollXs,
+    load, go, update, render, follow, actorsHere, hotspots, hotspotAt, props, propThere, propBox, scaleAt, refresh, scrollXs,
     cameraTo, cameraFollow, moveProp, playProp, showProp, parallax, unload, frontY, orderWithFronts, boxes,
     /** Where a prop of the current room stands now (moved or not; without its depth). @param {string} id */
     propAt(id) { return placeOf(propDef(id)); },

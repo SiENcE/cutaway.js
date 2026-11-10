@@ -91,6 +91,23 @@ export default async function (t) {
         texts.includes("Somewhere, a tiny house."), play.includes("▶ intro") && play.some((l) => l.includes('from "sky"'))].join(" ");`);
     t.ok("sequences: steps as blocks, a caption changed in the game and the layer, its texts, the Play menu",
       sq === "shot,goto,letterbox,caption false Somewhere, a tiny house. true true true", sq);
+
+    // a prop with if, as the runtime sees it (scene.propThere): Things picks the one there, State locks its box, Connections lists it
+    const pi = await run(`E.show("things"); await frame();
+      const hall = Cutaway.room.get("hall");
+      hall.props.push({ id: "fern_here", image: "plant", at: [120, 175] }, { id: "fern_ghost", image: "plant", at: [120, 175], if: "never_set" });
+      const b = Cutaway.scene.propBox(hall.props[hall.props.length - 1]);
+      E.modules.things.pick({ x: b[0] + Math.floor(b[2] / 2), y: b[1] + Math.floor(b[3] / 2) }); await frame();
+      const picked = E.modules.things.selected;
+      const field = E.modules.things.FIELDS.prop.some((f) => f.path === "if" && f.type === "cond");
+      E.show("state"); await frame(); await frame();
+      const box = [...document.querySelectorAll(".cutaway-editor input[type=checkbox]")].find((i) => i.nextSibling?.textContent === " fern_ghost ");
+      E.show("connections"); await frame();
+      const places = E.modules.graph.placesOf("never_set").map((p) => p.label);
+      hall.props.splice(-2, 2);
+      return [picked, field, !!box && box.disabled && !box.checked, places.join("|")].join(" ");`);
+    t.ok("a prop with if: Things picks the prop that is there and has the field, State locks it, Connections lists it",
+      pi === "prop:fern_here true true hall/fern_ghost: prop there if", pi);
     t.ok("editor blocks: no page errors", chrome.errors.length === 0, chrome.errors.join(" | "));
   } finally {
     await chrome.close();

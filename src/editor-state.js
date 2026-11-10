@@ -61,10 +61,14 @@
     ]));
     // this room's things: hidden, states
     if (room) {
-      const things = [...(room.props ?? []).filter((p) => p.id).map((p) => ({ id: /** @type {string} */ (p.id), hidden: !!p.hidden })),
-        ...Object.entries(room.hotspots ?? {}).map(([id, h]) => ({ id, hidden: !!h.hidden }))].filter((t, i, l) => l.findIndex((u) => u.id === t.id) === i);
+      // a thing with `if` is there only while it holds: then its box is off and locked, the condition beside it
+      const things = [...(room.props ?? []).filter((p) => p.id).map((p) => ({ id: /** @type {string} */ (p.id), hidden: !!p.hidden, cond: p.if, prop: p })),
+        ...Object.entries(room.hotspots ?? {}).map(([id, h]) => ({ id, hidden: !!h.hidden, cond: h.if, prop: undefined }))].filter((t, i, l) => l.findIndex((u) => u.id === t.id) === i);
       box.append(section("things", `${room.id}: shown, hidden, states`, () => things.map((t) => el("div", {}, [
-        el("input", { type: "checkbox", checked: !S.isHidden(t.id, t.hidden), onchange: (/** @type {any} */ e) => S.setHidden(t.id, !e.target.checked) }), ` ${t.id} `,
+        el("input", { type: "checkbox", checked: t.prop ? Cutaway.scene.propThere(t.prop) : S.test(t.cond) && !S.isHidden(t.id, t.hidden), disabled: !S.test(t.cond),
+          title: t.cond === undefined ? "" : "if " + (typeof t.cond === "string" ? t.cond : JSON.stringify(t.cond)),
+          onchange: (/** @type {any} */ e) => S.setHidden(t.id, !e.target.checked) }), ` ${t.id} `,
+        ...(t.cond === undefined ? [] : [el("span", { style: { opacity: S.test(t.cond) ? 0.6 : 1 } }, [`if ${typeof t.cond === "string" ? t.cond : JSON.stringify(t.cond)} `])]),
         el("input", { value: S.objState(t.id), placeholder: "state", style: { ...st, width: "70px" }, onchange: (/** @type {any} */ e) => S.setObjState(t.id, e.target.value) })]))));
     }
     // rooms visited, the hint, a save slot

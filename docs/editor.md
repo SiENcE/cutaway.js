@@ -129,11 +129,12 @@ sequences' lines and captions, the title screen (its name, tagline and footer) a
 
 ## Things
 The properties of the room (music, ambience, light, depth scale, background, size, fill colour) and of
-what is in it: hotspots (`z`, hidden), props (image, position, anchor, flip, baseline, scroll, depth), lamps
+what is in it: hotspots (`z`, hidden, `if`), props (image, position, anchor, flip, hidden, `if`, baseline, scroll, depth), lamps
 (power, colour, flicker, glow), effects (colour, count, speed ...), actors (colour, speed, running speed,
 costume, voice, portraits), items (icon) and the sequences.
-- Pick a thing in the list, in the left panel, or **click it on the picture** (a prop that is shown
-  before one that is hidden there). **Save** writes the edits layer (`edits.js`). A thing's texts are
+- Pick a thing in the list, in the left panel, or **click it on the picture** (a prop that is there
+  before one that is hidden or whose `if` doesn't hold). `if` takes a condition as written (`door_open`,
+  `!has:key`), a list or `{ "or": [...] }` as JSON. **Save** writes the edits layer (`edits.js`). A thing's texts are
   in Texts, its shape in Room. Lamps and effects without an `id` go by their place in the room's list.
 - **ambience**: the loops' names, comma separated; a loop with settings (`{ "sfx": "rain", "gain": 1 }`)
   makes it a JSON list (`[...]`), which is shown and taken as it is.
@@ -298,7 +299,8 @@ in orange the nodes nothing leads to. **Edit** (or Enter, a double click) opens 
 ## State
 The game in progress, to test from anywhere: who is played and where, **go to** any room, lock and
 unlock kids, bring one over, begin an act (also Play > the acts); the **flags** (change, add, remove),
-the bag (give, take away), what is shown or hidden in the room and its things' states, the rooms
+the bag (give, take away), what is shown or hidden in the room and its things' states (a thing with `if`
+shows its condition, and its box is off and locked while the condition doesn't hold), the rooms
 visited, the hint for now, and a save slot **"dev"** to come back to.
 
 ## Issues

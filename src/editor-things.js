@@ -17,7 +17,7 @@
 
   /**
    * A field: a path into the thing's data and how to edit it.
-   * @typedef {{path: string, type: "number" | "color" | "bool" | "text" | "sprite" | "json" | "theme" | "section" | "loops", hint?: string}} Field
+   * @typedef {{path: string, type: "number" | "color" | "bool" | "text" | "sprite" | "json" | "theme" | "section" | "loops" | "cond", hint?: string}} Field
    */
   /** @type {Record<string, Field[]>} */
   const FIELDS = {
@@ -28,9 +28,10 @@
       { path: "scale", type: "json", hint: "{ far: [y, s], near: [y, s] }" }, { path: "background", type: "sprite" },
       { path: "size", type: "json", hint: "[w, h]: wider or taller than the screen scrolls" }, { path: "color", type: "color", hint: "a fill under the background" },
     ],
-    hot: [{ path: "z", type: "number", hint: "higher wins where hotspots overlap" }, { path: "hidden", type: "bool" }, { path: "prop", type: "text", hint: "a prop to click on (no shape)" }],
+    hot: [{ path: "z", type: "number", hint: "higher wins where hotspots overlap" }, { path: "hidden", type: "bool" }, { path: "if", type: "cond", hint: "there only while this holds" },
+      { path: "prop", type: "text", hint: "a prop to click on (no shape)" }],
     prop: [{ path: "image", type: "sprite" }, { path: "at", type: "json", hint: "[x, y]" }, { path: "anchor", type: "json", hint: "[x, y] in the sprite" },
-      { path: "flip", type: "bool" }, { path: "hidden", type: "bool" }, { path: "baseline", type: "number" }, { path: "scroll", type: "number" },
+      { path: "flip", type: "bool" }, { path: "hidden", type: "bool" }, { path: "if", type: "cond", hint: "there only while this holds" }, { path: "baseline", type: "number" }, { path: "scroll", type: "number" },
       { path: "depth", type: "number", hint: "parallax: 1 the room, 0 fixed on the screen, >1 foreground" }],
     lamp: [{ path: "power", type: "number" }, { path: "color", type: "color" }, { path: "flicker", type: "number", hint: "0..1" }, { path: "rate", type: "number" },
       { path: "add", type: "bool", hint: "not in the art" }, { path: "glow", type: "json", hint: "{ r, strength }" }],
@@ -170,6 +171,15 @@
         } }));
       return i;
     }
+    if (f.type === "cond") {
+      // a condition: as written ("door_open", "!has:key"); a list or { or } as JSON
+      const c = /** @type {HTMLInputElement} */ (el("input", { value: v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v), style: { ...st, width: "100%", boxSizing: "border-box" },
+        onchange: () => {
+          const t = c.value.trim();
+          try { set(!t ? undefined : /^[[{]/.test(t) ? JSON.parse(t) : t); c.style.borderColor = ""; } catch { c.style.borderColor = "#ff6a5a"; }
+        } }));
+      return c;
+    }
     if (f.type === "json") {
       const a = /** @type {HTMLTextAreaElement} */ (el("textarea", { value: v === undefined ? "" : JSON.stringify(v), rows: 2, style: { ...st, width: "100%", boxSizing: "border-box" },
         onchange: () => { try { set(a.value.trim() ? JSON.parse(a.value) : undefined); a.style.borderColor = "#4a4066"; } catch { a.style.borderColor = "#ff6a5a"; } } }));
@@ -257,7 +267,7 @@
         const b = q.id ? Cutaway.scene.propBox(q) : null;
         return b && p.x >= b[0] && p.x < b[0] + b[2] && p.y >= b[1] && p.y < b[1] + b[3];
       });
-      const prop = under.find((q) => !Cutaway.state.isHidden(q.id ?? "", !!q.hidden)) ?? under[0];
+      const prop = under.find((q) => Cutaway.scene.propThere(q)) ?? under[0];
       sel = prop?.id ? `prop:${prop.id}` : "room";
     }
     E.refresh();
@@ -282,7 +292,7 @@
   E.tab({ id: "things", label: "Things", build, pick, render, save: () => save(),
     onRoom() { if (!/^(actor|item|seq):/.test(sel)) sel = "room"; if (open?.kind === "rooms") open = null; },
     selectNone() { if (open) open = null; else sel = "room"; E.refresh(); }, view: () => open?.view ?? null });
-  E.modules.things = { get unsaved() { return dirty; }, save, target, get selected() { return sel; }, openScript, get script() { return open; },
+  E.modules.things = { get unsaved() { return dirty; }, save, target, pick, get selected() { return sel; }, openScript, get script() { return open; },
     /** Another tab changed the edits layer (the Dialogue tab): it is saved with this one. */
     touch() { dirty = true; }, select(/** @type {string} */ key) { sel = key; E.refresh(); }, reveal, change: (/** @type {string} */ s, /** @type {Field} */ f, /** @type {any} */ v) => { sel = s; change(f, v); }, FIELDS };
 })();
