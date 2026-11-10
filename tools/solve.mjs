@@ -2,8 +2,8 @@
 //   node tools/solve.mjs <index.html> [--full] [--max 100000] [--json path.json] [--workers N]
 // Prints the shortest winning path (player moves). --full explores every reachable state and lists
 // soft-locks: states from which the end can no longer be reached, and checks the game's hints (every
-// state that can still be won has one that holds, about something still needed). Exit code 1 if unsolvable or
-// soft-locked. --json writes the winning path for tools/play.mjs. --workers: threads that search (default:
+// state that can still be won has one that holds, about something still needed). Exit code 1 if unsolvable,
+// soft-locked, a state without a fitting hint, or --full stopped at the limit (nothing is proved then). --json writes the winning path for tools/play.mjs. --workers: threads that search (default:
 // one less than the machine's cores, at most 12; 0: this one only).
 import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
@@ -31,7 +31,7 @@ if (!r.solved) {
   if (out) { writeFileSync(out, JSON.stringify(r.path, null, 1)); console.log("wrote " + out); }
 }
 if (args.includes("--full")) {
-  if (!r.complete) console.log("soft-lock check incomplete: raise --max");
+  if (!r.complete) { console.log("soft-lock check incomplete: raise --max"); process.exitCode = 1; }
   else if (r.softlocks.length) {
     console.log(`SOFT-LOCKS: ${r.softlocks.length} states can't reach the end. Shortest ways into one:`);
     for (const p of r.softlocks.slice(0, 5)) console.log("  " + p.map(describe).join(" > "));

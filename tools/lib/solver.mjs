@@ -3,8 +3,12 @@
 //   act (default action on a hotspot or actor), look, with (item on a hotspot or actor),
 //   combine (item on item), ilook (look at an item), switch (to another party member), wait (game
 //   time, time.js: on to the next change).
-// Dialogue choices branch: a move that opens choices is replayed once per choice (choice points
-// already seen with the same state and node are skipped, so dialogue loops end).
+// Only what a player can do: no item move where the room has no bag (`buttons: false`), no fixed item in the
+// hand (Cutaway.inventory says both).
+// Dialogue choices branch: a move that opens choices is replayed once per choice. A run ends at its first
+// choice point without an answer (what the script does after it is thrown away with the run); a choice
+// point already seen with the same state, node and place among the running dialogues is skipped, so
+// dialogue loops end. More than 40 choices in a row is an error: nothing is cut short in silence.
 // With `full`, the game's hints (Cutaway.hints) are checked in every state that can still be won: one
 // must hold there, and what it is `about` must still be on a shortest way to the end.
 // With `workers` (and a `setup` to load the game again), worker threads expand the states
@@ -77,7 +81,7 @@ export async function makeSolver(g, opts = {}) {
   const tracer = opts.trace ? makeTracer(C, views) : null;
 
   /**
-   * A state's identity: rooms (not positions), who plays, the party and the game state. Canonical:
+   * A state's identity: the act, rooms (not positions), who plays, the party and the game state. Canonical:
    * object keys sorted and inventories as sets, so the same state reached in a different order (flags
    * set the other way round, items picked up in another order) is one state, not many. Hashed (SHA-1):
    * every edge of the search keeps one.
@@ -92,7 +96,7 @@ export async function makeSolver(g, opts = {}) {
     }
     const inv = Object.fromEntries(Object.entries(snap.state.inv ?? {}).filter(([, l]) => l.length).map(([who, l]) => [who, [...l].sort()]));
     const party = { ...snap.party, locked: [...(snap.party.locked ?? [])].sort(), staying: [...(snap.party.staying ?? [])].sort() };
-    return createHash("sha1").update(canon([snap.room, snap.active, actors, party, { ...snap.state, inv }])).digest("base64");
+    return createHash("sha1").update(canon([snap.act ?? null, snap.room, snap.active, actors, party, { ...snap.state, inv }])).digest("base64");
   }
 
   /** JSON with sorted object keys. @param {any} v @returns {string} */
@@ -107,11 +111,13 @@ export async function makeSolver(g, opts = {}) {
     await C.save.apply(snap);
     /** @type {Move[]} */
     const out = [];
-    const items = C.state.items();
+    // the bag's own rules (inventory.js): none in a room without buttons, and a fixed item is never in the hand
+    const items = C.inventory.available ? C.state.items() : [];
+    const hold = items.filter((/** @type {string} */ it) => C.inventory.holdable(it));
     for (const h of C.scene.hotspots()) {
       if (C.ui.verbOf(h.def) !== "look") out.push({ kind: "act", id: h.id });
       if (acts(h.def.look)) out.push({ kind: "look", id: h.id });
-      for (const it of items) {
+      for (const it of hold) {
         const mate = h.actor && C.party.has(h.actor) && !C.state.sameBag(snap.active, h.actor);
         if (h.def.with?.[it] !== undefined || h.def.with?.["*"] !== undefined || mate) out.push({ kind: "with", id: h.id, item: it });
       }
@@ -121,6 +127,7 @@ export async function makeSolver(g, opts = {}) {
       if (acts(di?.look)) out.push({ kind: "ilook", item: items[i] });
       for (let j = i + 1; j < items.length; j++) {
         const dj = C.item.get(items[j]);
+        if (!hold.includes(items[i]) && !hold.includes(items[j])) continue;   // one of the two is held
         if (di?.combine?.[items[j]] !== undefined || dj?.combine?.[items[i]] !== undefined) out.push({ kind: "combine", a: items[i], b: items[j] });
       }
     }
@@ -153,13 +160,18 @@ export async function makeSolver(g, opts = {}) {
   async function play(snap, m, choices = [], seen = new Set()) {
     await C.save.apply(snap);
     run.reset();
-    let used = 0, need = 0, dup = false;
+    let used = 0, need = 0, dup = false, cut = false;
     C.dialogs.setChooser((texts, at) => {
       if (used < choices.length) return choices[used++];
-      // a choice point already reached with the same state and node leads nowhere new
-      const k = `${at.dialog}/${at.node}/${key(C.save.capture())}`;
+      // the run ends here and is discarded; the script goes on to its end, and whatever choices it still
+      // opens (a dialogue after this one, the one this one was begun in) are not this run's to count
+      if (cut) return -1;
+      cut = true;
+      // a choice point already reached with the same state, at the same place, leads nowhere new (the state as
+      // it is now: in a moment's script a save is held, the game as it was before)
+      const k = `${at.stack.join(" ")}/${key(C.save.capture({ live: true }))}`;
       if (seen.has(k)) dup = true; else { seen.add(k); need = texts.length; }
-      return -1;                                          // end the dialogue; this run is discarded
+      return -1;
     });
     let error = null;
     const origError = console.error;
@@ -176,8 +188,9 @@ export async function makeSolver(g, opts = {}) {
     if (error) throw new Error(`${describe({ ...m, choices })}: ${error}`);
     if (dup) return [];
     if (need) {
+      if (choices.length >= 40) throw new Error(`${describe({ ...m, choices })}: more than 40 choices in a row (a dialogue that changes the state with every choice?)`);
       const out = [];
-      for (let i = 0; i < need && choices.length < 40; i++) out.push(...(await play(snap, m, [...choices, i], seen)));
+      for (let i = 0; i < need; i++) out.push(...(await play(snap, m, [...choices, i], seen)));
       return out;
     }
     if (C.script.busy) throw new Error(`${describe({ ...m, choices })}: the script did not finish (waiting for something?)`);

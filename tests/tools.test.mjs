@@ -1,5 +1,6 @@
 // The game tools on the demo: validate passes, broken references fail; solve finds the end, an
 // unsolvable variant fails and a soft-lock is found; graph traces the moves (what each needs and brings about).
+import { spawnSync } from "node:child_process";
 import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
 import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
@@ -100,6 +101,59 @@ export default async function (t) {
   const s3 = await makeSolver(await demo((C) => { C.room.get("yard").hotspots.lamp.with.bulb = [{ remove: "bulb" }, "Oops. It broke."]; }));
   const r3 = await s3.search({ full: true });
   t.ok("solve: a soft-lock is found", r3.solved && r3.softlocks.length > 0, `${r3.softlocks.length} soft-locks`);
+
+  // ---- dialogues: every choice of every dialogue a move opens is played
+  // a choice that breaks the game for good (the lamp never lights), and the window as the place to talk
+  const trap = (/** @type {any} */ C, /** @type {any} */ use) => {
+    const lamp = C.room.get("yard").hotspots.lamp;
+    lamp.with.bulb_clean = [{ if: "broken", then: "It is broken for good.", else: lamp.with.bulb_clean }];
+    C.dialog("trap", { main: [{ text: "Break it.", then: [{ set: "broken" }], goto: "end" }, { text: "Leave it.", goto: "end" }] });
+    C.dialog("chat", { main: [{ text: "Hi.", goto: "end" }, { text: "Ho.", goto: "end" }, { text: "Hum.", goto: "end" }] });
+    C.dialog("outer", { main: [{ text: "Ask.", then: [{ dialog: "trap" }] }, { text: "Bye.", goto: "end" }] });
+    C.room.get("hall").hotspots.window.use = use;
+  };
+  const locks = async (/** @type {any} */ use) => (await (await makeSolver(await demo((C) => trap(C, use)))).search({ full: true })).softlocks.length;
+  t.ok("solve: a choice that breaks the game is a soft-lock", (await locks([{ dialog: "trap" }])) > 0);
+  t.ok("solve: so it is in a dialogue inside a dialogue's choice", (await locks([{ dialog: "outer" }])) > 0);
+  t.ok("solve: and in the second of two dialogues in a row", (await locks([{ dialog: "chat" }, { dialog: "trap" }])) > 0);
+  t.ok("solve: the same dialogue twice in a row, and what comes after it", (await locks([{ dialog: "chat" }, { dialog: "chat" }, { set: "broken" }])) > 0);
+  const asked = await (await makeSolver(await demo((/** @type {any} */ C) => {
+    const door = C.room.get("hall").hotspots.door;
+    door.with.key = [{ if: "asked", then: door.with.key, else: "Not before I've asked." }];
+    C.dialog("sub", { main: [{ text: "May I?", then: [{ set: "asked" }], goto: "end" }, { text: "Never mind.", goto: "end" }] });
+    C.dialog("outer", { main: [{ text: "A question.", then: [{ dialog: "sub" }] }, { text: "Bye.", goto: "end" }] });
+    C.room.get("hall").hotspots.window.use = [{ dialog: "outer" }];
+  }))).search();
+  t.ok("solve: what the end needs can lie behind a dialogue inside a dialogue", asked.solved);
+  // a dialogue that changes the state with every choice never comes to an end: said, not cut short in silence
+  let endless = "";
+  try {
+    await (await makeSolver(await demo((/** @type {any} */ C) => {
+      C.dialog("count", { main: [{ text: "One more.", then: [{ inc: "n" }] }, { text: "Enough.", goto: "end" }] });
+      C.room.get("hall").hotspots.window.use = [{ dialog: "count" }];
+    }))).search();
+  } catch (e) { endless = String(/** @type {any} */ (e).message); }
+  t.ok("solve: a dialogue more than 40 choices deep is an error", /act window.*more than 40 choices/.test(endless), endless || "no error");
+
+  // ---- only moves a player can make
+  t.ok("solve: no bag in a room without buttons (the bulb can't go into the lamp)",
+    !(await (await makeSolver(await demo((/** @type {any} */ C) => { C.room.get("yard").buttons = false; }))).search()).solved);
+  t.ok("solve: a fixed item is never held (the key can't go into the door)",
+    !(await (await makeSolver(await demo((/** @type {any} */ C) => { C.item.get("key").fixed = true; }))).search()).solved);
+  t.ok("solve: a held item can still be used on a fixed one (the bulb on the leaf)",
+    (await (await makeSolver(await demo((/** @type {any} */ C) => { C.item.get("leaf").fixed = true; }))).search()).solved);
+
+  // ---- two acts that begin alike are two states
+  const two = await (await makeSolver(await demo((/** @type {any} */ C) => {
+    const lit = C.room.get("yard").hotspots.lamp.with.bulb_clean;
+    lit[lit.length - 1] = { act: "next" };
+    C.act("act2", { title: "Act 2", room: "hall", actor: "pip", fresh: true, start: C.act.get("act1").start });
+  }))).search({ full: true });
+  t.ok("solve: a second act that begins as the first is played too", two.solved && two.states > r.states && two.softlocks.length === 0, `${two.states} states, ${two.softlocks.length} soft-locks`);
+
+  // ---- a search cut short proves nothing (a limit just under the demo's states: the end is found, not every state)
+  const cut = spawnSync(process.execPath, ["tools/solve.mjs", "demo/index.html", "--full", "--max", String(r.states - 50), "--workers", "0"], { encoding: "utf8" });
+  t.ok("solve.mjs: --full stopped at the limit exits 1", cut.status === 1 && /solved in/.test(cut.stdout) && /incomplete/.test(cut.stdout), `exit ${cut.status}: ${cut.stdout.split("\n").slice(-3).join(" | ")}`);
 
   // state.watch hears reads; a traced search gives the steps, the way and the state budget
   const g0 = await demo();

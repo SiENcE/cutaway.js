@@ -31,9 +31,14 @@ Cutaway.save = (function () {
   /** @param {string | number} slot */
   function key(slot) { return `cutaway.${gameId}.save.${slot}`; }
 
-  /** @returns {SaveData | null} */
-  function capture() {
-    if (held) return JSON.parse(JSON.stringify(held));
+  /**
+   * The game as a save holds it. While a save is held (a moment plays) that is the held one, as a save must be;
+   * `live` gives the game as it is right now all the same (the solver tells states apart by it).
+   * @param {{live?: boolean}} [o]
+   * @returns {SaveData | null}
+   */
+  function capture(o = {}) {
+    if (held && !o.live) return JSON.parse(JSON.stringify(held));
     const room = Cutaway.scene.room?.id;
     if (!room || Cutaway.scene.backdrop) return null;
     /** @type {SaveData["actors"]} */

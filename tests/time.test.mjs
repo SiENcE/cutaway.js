@@ -152,4 +152,15 @@ export default async function (t) {
   const way = r.path.map((m) => m.kind === "wait" ? "wait" : `${m.kind} ${m.id ?? m.item ?? ""}`.trim());
   t.ok("solve: the end needs the moment, and the solver finds the way through the camera", r.solved && way.includes("wait") && way.includes("act monitor"), way.join(", "));
   t.ok("solve: waiting past the window in the hall is found as a soft-lock", r.softlocks.length > 0, `${r.softlocks.length} soft-locks`);
+
+  // a dialogue in a moment: a choice that changes the state and stays on its node is played on from there (a save
+  // is held while the moment plays, but the solver looks at the game as it is)
+  const gm = loadGame("demo/index.html");
+  withCamera(gm.C);
+  const lamp = gm.C.room.get("yard").hotspots.lamp;
+  lamp.with.bulb_clean = [{ if: "broken", then: "It is broken for good.", else: lamp.with.bulb_clean }];
+  gm.C.dialog("visit", { main: [{ text: "Break the lamp.", then: [{ set: "broken" }] }, { text: "Watch.", goto: "end" }] });
+  gm.C.time.moments.get("visit").play = [{ dialog: "visit" }];
+  const rm = await (await makeSolver(gm)).search({ full: true });
+  t.ok("solve: a choice in a moment's dialogue that stays on its node is played on (it breaks the game: a soft-lock)", rm.solved && rm.softlocks.length > 0, `${rm.softlocks.length} soft-locks`);
 }

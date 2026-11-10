@@ -41,8 +41,16 @@ Cutaway.dialogs = (function () {
   const line = () => Math.max(10, Cutaway.ui.font().lineHeight + 1);
   /** @type {{texts: string[], hover: number, pick: (i: number) => void} | null} */
   let menu = null;
-  /** @type {((texts: string[], at: {dialog: string, node: string}) => number | Promise<number>) | null} */
+  /**
+   * Where choices are open: the dialogue, its node, and `stack`: every dialogue running now, the outermost first,
+   * each as "<path of the step that began it>><dialogue>/<node>" (a dialogue begun by a choice of another, or the
+   * second of two in one script: what comes after the choices differs, though dialogue and node are the same).
+   * @typedef {{dialog: string, node: string, stack: string[]}} ChoicePoint
+   */
+  /** @type {((texts: string[], at: ChoicePoint) => number | Promise<number>) | null} */
   let chooser = null;
+  /** @type {{dialog: string, node: string, from: string}[]} the dialogues running now, the outermost first */
+  const running = [];
 
   /** @returns {{x: number, y: number, h: number}} */
   function geometry() {
@@ -76,12 +84,28 @@ Cutaway.dialogs = (function () {
    * Run a dialogue tree until it ends.
    * @param {string} id
    * @param {string} [start]
+   * @param {string} [from]  the path of the step that began it
    */
-  async function run(id, start) {
+  async function run(id, start, from = "") {
     const tree = Cutaway.dialog.get(id);
     if (!tree) throw new Error(`Cutaway: no dialog "${id}"`);
-    let node = start ?? Object.keys(tree)[0], entered = "";
+    const me = { dialog: id, node: start ?? Object.keys(tree)[0], from };
+    running.push(me);
+    try {
+      await talk(id, tree, me);
+    } finally {
+      running.splice(running.indexOf(me), 1);
+    }
+  }
+
+  /**
+   * @param {string} id @param {Record<string, DialogNode>} tree
+   * @param {{dialog: string, node: string, from: string}} me  its place among the running ones: its node is kept there
+   */
+  async function talk(id, tree, me) {
+    let node = me.node, entered = "";
     for (let guard = 0; guard < 1000; guard++) {
+      me.node = node;
       const n = tree[node];
       if (!n) throw new Error(`Cutaway: dialog "${id}" has no node "${node}"`);
       if (!Array.isArray(n) && n.enter && entered !== node) await Cutaway.script.exec(n.enter, { path: `dialog.${id}.${node}.enter` });
@@ -90,7 +114,7 @@ Cutaway.dialogs = (function () {
       const open = all.filter(({ c, i }) => Cutaway.state.test(c.if) && !(c.once && Cutaway.state.flag(`~dlg.${id}.${node}.${i}`)));
       if (!open.length) return;
       const texts = open.map(({ c }) => Cutaway.i18n.t(c.text));
-      const k = chooser ? await chooser(texts, { dialog: id, node }) : await choose(texts);
+      const k = chooser ? await chooser(texts, { dialog: id, node, stack: running.map((r) => `${r.from}>${r.dialog}/${r.node}`) }) : await choose(texts);
       if (!(k >= 0 && k < open.length)) return;              // a chooser may end the dialogue
       const { c, i } = open[k];
       if (c.once) Cutaway.state.set(`~dlg.${id}.${node}.${i}`);
@@ -141,12 +165,12 @@ Cutaway.dialogs = (function () {
     pick(i) { menu?.pick(i); },
     /**
      * Answer choices in code instead of the menu (tools: solver, autoplay). null = the menu again.
-     * @param {((texts: string[], at: {dialog: string, node: string}) => number | Promise<number>) | null} fn
+     * @param {((texts: string[], at: ChoicePoint) => number | Promise<number>) | null} fn
      */
     setChooser(fn) { chooser = fn; },
     init() {
       Cutaway.ui.addLayer(layer);
-      Cutaway.script.action("dialog", (s) => run(s.dialog, s.node));
+      Cutaway.script.action("dialog", (s, ctx) => run(s.dialog, s.node, ctx.path));
       Cutaway.events.on("key", (k) => {
         const n = Number(k.key);
         if (menu && n >= 1 && n <= menu.texts.length) menu.pick(n - 1);

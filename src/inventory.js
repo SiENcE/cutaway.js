@@ -55,7 +55,11 @@ Cutaway.inventory = (function () {
   function barY() { return corner === "bottom" ? Math.round(H() - BAR_H * open) : Math.round(-BAR_H + BAR_H * open); }
   /** Is a point outside the bar (it is open)? @param {number} y */
   function offBar(y) { return y < barY() || y >= barY() + BAR_H; }
-  function shown() { return !!Cutaway.scene.active && !Cutaway.script.busy && Cutaway.scene.room?.buttons !== false; }
+  /** Is there a bag here at all: somebody plays, and the room has its buttons? (the tools ask too: no item move without it) */
+  function available() { return !!Cutaway.scene.active && Cutaway.scene.room?.buttons !== false; }
+  function shown() { return available() && !Cutaway.script.busy; }
+  /** Can an item be taken in the hand, to use it on something? A fixed one stays in the bag. @param {string} id */
+  function holdable(id) { return !Cutaway.item.get(id)?.fixed; }
 
   /** @param {number} x @param {number} y @returns {number} item index under the point, or -1 */
   function itemAt(x, y) {
@@ -93,7 +97,7 @@ Cutaway.inventory = (function () {
       if (open < 1 || offBar(p.y)) return false;
       const i = itemAt(p.x, p.y), id = i >= 0 ? items()[i] : null, held = Cutaway.ui.held;
       if (!id) { Cutaway.ui.hold(null); return true; }          // empty part of the bar
-      if (p.button === 2 || (Cutaway.item.get(id)?.fixed && !held)) { Cutaway.ui.hold(null); look(id); return true; }
+      if (p.button === 2 || (!holdable(id) && !held)) { Cutaway.ui.hold(null); look(id); return true; }
       if (held && held !== id) { Cutaway.ui.hold(null); combine(held, id); return true; }
       Cutaway.ui.hold(held === id ? null : id);
       return true;
@@ -133,7 +137,7 @@ Cutaway.inventory = (function () {
         });
         if (!list.length) f.draw(ctx, Cutaway.i18n.t("@cutaway.empty"), 8, y + 9, { color: "#c8c8d8" });
       }
-      if (Cutaway.script.busy || Cutaway.scene.room?.buttons === false) return;
+      if (!shown()) return;
       const b = bagBox();
       if (satchelSprite) Cutaway.assets.draw(ctx, satchelSprite, b.x, b.y, { anchor: [0, 0], t: Cutaway.clock.time });   // may be an animation
       else ctx.drawImage(bagImage(), b.x, b.y);
@@ -150,7 +154,9 @@ Cutaway.inventory = (function () {
   }
 
   return {
-    layer, combine, look,
+    layer, combine, look, holdable,
+    /** Is there a bag in this room (somebody plays, the room has its buttons)? */
+    get available() { return available(); },
     init() { Cutaway.ui.addLayer(layer); },
     /** @param {boolean} v */
     setOpen(v) { wantOpen = v; byHover = false; if (!v) open = 0; },
