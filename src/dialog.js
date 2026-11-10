@@ -174,7 +174,7 @@ Cutaway.dialogs = (function () {
       Cutaway.script.action("dialog", (s, ctx) => run(s.dialog, s.node, ctx.path));
       Cutaway.events.on("key", (k) => {
         const n = Number(k.key);
-        if (menu && n >= 1 && n <= menu.texts.length) menu.pick(n - 1);
+        if (menu && n >= 1 && n <= menu.texts.length && Cutaway.ui.canAct({ script: true })) menu.pick(n - 1);
       });
     },
   };

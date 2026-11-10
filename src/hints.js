@@ -64,7 +64,7 @@ Cutaway.hints = (function () {
   hints.current = () => list[currentIndex()] ?? null;
   hints.currentIndex = currentIndex;
   /** Can the player ask now (no script, menu or card in the way, somebody to play)? */
-  hints.ready = () => list.length > 0 && !!Cutaway.scene.active && !Cutaway.script.busy && !Cutaway.menu.isOpen && !Cutaway.menu.card && !Cutaway.ui.line;
+  hints.ready = () => list.length > 0 && Cutaway.ui.canAct() && !Cutaway.ui.line;
   hints.init = function () {
     Cutaway.events.on("key", (k) => { if (k.code === "KeyH" && hints.ready()) { hints.ask(); k.event.preventDefault(); } });
   };

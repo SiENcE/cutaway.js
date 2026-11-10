@@ -128,6 +128,7 @@ Cutaway.acts = (function () {
   /** Back to the start: an empty state, actors where their data puts them, the party as it began. */
   function reset() {
     Cutaway.ui.hold(null);
+    Cutaway.ui.cancelClick();
     Cutaway.cinema?.reset();
     Cutaway.inventory.setOpen(false);
     Cutaway.state.reset();

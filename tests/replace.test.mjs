@@ -111,6 +111,87 @@ export default async function (t) {
     t.ok("a script begun during a click's walk doesn't lose the click", C.state.test("has:leaf") && !C.script.busy);
   }
 
+  // ---- one rule for "the player may act now" (F4): what a click's walk ends in
+  {
+    // the hotspot's script waits for a script that runs when the actor arrives, and comes after it
+    const C = await live();
+    const clicked = C.ui.interact("plant", "act");
+    await pass(C, 250);
+    C.script.run(["A tip that waits for a click."]);
+    await pass(C, 8000);
+    const during = C.state.test("has:leaf");
+    await finish(C);
+    await clicked;
+    await finish(C);
+    t.ok("a click's script waits for a script under way when the actor arrives, then runs", !during && C.state.test("has:leaf") && !C.script.busy, `during ${during}`);
+  }
+  {
+    const C = await live(), before = C.save.capture();
+    const clicked = C.ui.interact("plant", "act");
+    await pass(C, 250);
+    C.script.run(["A tip that waits for a click."]);
+    await pass(C, 8000);
+    await C.save.apply(before);
+    await clicked;
+    await pass(C, 3000);
+    t.ok("a load while the click's script waits: it never runs in the loaded game", !C.state.test("has:leaf") && !C.script.busy);
+  }
+  {
+    const C = await live();
+    const clicked = C.ui.interact("plant", "act");
+    await pass(C, 250);
+    C.actors.get("pip").stop();
+    await pass(C, 3000);
+    const got = C.state.test("has:leaf"), busy = C.script.busy;
+    await finish(C);
+    await clicked;
+    t.ok("a click's walk stopped from outside is no arrival", !got && !busy);
+  }
+  {
+    // the other one played, in another room: the walk stops, and nothing is done for anybody
+    const C = await live(), bolt = C.actors.get("bolt");
+    bolt.place("yard", 100, 150);
+    const clicked = C.ui.interact("plant", "act");
+    await pass(C, 250);
+    const switched = C.party.switchTo("bolt");
+    await pass(C, 4000);
+    const got = C.state.has("leaf", "pip") || C.state.has("leaf", "bolt");
+    await finish(C);
+    await switched;
+    await clicked;
+    t.ok("switching to an actor in another room during a click's walk does nothing there", !got && !C.state.has("leaf", "pip") && C.scene.active.id === "bolt");
+  }
+  {
+    // the digit of the actor played already changes nothing: the walk goes on
+    const C = await live(), pip = C.actors.get("pip");
+    const clicked = C.ui.interact("plant", "act");
+    await pass(C, 250);
+    C.events.emit("key", { key: "1", code: "Digit1", event: { preventDefault() {} } });
+    await pass(C, 8000);
+    await finish(C);
+    await clicked;
+    t.ok("the key of the actor played doesn't stop the click's walk", C.state.test("has:leaf") && pip.room === "hall");
+  }
+  {
+    // a door standing open is part of the exit's script: no other click in between
+    const C = await live((C) => {
+      const hall = C.room.get("hall");
+      hall.props.push({ id: "ajar", image: "plant", at: [284, 120], hidden: true });
+      hall.hotspots.doorway.exit.door = "ajar";
+    });
+    C.state.set("door_open");
+    const clicked = C.ui.interact("doorway", "act");
+    let open = false;
+    for (let t = 0; t < 40000 && C.scene.room.id === "hall"; t += 20) {
+      C.clock.advance(20, false);
+      await turn();
+      if (C.actors.get("pip").state === "idle" && C.scene.room.id === "hall" && !C.script.busy) open = true;
+    }
+    await finish(C);
+    await clicked;
+    t.ok("an exit's door: the game is busy from the moment it opens until the room has changed", !open && C.scene.room.id === "yard", `room ${C.scene.room.id}`);
+  }
+
   // ---- a save never holds a script half-way
   {
     const C = await live();

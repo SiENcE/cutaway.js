@@ -57,7 +57,7 @@ Cutaway.inventory = (function () {
   function offBar(y) { return y < barY() || y >= barY() + BAR_H; }
   /** Is there a bag here at all: somebody plays, and the room has its buttons? (the tools ask too: no item move without it) */
   function available() { return !!Cutaway.scene.active && Cutaway.scene.room?.buttons !== false; }
-  function shown() { return available() && !Cutaway.script.busy; }
+  function shown() { return available() && Cutaway.ui.canAct(); }
   /** Can an item be taken in the hand, to use it on something? A fixed one stays in the bag. @param {string} id */
   function holdable(id) { return !Cutaway.item.get(id)?.fixed; }
 

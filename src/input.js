@@ -61,6 +61,7 @@ Cutaway.input = (function () {
       }
       // touch and pen: decide between tap (act) and hold (look) on release or after holdMs
       touched = true;
+      if (press) return;                               // a second finger while one is down is no press of its own
       const pr = { x: p.x, y: p.y, lx: p.x, ly: p.y, t: performance.now(), id: e.pointerId, timer: 0, fired: false, moved: false, claimed: false };
       pr.timer = window.setTimeout(() => {
         pr.fired = true;

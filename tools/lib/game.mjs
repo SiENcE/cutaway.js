@@ -102,7 +102,7 @@ export async function boot(g, o = {}) {
       const map = this.room === C.scene.room?.id ? C.scene.walkMap : null;
       const p = map ? map.path({ x: this.x, y: this.y }, { x, y }) : [{ x, y }];
       if (p.length) { this.x = p[p.length - 1].x; this.y = p[p.length - 1].y; }
-      return Promise.resolve();
+      return Promise.resolve(true);
     };
     A.playOnce = function () { return Promise.resolve(); };
   }

@@ -105,7 +105,7 @@ Cutaway.ui = (function () {
   const layers = [];
   /** @type {string | null} the inventory item on the cursor */
   let held = null;
-  let clickSeq = 0, pointerType = "mouse", visible = true, hud = true, cutscene = false, textSpeed = 1, markUntil = 0, markHeld = false;
+  let clickSeq = 0, pointerType = "mouse", visible = true, hud = true, cutscene = false, textSpeed = 1, markUntil = 0;
   /** the click that started the current approach was a double click: run there */
   let running = false;
   const DOOR_MS = 260;                                   // an exit's door stands open this long before the room changes
@@ -207,7 +207,29 @@ Cutaway.ui = (function () {
   }
 
   /**
-   * Walk the active actor to a hotspot. Resolves false if the player clicked elsewhere meanwhile.
+   * May the player act now (the one rule every input asks: the satchel, the portraits, the buttons, the
+   * hint, the keys)? Somebody to play, no script, no menu or card, not the title or its splash, no
+   * cutscene. `script: true` allows a script under way (a dialogue's choices are part of one).
+   * @param {{script?: boolean}} [o]
+   */
+  function canAct(o = {}) {
+    if (Cutaway.menu?.isOpen || Cutaway.menu?.card || Cutaway.acts?.titleOpen || Cutaway.acts?.splashing) return false;
+    if (o.script) return true;
+    return !!Cutaway.scene.active && !Cutaway.script.busy && !cutscene;
+  }
+
+  /** The click under way comes to nothing: its walk to a hotspot ends in no action (another actor played, a save loaded). */
+  function cancelClick() { clickSeq++; }
+
+  /** Is the click's walk still the click's: the same room shown, the same actor played and in it? @param {any} a @param {any} room @param {number} seq */
+  function still(a, room, seq) {
+    return seq === clickSeq && Cutaway.scene.room === room && Cutaway.scene.active === a && a.room === room?.id;
+  }
+
+  /**
+   * Walk the active actor to a hotspot. Resolves false if the click came to nothing meanwhile: the player
+   * clicked elsewhere, the walk was taken away (stopped, the actor put elsewhere, another room shown, another
+   * one played), or a save was loaded.
    * @param {Hotspot} h
    */
   async function approach(h) {
@@ -222,11 +244,12 @@ Cutaway.ui = (function () {
       const n = Cutaway.scene.walkMap?.nearest({ x: cx, y: h.actor ? bottom : bottom + 2 });
       x = n ? n.x : a.x; y = n ? n.y : a.y;
     }
-    await a.walkTo(x, y, running);
-    if (seq !== clickSeq) return false;
-    // the walk was taken away (the actor put somewhere else, another room shown, another one played): no arrival.
-    // (A script begun meanwhile doesn't take the click: a game may say a line while the actor walks.)
-    if (Cutaway.scene.room !== room || Cutaway.scene.active !== a || a.room !== room?.id) return false;
+    if ((await a.walkTo(x, y, running)) === false || !still(a, room, seq)) return false;
+    // a script begun on the way (a tip said while the actor walks) goes first; the click's own comes after it
+    while (Cutaway.script.busy) {
+      await Cutaway.script.idle();
+      if (!still(a, room, seq)) return false;
+    }
     if (h.def.face) a.face(h.def.face);
     else if (h.actor) {                                // face each other
       const other = Cutaway.actors.get(h.actor);
@@ -279,12 +302,9 @@ Cutaway.ui = (function () {
     if (!(await approach(h))) return;
     if (verb === "exit") {
       const e = /** @type {ExitDef} */ (h.def.exit);
-      if (e.door && !Cutaway.script.fast) {             // the door opens, a moment to see it, then through
-        Cutaway.scene.showProp(e.door);
-        if (e.sfx) Cutaway.events.emit("sfx", { sfx: e.sfx, at: h.def.walkTo });
-        await Cutaway.clock.wait(DOOR_MS);
-      }
-      await Cutaway.script.run({ goto: e.to, at: e.at, face: e.face }, { path: `${base}.exit`, hotspot: id });
+      // the door opens, a moment to see it, then through: one script, so no other click comes in between
+      const go = { goto: e.to, at: e.at, face: e.face };
+      await Cutaway.script.run(e.door ? [{ open: e.door, sfx: e.sfx, at: h.def.walkTo, ms: DOOR_MS }, go] : go, { path: `${base}.exit`, hotspot: id });
       return;
     }
     await Cutaway.script.run(h.def[verb], { path: `${base}.${verb}`, hotspot: h.actor ? undefined : id });
@@ -381,8 +401,7 @@ Cutaway.ui = (function () {
 
   /** @param {CanvasRenderingContext2D} ctx */
   function renderMarks(ctx) {
-    if (!markHeld && Cutaway.clock.time >= markUntil) return;
-    if (Cutaway.script.busy || line) return;
+    if (!marking()) return;
     const pulse = Math.floor(Cutaway.clock.time / 300) % 2;
     const points = [...Cutaway.scene.hotspots().map((h) => Cutaway.debug.pointOn(h.id)), ...layerTargets().map((b) => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 }))];
     for (const p of points) {
@@ -393,6 +412,11 @@ Cutaway.ui = (function () {
       ctx.fillStyle = skin.accent;
       ctx.fillRect(x - r, y, 2 * r + 1, 1); ctx.fillRect(x, y - r, 1, 2 * r + 1);
     }
+  }
+
+  /** Are the hotspots marked now (Tab held, which the window losing the focus lets go, or the eye button's while)? */
+  function marking() {
+    return (Cutaway.input.isDown("Tab") || Cutaway.clock.time < markUntil) && !Cutaway.script.busy && !line;
   }
 
   /** What the layers say can be clicked now. */
@@ -417,7 +441,7 @@ Cutaway.ui = (function () {
     const bag = Cutaway.inventory.bagCentre(), y = Cutaway.inventory.corner === "bottom" ? Cutaway.display.height - 16 : 5;
     /** @type {{k: "hint" | "hotspots" | "menu", x: number, y: number, w: number, h: number, sprite: string | undefined}[]} */
     const out = [];
-    if (!Cutaway.scene.active || Cutaway.script.busy || Cutaway.inventory.openness > 0 || Cutaway.menu.isOpen || Cutaway.scene.room?.buttons === false) return out;
+    if (!canAct() || Cutaway.inventory.openness > 0 || Cutaway.scene.room?.buttons === false) return out;
     /** @type {("hint" | "hotspots" | "menu")[]} */
     const kinds = [...(Cutaway.hints.any() && opts.hintButton ? /** @type {const} */ (["hint"]) : []),
       ...(Cutaway.input.touched || opts.buttons ? /** @type {const} */ (["hotspots", "menu"]) : [])];
@@ -540,8 +564,7 @@ Cutaway.ui = (function () {
     Cutaway.events.on("pointer.click", onClick);
     Cutaway.events.on("pointer.press", onPress);
     Cutaway.events.on("pointer.release", () => { if (touchLabel) touchLabel.until = Cutaway.clock.time + 700; });
-    Cutaway.events.on("key", (k) => { if (k.code === "Tab") { markHeld = true; k.event.preventDefault(); } });
-    Cutaway.events.on("key.up", (k) => { if (k.code === "Tab") markHeld = false; });
+    Cutaway.events.on("key", (k) => { if (k.code === "Tab") k.event.preventDefault(); });   // held: input.isDown marks the hotspots
     Cutaway.events.on("key", (k) => {                  // Space, Enter or "." skips the current line
       if ((k.code === "Space" || k.code === "Enter" || k.code === "NumpadEnter" || k.code === "Period") && line && !Cutaway.menu.isOpen && Cutaway.clock.time - line.since > 120) { finishLine(); k.event.preventDefault(); }
     });
@@ -554,7 +577,9 @@ Cutaway.ui = (function () {
   }
 
   return {
-    init, render, say, narrate, interact, verbOf, centre,
+    init, render, say, narrate, interact, verbOf, centre, canAct, cancelClick,
+    /** Are the hotspots marked now? */
+    get marking() { return marking(); },
     /** @param {Skin} s */
     skin(s) { Object.assign(skin, s); },
     get style() { return skin; },

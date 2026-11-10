@@ -45,6 +45,43 @@ export default async function (t) {
   await C.script.run({ place: "pip", room: null });
   t.ok("place room: null takes an actor out of every room", pip.room === null && !C.scene.actorsHere().includes(pip));
   await shared(t);
+  await keys(t);
+}
+
+/** @param {any} C @param {string} key */
+function press(C, key) { C.events.emit("key", { key, code: `Digit${key}`, event: { preventDefault() {} } }); }
+
+// the digit keys ask the one rule (Cutaway.ui.canAct): never on the title screen, never under the pause menu
+export async function keys(t) {
+  const g = loadGame("demo/index.html");
+  await boot(g, { instant: true });
+  const C = g.C;
+  C.save.init();
+  C.save.write("auto");
+  const auto = JSON.stringify(C.save.read("auto"));
+  C.acts.configure({ title: { room: "yard", name: "T" } });
+  C.acts.showTitle();
+  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  const room = C.scene.room.id;
+  press(C, "1"); press(C, "2");
+  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  t.ok("a digit on the title screen changes neither the room nor the autosave",
+    room === "yard" && C.scene.room.id === room && C.acts.titleOpen && !C.scene.active && JSON.stringify(C.save.read("auto")) === auto, `${room} -> ${C.scene.room.id}, ${C.scene.active?.id}`);
+  t.ok("canAct: not on the title screen", !C.ui.canAct());
+
+  await C.acts.begin("act1", { card: false });
+  C.menu.close();                                                       // (the title's menu: begun here, not from its row)
+  t.ok("canAct: in the game, nothing in the way", C.ui.canAct() === true);
+  C.script.run({ dialog: "bolt" });
+  await new Promise((r) => setTimeout(r, 0));
+  const choices = C.dialogs.choices?.join("|");
+  t.ok("canAct: not while a script runs, but a dialogue may take its keys", !C.ui.canAct() && C.ui.canAct({ script: true }));
+  C.menu.open();
+  press(C, "1");
+  await new Promise((r) => setTimeout(r, 0));
+  t.ok("a digit under the pause menu picks no choice", !!choices && C.dialogs.choices?.join("|") === choices && !C.ui.canAct({ script: true }));
+  C.menu.close();
+  await C.script.abort();
 }
 
 // a shared bag: the party's backpack

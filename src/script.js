@@ -36,6 +36,8 @@ Cutaway.script = (function () {
   /** @type {Map<string, {sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]}>} what games' actions tell the tools */
   const metas = new Map();
   let busy = 0, fast = false;
+  /** @type {(() => void)[]} who waits for the last script to end (script.idle) */
+  let idlers = [];
   /** the game is being replaced: no further step runs, what waits is let go (abort) */
   let stopping = false;
   /** this module holds the save (the game before the outermost script) */
@@ -79,6 +81,7 @@ Cutaway.script = (function () {
       if (!busy) {
         if (holding) { holding = false; Cutaway.save.hold(null); }
         Cutaway.events.emit("script.busy", false);
+        for (const done of idlers.splice(0)) done();
       }
     }
   }
@@ -403,6 +406,8 @@ Cutaway.script = (function () {
     get current() { return current; },
     /** Is a script running (the player waits)? */
     get busy() { return busy > 0; },
+    /** Resolves once no script runs (at once when none does). */
+    idle() { return busy ? new Promise((/** @type {(v?: any) => void} */ done) => { idlers.push(done); }) : Promise.resolve(); },
     /** Fast mode: lines, sounds and waits pass at once (a sequence skipping ahead). */
     get fast() { return fast; },
     /** @param {boolean} v */

@@ -25,7 +25,7 @@ Cutaway.party = (function () {
   let follow = false;
 
   function playable() { return members.filter((m) => !locked.has(m)); }
-  function visibleNow() { return playable().length > 1 && !!Cutaway.scene.active && !Cutaway.script.busy && Cutaway.inventory.openness === 0; }
+  function visibleNow() { return playable().length > 1 && Cutaway.ui.canAct() && Cutaway.inventory.openness === 0; }
 
   /** @param {number} x @param {number} y @returns {string | null} */
   function memberAt(x, y) {
@@ -42,6 +42,7 @@ Cutaway.party = (function () {
     const a = Cutaway.actors.get(id);
     if (!a || !a.room) throw new Error(`Cutaway: can't switch to "${id}"`);
     Cutaway.ui.hold(null);
+    Cutaway.ui.cancelClick();                          // a walk to something the one played before clicked does nothing now
     const prev = Cutaway.scene.active, other = a.room !== Cutaway.scene.room?.id;
     if (prev && prev.state === "walk") prev.stop();
     if (other) await Cutaway.fx.transition("out");
@@ -129,8 +130,8 @@ Cutaway.party = (function () {
       Cutaway.script.action("stay", (s) => { staying.add(s.stay); });
       Cutaway.script.action("follow", (s) => { staying.delete(s.follow); });
       Cutaway.events.on("key", (k) => {
-        const n = Number(k.key);
-        if (n >= 1 && n <= 9 && !Cutaway.script.busy && playable()[n - 1]) switchTo(playable()[n - 1]);
+        const n = Number(k.key), id = playable()[n - 1];
+        if (n >= 1 && n <= 9 && id && id !== Cutaway.scene.active?.id && Cutaway.ui.canAct()) switchTo(id);
       });
     },
   };

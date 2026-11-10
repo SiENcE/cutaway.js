@@ -87,6 +87,7 @@ Cutaway.save = (function () {
     loading = true;
     try {
       Cutaway.ui.hold(null);
+      Cutaway.ui.cancelClick();                          // a click's walk under way does nothing in the loaded game
       Cutaway.state.restore(d.state);
       Cutaway.acts.restore(d.act);
       Cutaway.party.restore(d.party);

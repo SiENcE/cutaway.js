@@ -98,7 +98,7 @@ box (`prop`, default: the prop with the same id).
 | `talk`, `use`, `take`, `exit` | left click runs the first of these that it has |
 | `with: { item: script, "*": script }` | an item used on it (`"*"`: any other item) |
 | `walkTo: [x, y]`, `face` | where the actor stands, and which way it faces (`left right up down`) |
-| `exit: { to, at, face, door, sfx }` | a door: go to that room, stand there. Party members who follow head for it with the one played. `door` names a hidden prop (the door standing open) shown as the actor gets there, with the sound `sfx`, a moment before the room changes (the scene's, not saved). Give a door's `walkTo` at the door itself, so everyone walks up to it |
+| `exit: { to, at, face, door, sfx }` | a door: go to that room, stand there. Party members who follow head for it with the one played. `door` names a hidden prop (the door standing open) shown as the actor gets there, with the sound `sfx`, a moment before the room changes (the scene's, not saved); door and room change are one script, so no other click comes in between. Give a door's `walkTo` at the door itself, so everyone walks up to it |
 | `if` | it only exists while this condition holds |
 | `hidden` | starts hidden (`{ show: id }` shows it) |
 | `z` | higher wins where hotspots overlap |
@@ -592,7 +592,19 @@ The page loads each layer file after the game's own data.
   comes. Never call it from a script's own step: it would wait for itself.
 - What a script waits for on an actor ends by one rule (`actor.settle()`): a new walk, a new animation, `stop()`
   and `place()` all let an awaited walk or animation go on, and an actor a script has walking or playing an
-  animation in a room that isn't shown walks there all the same and arrives.
+  animation in a room that isn't shown walks there all the same and arrives. `walkTo` resolves `true` when the
+  actor got there and `false` when the walk was taken away first.
+- **One rule for "the player may act now"**: `Cutaway.ui.canAct()` (somebody to play, no script, no menu or
+  card, not the title or its splash, no cutscene). The satchel, the portraits, the buttons by the satchel, the
+  hint (H) and the keys 1–9 all ask it and add only their own (a dialogue's keys 1–9 ask
+  `canAct({ script: true })`: a script may run, the pause menu may not be open). A game's own input asks it too.
+- **A click's walk to a hotspot** ends in the hotspot's script only if it is still the click's when the actor
+  gets there: the same room shown, the same actor played and in it, the walk not stopped or replaced, no save
+  loaded meanwhile (`Cutaway.ui.cancelClick()` makes the click under way come to nothing; switching actors and
+  loading do it). A script that runs when the actor arrives (a tip said on the way) goes first: the hotspot's
+  script waits for its end (`Cutaway.script.idle()`) and then runs.
+- Touch: a second finger while one is down is ignored (no look from the first one's hold). Tab marks the
+  hotspots while it is held, and the window losing the focus lets it go (`Cutaway.ui.marking`).
 - Settings belong to the player, not the save (localStorage per game). The pause menu's Settings has
   four pages: Sound (`master`, `music`, `sfx`, `voice` 0..1, `voices`, `muteUnfocused`), Text and
   dialogue (`textSpeed` 2 / 1.5 / 1 / 0.7, `advance` "auto" or "click": lines wait for a click, a key

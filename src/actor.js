@@ -93,7 +93,7 @@ Cutaway.actor = (function () {
       this.t = 0;                                   // time in the current animation, ms
       /** @type {{x: number, y: number}[]} */
       this.path = [];
-      /** @type {(() => void)[]} */
+      /** @type {((reached: boolean) => void)[]} what waits for the walk: true when it got there, false when it was taken away */
       this.arrived = [];
       /** running to the current target (faster, with a quicker stride) */
       this.running = false;
@@ -116,10 +116,10 @@ Cutaway.actor = (function () {
     /**
      * Whatever waits for this actor goes on: a walk that was awaited, an animation played once. Everything
      * that ends them calls this (a new walk, a new animation, stop, place), so that no script waits for a
-     * walk that was taken away.
+     * walk that was taken away. A walk ended so resolves false: it didn't get there (a click's walk does nothing).
      */
     settle() {
-      for (const done of this.arrived.splice(0)) done();
+      for (const done of this.arrived.splice(0)) done(false);
       const once = this.onceDone;
       this.onceDone = null;
       if (once) once();
@@ -151,13 +151,14 @@ Cutaway.actor = (function () {
     scale() { return this.room && this.room === Cutaway.scene.room?.id ? Cutaway.scene.scaleAt(this.y) : 1; }
 
     /**
-     * Walk (or run) to a point through the current room's walk map. Resolves on arrival (or when stopped).
+     * Walk (or run) to a point through the current room's walk map. Resolves on arrival with true, or with
+     * false when the walk was taken away first (stopped, another walk, an animation, put elsewhere).
      * `free`: straight there, ignoring the walk areas (a cutscene's move: wading out, swinging on a rope).
      * @param {number} x
      * @param {number} y
      * @param {boolean} [run]
      * @param {boolean} [free]
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>}
      */
     walkTo(x, y, run = false, free = false) {
       this.running = run;
@@ -165,7 +166,7 @@ Cutaway.actor = (function () {
       const map = !free && this.room === Cutaway.scene.room?.id ? Cutaway.scene.walkMap : null;
       this.path = map ? map.path({ x: this.x, y: this.y }, { x, y }) : [{ x, y }];
       this.settle();                                 // a new walk ends the one before, and an animation still playing
-      if (!this.path.length) { this.setState("idle"); return Promise.resolve(); }
+      if (!this.path.length) { this.setState("idle"); return Promise.resolve(true); }
       if (this.state !== "walk") this.setState("walk");
       return new Promise((resolve) => this.arrived.push(resolve));
     }
@@ -225,7 +226,7 @@ Cutaway.actor = (function () {
       if (!this.path.length) {
         this.running = false;
         this.setState("idle");
-        for (const done of this.arrived.splice(0)) done();
+        for (const done of this.arrived.splice(0)) done(true);
         Cutaway.events.emit("actor.arrived", { id: this.id });
       }
     }

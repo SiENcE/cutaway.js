@@ -41,6 +41,17 @@ export default async function (t) {
     const l = await chrome.ev(`seen.claim = false; const L = Cutaway.demoLog; L.open = true; L.y = 0; wheel(64, 0); const a = L.y; fire("pointerdown", 160, 120); fire("pointermove", 160, 110); fire("pointerup", 160, 110);
       const b = L.y; const n = seen.click.length; L.open = false; [a, b]`);
     t.ok("the demo's logbook scrolls by wheel and by finger", l[0] > 0 && l[1] === l[0] + 10, JSON.stringify(l));
+
+    // a second finger while one is down is not a press of its own: one tap, and no look from the first finger's hold timer
+    await chrome.ev(`seen.claim = false; seen.click.length = 0; fire("pointerdown", 30, 30, 7); fire("pointerdown", 60, 30, 8); fire("pointerup", 60, 30, 8); fire("pointerup", 30, 30, 7)`);
+    await sleep(900);
+    const two = await chrome.ev("seen.click.slice()");
+    t.ok("two fingers: one tap, no look", JSON.stringify(two) === "[0]", JSON.stringify(two));
+
+    // Tab marks the hotspots while held; the window losing the focus lets it go
+    const tab = await chrome.ev(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "Tab", key: "Tab" })); const on = Cutaway.ui.marking;
+      window.dispatchEvent(new Event("blur")); [on, Cutaway.ui.marking]`);
+    t.ok("Tab marks the hotspots while held, and no longer once the window loses the focus", tab[0] === true && tab[1] === false, JSON.stringify(tab));
   } finally {
     await chrome.close();
   }
