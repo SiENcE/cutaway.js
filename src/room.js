@@ -552,7 +552,9 @@ Cutaway.scene = (function () {
   /** @param {number} dt */
   function update(dt) {
     time += dt;
-    for (const a of actorsHere()) a.update(dt);
+    // those in the room shown, and whoever a script has walking or playing an animation elsewhere (the script
+    // waits for them to arrive: nobody would step them there)
+    for (const a of Cutaway.actors.all()) if ((current && a.room === current.id) || a.path.length || a.onceDone) a.update(dt);
     follow(false);
   }
 

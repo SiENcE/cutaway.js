@@ -86,7 +86,9 @@ export default async function (t) {
   g3.C.time.moments.get("visit").play = [{ set: "saw_visit" }, { inc: "visits" }, { grab: true }, "There he is.", { set: "visit_over" }];
   await boot(g3, { instant: true });
   const C3 = g3.C;
-  await C3.script.run([{ goto: "cam" }, { time: "19:00" }]);
+  // the moment plays as a script of its own: the room is entered when its time has come, by no script
+  await C3.script.run([{ time: "19:00" }]);
+  await C3.scene.load("cam");
   t.ok("a save in the middle of a moment holds the game just before it", mid && mid.playing === "moment.visit" && mid.state.flags["~moment.visit"] === undefined
     && mid.state.flags.saw_visit === undefined && C3.state.flag("visit_over") === true && !C3.save.held, JSON.stringify(mid?.state.flags));
   await C3.save.apply(mid);
@@ -95,6 +97,21 @@ export default async function (t) {
     JSON.stringify(C3.state.snapshot().flags));
   const after = C3.save.capture();
   t.ok("and a save after it is of the game as it is", !after.playing && after.state.flags["~moment.visit"] === "seen");
+  // the moment plays inside a script (the one that went to the camera and waited): a save in its middle is the game
+  // before that script, with none of it (a script can't be saved half-way, and it has steps after the moment)
+  const g4 = loadGame("demo/index.html");
+  withCamera(g4.C);
+  /** @type {any} */
+  let mid4 = null;
+  g4.C.script.action("grab", () => { mid4 = g4.C.save.capture(); });
+  g4.C.time.moments.get("visit").play = [{ set: "saw_visit" }, { grab: true }, "There he is."];
+  await boot(g4, { instant: true });
+  const C4 = g4.C;
+  await C4.script.run([{ goto: "cam" }, { time: "19:00" }, { set: "after_moment" }]);
+  t.ok("a moment inside a script: a save in its middle is the game before that script", mid4 && !mid4.playing && mid4.room === "hall" && mid4.state.flags.time === C4.time.parse("18:00")
+    && mid4.state.flags.saw_visit === undefined && C4.state.flag("after_moment") === true && !C4.save.held, JSON.stringify({ room: mid4?.room, playing: mid4?.playing, flags: mid4?.state.flags }));
+  await C4.save.apply(mid4);
+  t.ok("loaded, neither the moment nor the script's later steps have happened", !C4.state.test("moment:visit") && !C4.state.flag("after_moment") && C4.scene.room.id === "hall");
 
   // ---- a save keeps the time
   const snap = C.save.capture();

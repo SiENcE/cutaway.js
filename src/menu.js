@@ -157,6 +157,7 @@ Cutaway.menu = (function () {
   async function loadSlot(s) {
     if (!Cutaway.save.read(s)) return;
     close();
+    await Cutaway.script.abort();                          // a script under way ends here, before the screen goes
     await Cutaway.fx.transition("out");
     await Cutaway.save.load(s);
     Cutaway.fx.transition("in");
@@ -185,7 +186,8 @@ Cutaway.menu = (function () {
   }
 
   function main() {
-    const hints = Cutaway.hints?.any(), acts = Cutaway.acts?.hasTitle;
+    // (no hint while a script runs: its next line would take the hint's place)
+    const hints = Cutaway.hints?.any() && !Cutaway.script.busy, acts = Cutaway.acts?.hasTitle;
     show(t("title"), [
       { label: t("continue"), run: close },
       ...(hints ? [{ label: t("hint"), run: () => { close(); Cutaway.hints.ask(); } }] : []),
@@ -198,8 +200,8 @@ Cutaway.menu = (function () {
         main();
       } }] : []),
       { label: t("fullscreen"), run: () => { Cutaway.display.toggleFullscreen(); close(); } },
-      // (the autosave keeps what happened since the last room change, unless a script is half-way)
-      ...(acts ? [{ label: t("toTitle"), run: () => { if (!Cutaway.script.busy) Cutaway.save.write("auto"); close(); Cutaway.acts.toTitle(); } }] : []),
+      // (the autosave keeps what happened since the last room change; in the middle of a script, the game before it)
+      ...(acts ? [{ label: t("toTitle"), run: async () => { Cutaway.save.write("auto"); close(); await Cutaway.script.abort(); Cutaway.acts.toTitle(); } }] : []),
     ]);
   }
 

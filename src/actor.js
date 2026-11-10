@@ -110,6 +110,19 @@ Cutaway.actor = (function () {
       this.room = room; this.x = x; this.y = y; this.path = [];
       if (facing) this.facing = facing;
       this.setState("idle");
+      this.settle();
+    }
+
+    /**
+     * Whatever waits for this actor goes on: a walk that was awaited, an animation played once. Everything
+     * that ends them calls this (a new walk, a new animation, stop, place), so that no script waits for a
+     * walk that was taken away.
+     */
+    settle() {
+      for (const done of this.arrived.splice(0)) done();
+      const once = this.onceDone;
+      this.onceDone = null;
+      if (once) once();
     }
 
     /** @param {string} s */
@@ -122,6 +135,7 @@ Cutaway.actor = (function () {
      */
     playOnce(k) {
       this.path = [];
+      this.settle();                                 // a walk under way, an animation still playing
       this.setState(k);
       this.t = 0;
       return new Promise((resolve) => { this.onceDone = resolve; });
@@ -150,7 +164,7 @@ Cutaway.actor = (function () {
       this.ambient = false;                          // a walk of its own (a script's, a click's); time.js marks its routines' walks
       const map = !free && this.room === Cutaway.scene.room?.id ? Cutaway.scene.walkMap : null;
       this.path = map ? map.path({ x: this.x, y: this.y }, { x, y }) : [{ x, y }];
-      for (const done of this.arrived.splice(0)) done();      // a new walk ends the previous one
+      this.settle();                                 // a new walk ends the one before, and an animation still playing
       if (!this.path.length) { this.setState("idle"); return Promise.resolve(); }
       if (this.state !== "walk") this.setState("walk");
       return new Promise((resolve) => this.arrived.push(resolve));
@@ -160,7 +174,7 @@ Cutaway.actor = (function () {
       this.path = [];
       this.running = false;
       this.setState("idle");
-      for (const done of this.arrived.splice(0)) done();
+      this.settle();
     }
 
     /** @param {Facing} f */

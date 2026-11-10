@@ -324,10 +324,12 @@ Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   //
   its room is the one shown (it waits for a watcher, within its window); if the window passes and nobody
   watched, it happens unseen and runs `unseen` (what it leaves behind). `next` stops at every
   routine's and moment's start and end, and at `Cutaway.time.mark("23:00")`.
-- **Saving while a moment plays:** a script can't be saved half-way, so a save written while a moment's `play` or
-  `unseen` runs (the pause menu, an autosave at a `goto` in it) holds the game as it was just before the moment
-  (`Cutaway.save.hold`; the save's `playing` names it). Loaded, the player is there again and the moment plays from
-  its start: no step is done twice, and nothing waits for steps that never came.
+- **Saving while a moment plays:** a script can't be saved half-way (see Saves). A moment that plays as a script of
+  its own (its room is entered when its time has come) holds the game as it was just before it
+  (`Cutaway.save.hold`; the save's `playing` names it): loaded, the player is there again and the moment plays from
+  its start, so no step is done twice and nothing waits for steps that never came. A moment that plays inside a
+  script (the one that waited, or went into its room) is part of that script: a save in its middle is the game
+  before that script, and the player does the click again.
 - **Holding the clock:** `Cutaway.time.hold((to) => ...)` is asked with the minutes a step would go on to; a true
   value keeps the time where it is until the state changes (a deadline the player must not sleep through).
   `next` then gives null, so the solver can't wait past it either, and `Cutaway.time.holding()` gives that value
@@ -579,6 +581,18 @@ The page loads each layer file after the game's own data.
 
 - An autosave on every room change, three slots in the pause menu (Esc), which the load page can also delete (it asks first), versioned:
   `Cutaway.save.configure({ migrate: (data, from) => data })` updates old saves.
+- **A save never holds a script half-way.** While a script runs (a click's, a dialogue, a room's `enter`), a save is
+  the game as it was just before it: saved from the pause menu in the middle of a line and loaded, the player
+  stands before the click that began it, with none of its steps done. The autosave of a room change inside a
+  script (a `goto`) is written when that script has ended, with all of it. The pause menu offers no hint while a
+  script runs. `Cutaway.save.capture({ live: true })` is the game as it is right now, for tools.
+- **When the game is replaced, the scripts under way end first** (`Cutaway.script.abort()`; loading a save and
+  going back to the title do it): no further step runs, and what the steps under way wait for is let go (the
+  line, a card, open choices, walks, animations, waits), so nothing of the old game happens to the one that
+  comes. Never call it from a script's own step: it would wait for itself.
+- What a script waits for on an actor ends by one rule (`actor.settle()`): a new walk, a new animation, `stop()`
+  and `place()` all let an awaited walk or animation go on, and an actor a script has walking or playing an
+  animation in a room that isn't shown walks there all the same and arrives.
 - Settings belong to the player, not the save (localStorage per game). The pause menu's Settings has
   four pages: Sound (`master`, `music`, `sfx`, `voice` 0..1, `voices`, `muteUnfocused`), Text and
   dialogue (`textSpeed` 2 / 1.5 / 1 / 0.7, `advance` "auto" or "click": lines wait for a click, a key

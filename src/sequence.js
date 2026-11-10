@@ -85,15 +85,7 @@ Cutaway.sequence = (function () {
     else Cutaway.tween.instant = tweensWere;
   }
 
-  /** Let promise chains go on (a message is quicker than a timer, which browsers slow down). */
-  function breathe() {
-    return new Promise((/** @type {(v?: any) => void} */ done) => {
-      if (typeof MessageChannel === "undefined") { setTimeout(done, 0); return; }
-      const ch = new MessageChannel();
-      ch.port1.onmessage = () => done();
-      ch.port2.postMessage(0);
-    });
-  }
+  const breathe = Cutaway.script.breathe;
 
   /**
    * Hurry: run game time on quickly (what was waiting when the skip came, a line, a walk, a wait,

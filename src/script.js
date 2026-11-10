@@ -5,6 +5,10 @@
 // While a script runs the player can't start another one (clicks skip the current line instead).
 // A script can be stopped between steps (`cancel` in its context: a skipped sequence). In fast mode (a
 // sequence skipping ahead) lines, sounds and waits are passed over at once.
+// A script can't be saved half-way: while one runs, a save is of the game as it was just before it
+// (Cutaway.save.hold), so loaded, the player stands before the click that began it. And when the game is
+// replaced (a save loaded, back to the title), the scripts under way end first (Cutaway.script.abort): their
+// remaining steps must not happen to the game that comes.
 // The editor's timeline (the Sequences tab) watches the steps (Cutaway.script.watch): when each starts and ends, which branch an
 // `if` or a `once` took, and what a step that goes on at once (wait: false) still runs (its promise,
 // Cutaway.script.goOn). Nobody watching costs one check per step.
@@ -32,6 +36,10 @@ Cutaway.script = (function () {
   /** @type {Map<string, {sets?: (step: Record<string, any>) => string[], tests?: (step: Record<string, any>) => string[]}>} what games' actions tell the tools */
   const metas = new Map();
   let busy = 0, fast = false;
+  /** the game is being replaced: no further step runs, what waits is let go (abort) */
+  let stopping = false;
+  /** this module holds the save (the game before the outermost script) */
+  let holding = false;
   /** @type {((e: ScriptEvent) => void) | null} the editor's timeline, hearing every step */
   let watcher = null;
   /** the path of the step whose action is being called (its synchronous part): what it starts is its own */
@@ -54,6 +62,12 @@ Cutaway.script = (function () {
    * @param {Partial<ScriptContext>} [ctx]
    */
   async function run(script, ctx = {}) {
+    // the first script under way: a save written from now on is the game as it is here (unless something holds
+    // one already: a moment, which plays again once loaded)
+    if (!busy && Cutaway.save && !Cutaway.save.held) {
+      const before = Cutaway.save.capture();
+      if (before) { Cutaway.save.hold(before); holding = true; }
+    }
     busy++;
     Cutaway.events.emit("script.busy", true);
     try {
@@ -62,7 +76,50 @@ Cutaway.script = (function () {
       console.error("Cutaway script error at " + (ctx.path ?? "?"), e);
     } finally {
       busy--;
-      if (!busy) Cutaway.events.emit("script.busy", false);
+      if (!busy) {
+        if (holding) { holding = false; Cutaway.save.hold(null); }
+        Cutaway.events.emit("script.busy", false);
+      }
+    }
+  }
+
+  /** Let promise chains go on (a message is quicker than a timer, which browsers slow down). */
+  function breathe() {
+    return new Promise((/** @type {(v?: any) => void} */ done) => {
+      if (typeof MessageChannel === "undefined") { setTimeout(done, 0); return; }
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => done();
+      ch.port2.postMessage(0);
+    });
+  }
+
+  /**
+   * End every script under way, because the game is being replaced (a save is loaded, the player goes back to
+   * the title): no further step runs, and what the steps under way wait for is let go, as when a sequence is
+   * skipped (the line, a card, open choices, walks and animations, waits and tweens). Resolves when no script
+   * runs any more. Never call it from a script's own step: it would wait for itself.
+   */
+  async function abort() {
+    while (stopping) await breathe();                      // one at a time
+    if (!busy) return;
+    stopping = true;
+    const wasFast = fast, wasInstant = Cutaway.tween.instant;
+    fast = true;
+    Cutaway.tween.instant = true;
+    try {
+      if (Cutaway.sequence?.playing()) await Cutaway.sequence.abort();
+      for (let i = 0; busy && i < 4000; i++) {
+        if (Cutaway.menu?.card) Cutaway.menu.closeCard();
+        if (Cutaway.ui.line) Cutaway.ui.skip();
+        if (Cutaway.dialogs?.choices) Cutaway.dialogs.pick(-1);
+        for (const a of Cutaway.actors.all()) a.settle();
+        Cutaway.clock.advance(250, false);
+        await breathe();
+      }
+    } finally {
+      fast = wasFast;
+      Cutaway.tween.instant = wasInstant;
+      stopping = false;
     }
   }
 
@@ -74,7 +131,7 @@ Cutaway.script = (function () {
     if (script === undefined || script === null) return;
     const list = Array.isArray(script) ? script : [script];
     for (let i = 0; i < list.length; i++) {
-      if (ctx.cancel?.stopped) return;
+      if (ctx.cancel?.stopped || stopping) return;
       const outer = ctx.after;
       await step(list[i], { ...ctx, path: `${ctx.path}.${i}`, after: () => speaks(list.slice(i + 1)) || !!outer?.() });
     }
@@ -327,7 +384,9 @@ Cutaway.script = (function () {
   for (const [k, fn] of Object.entries(builtins)) actions.set(k, fn);
 
   return {
-    run, exec, sleep, speaks, goOn,
+    run, exec, sleep, speaks, goOn, abort, breathe,
+    /** Are the scripts being ended, because the game is being replaced (abort)? */
+    get stopping() { return stopping; },
     /**
      * Hear every step (the editor's timeline): when it starts and ends, which branch an `if` or a `once`
      * takes, what a step that goes on at once still runs, and the tweens a step starts. One at a time;

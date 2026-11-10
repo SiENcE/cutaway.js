@@ -105,6 +105,7 @@ Cutaway.dialogs = (function () {
   async function talk(id, tree, me) {
     let node = me.node, entered = "";
     for (let guard = 0; guard < 1000; guard++) {
+      if (Cutaway.script.stopping) return;                   // the game is being replaced
       me.node = node;
       const n = tree[node];
       if (!n) throw new Error(`Cutaway: dialog "${id}" has no node "${node}"`);

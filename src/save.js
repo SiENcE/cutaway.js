@@ -1,5 +1,6 @@
-// Cutaway.js saves: versioned JSON in localStorage, one autosave (written on every room change) and
-// numbered manual slots. A save holds the game state, every actor's room and position, the party
+// Cutaway.js saves: versioned JSON in localStorage, one autosave (written on every room change, once the script
+// that changed the room has ended) and numbered manual slots. A script can't be saved half-way: while one runs,
+// a save is of the game as it was just before it (`hold`; script.js holds it for every script). A save holds the game state, every actor's room and position, the party
 // and the current room. Games set an id and version, and a migrate hook for older saves:
 //   Cutaway.save.configure({ id: "demo", version: 2, migrate: (data, from) => data })
 "use strict";
@@ -25,6 +26,8 @@ Cutaway.save = (function () {
   /** @type {(data: SaveData, from: number) => SaveData} */
   let migrate = (d) => d;
   let loading = false, filming = false;
+  /** a room was entered inside a script: the autosave is written when the script has ended (never half-way) */
+  let pending = false;
   /** @type {SaveData | null} what a save writes while something plays that can't be saved half-way (game time's moments) */
   let held = null;
 
@@ -80,6 +83,7 @@ Cutaway.save = (function () {
    * @param {SaveData} d
    */
   async function apply(d) {
+    await Cutaway.script.abort();                          // what was under way must not go on in the game that comes
     loading = true;
     try {
       Cutaway.ui.hold(null);
@@ -122,7 +126,15 @@ Cutaway.save = (function () {
       gameId = o.id ?? gameId; version = o.version ?? version; migrate = o.migrate ?? migrate;
     },
     init() {
-      Cutaway.events.on("room.entered", () => { if (!loading && !filming) write("auto"); });
+      Cutaway.events.on("room.entered", () => {
+        if (loading || filming || Cutaway.script.stopping) return;
+        if (Cutaway.script.busy) pending = true; else write("auto");
+      });
+      Cutaway.events.on("script.busy", (/** @type {boolean} */ on) => {
+        if (on || !pending) return;
+        pending = false;
+        if (!loading && !Cutaway.script.stopping) write("auto");   // (scripts ended because the game is replaced leave none)
+      });
       // a sequence's shots aren't places to continue from
       Cutaway.events.on("sequence.start", () => { filming = true; });
       Cutaway.events.on("sequence.end", () => { filming = false; });

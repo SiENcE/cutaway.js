@@ -211,7 +211,7 @@ Cutaway.ui = (function () {
    * @param {Hotspot} h
    */
   async function approach(h) {
-    const a = Cutaway.scene.active, seq = ++clickSeq;
+    const a = Cutaway.scene.active, seq = ++clickSeq, room = Cutaway.scene.room, busy = Cutaway.script.busy;
     if (!a) return false;
     if (Cutaway.scene.room?.observe) return true;     // a watched room: nobody walks there
     let [x, y] = h.def.walkTo ?? [0, 0];
@@ -224,6 +224,8 @@ Cutaway.ui = (function () {
     }
     await a.walkTo(x, y, running);
     if (seq !== clickSeq) return false;
+    // the walk was taken away (the actor put somewhere else, another one played, a script begun meanwhile): no arrival
+    if (Cutaway.scene.room !== room || Cutaway.scene.active !== a || a.room !== room?.id || (Cutaway.script.busy && !busy)) return false;
     if (h.def.face) a.face(h.def.face);
     else if (h.actor) {                                // face each other
       const other = Cutaway.actors.get(h.actor);
