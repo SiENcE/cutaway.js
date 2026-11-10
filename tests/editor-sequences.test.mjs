@@ -119,7 +119,7 @@ export default async function (t) {
     t.ok("sequences tab: (another one, from the bottom left)", S[3].at === "tr", JSON.stringify(S[3]));
 
     // the changes went into the game's file, where the intro is written: only those steps, its comment kept
-    const src = await chrome.ev(`${M}.files.get("game/game.js").src`);
+    const src = await chrome.ev(`${E}.files.text("game/game.js")`);
     const block = src.slice(src.indexOf('Cutaway.sequence("intro"'), src.indexOf("Cutaway.dialog("));
     t.ok("sequences tab: the changes go into the game's file where the sequence is written", await chrome.ev(`${M}.where("intro")`) === "game/game.js" &&
       /\{ camera: \[0, 100\], ms: 2600 \}/.test(block) && /\{ wait: 200 \},\n\s+\{ sfx: "_tick" \},\n\s+\{ wait: 300 \},/.test(block) && /at: "tr"/.test(block) && block.includes("// the house, from the front"), block);
@@ -128,6 +128,15 @@ export default async function (t) {
     const disk = readFileSync(game, "utf8"), lines = (/** @type {string} */ x) => x.split("\n").length;
     // the comment's line, and two more: the wait split round the sound
     t.ok("sequences tab: Save writes the file (only the steps changed)", disk === src && lines(disk) === lines(readFileSync(resolve("demo/game.js"), "utf8")) + 1 + 2, String(lines(disk)));
+    // the file changed on the disk after the save: the next change is made on the disk's text (E.files reads it again)
+    writeFileSync(game, "// changed on the disk\n" + disk);
+    await chrome.ev(`${M}.select("sequence.intro.3")`); await sleep(100);
+    await chrome.mouse("click", 20, 170);
+    await idle();
+    await chrome.ev(`${M}.save()`);
+    await sleep(300);
+    const disk2 = readFileSync(game, "utf8"), block2 = disk2.slice(disk2.indexOf('Cutaway.sequence("intro"'), disk2.indexOf("Cutaway.dialog("));
+    t.ok("sequences tab: a file changed on the disk after a save: the next change goes into the disk's text", disk2.startsWith("// changed on the disk\n") && /at: "bl"/.test(block2), disk2.slice(0, 200));
 
     // a new sequence of its own: the edits layer
     await chrome.ev(`window.prompt = () => "boat"; ${M}.newSequence(); 1`);

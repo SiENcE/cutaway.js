@@ -280,9 +280,10 @@ Cutaway.scene = (function () {
    * the title screen) is only shown: no enter script, not visited, no autosave. So is a shot (`shot:
    * true`, a goto while a sequence plays), but its camera is the sequence's to move. `keep: true` keeps
    * the scene as it is when the room is the one shown already (its clock, its props: a film that ends
-   * on the title screen's room goes on into it without a jump).
+   * on the title screen's room goes on into it without a jump). `peek: true` (the editor opening a room)
+   * only shows it: not visited, and "room.entered" carries `peek`, so no autosave is written.
    * @param {string} id
-   * @param {{enter?: boolean, backdrop?: [number, number], shot?: boolean, keep?: boolean}} [o]
+   * @param {{enter?: boolean, backdrop?: [number, number], shot?: boolean, keep?: boolean, peek?: boolean}} [o]
    */
   async function load(id, o = {}) {
     const def = Cutaway.room.get(id), same = !!o.keep && current === def;
@@ -299,11 +300,11 @@ Cutaway.scene = (function () {
     follow(true);
     Cutaway.events.emit("room.enter", { id, music: def.music });
     if (view || o.shot) return;
-    if (def.enter && o.enter !== false) await Cutaway.script.run(def.enter, { path: `${id}.enter` });
-    Cutaway.state.visit(id);
+    if (def.enter && o.enter !== false && !o.peek) await Cutaway.script.run(def.enter, { path: `${id}.enter` });
+    if (!o.peek) Cutaway.state.visit(id);
     // game time (time.js, if the game loads it): moments waiting for someone to watch this room play now
-    if (o.enter !== false && Cutaway.time?.used) await Cutaway.time.entered(id);
-    Cutaway.events.emit("room.entered", { id });
+    if (o.enter !== false && !o.peek && Cutaway.time?.used) await Cutaway.time.entered(id);
+    Cutaway.events.emit("room.entered", o.peek ? { id, peek: true } : { id });
   }
 
   /** The walk map of a room, built once (the visibility graph is costly). @param {Room} def */

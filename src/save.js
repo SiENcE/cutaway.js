@@ -127,8 +127,8 @@ Cutaway.save = (function () {
       gameId = o.id ?? gameId; version = o.version ?? version; migrate = o.migrate ?? migrate;
     },
     init() {
-      Cutaway.events.on("room.entered", () => {
-        if (loading || filming || Cutaway.script.stopping) return;
+      Cutaway.events.on("room.entered", (/** @type {{peek?: boolean}} */ e) => {
+        if (loading || filming || Cutaway.script.stopping || e?.peek) return;
         if (Cutaway.script.busy) pending = true; else write("auto");
       });
       Cutaway.events.on("script.busy", (/** @type {boolean} */ on) => {

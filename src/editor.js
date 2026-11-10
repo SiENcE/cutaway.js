@@ -270,10 +270,100 @@ Cutaway.editor = (function () {
   })();
 
   /**
+   * Ask the user to pick one of a few answers, in a box over the page. Resolves to the answer's value, or null when the
+   * box was closed (Esc).
+   * @param {string} text @param {{label: string, value: string, title?: string}[]} answers
+   * @returns {Promise<string | null>}
+   */
+  function ask(text, answers) {
+    return new Promise((done) => {
+      /** @param {string | null} v */
+      const end = (v) => { box.remove(); document.removeEventListener("keydown", esc, true); done(v); };
+      const esc = (/** @type {KeyboardEvent} */ e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); end(null); } };
+      const box = el("div", { className: "cw-ask cutaway-editor", style: { position: "fixed", inset: "0", zIndex: "100000", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(8, 6, 14, 0.6)" } }, [
+        el("div", { style: { maxWidth: "560px", background: "#1c1729", color: "#e8e0f0", border: "1px solid #5a4f78", padding: "12px 14px", font: "13px/1.45 system-ui, sans-serif", whiteSpace: "pre-wrap" } }, [
+          el("div", { style: { marginBottom: "10px" } }, [text]),
+          el("div", { style: { display: "flex", gap: "6px", justifyContent: "flex-end" } }, answers.map((a) => button(a.label, () => end(a.value), a.title ?? ""))),
+        ])]);
+      document.addEventListener("keydown", esc, true);
+      document.body.append(box);
+      /** @type {HTMLElement | null} */ (box.querySelector("button:last-child"))?.focus();
+    });
+  }
+
+  /**
+   * The game's files the editor changes as text (Schedule, Sequences, the source editor in Art): one text per path for
+   * every tab, with what the disk said when it was read. A file with nothing unsaved is read again before it is used,
+   * so a change made on the disk since comes in; it is written only while the disk still says what was read, else the
+   * user is asked (reload, overwrite, or leave it). Tabs hear a file change (`on`) to show what it holds now.
+   */
+  const files = (function () {
+    /** @type {Map<string, {text: string, disk: string | null}>} */
+    const held = new Map();
+    /** @type {((path: string, why: "change" | "reload" | "saved") => void)[]} */
+    const subs = [];
+    /** @param {string} path @param {"change" | "reload" | "saved"} why */
+    const tell = (path, why) => { for (const fn of subs) { try { fn(path, why); } catch (e) { console.error(e); } } panelDirty = true; };
+    /** @param {string} path @returns {Promise<string | null>} null: not on the disk */
+    const disk = async (path) => { try { return await studio.read(path); } catch { return null; } };
+    return {
+      /** The file's text now: the editor's while it has unsaved changes, else read (again) from the disk. @param {string} path */
+      async read(path) {
+        const f = held.get(path);
+        if (f && f.text !== f.disk) return f.text;
+        const t = await studio.read(path), was = f?.text;
+        held.set(path, { text: t, disk: t });
+        if (was !== undefined && was !== t) tell(path, "reload");
+        return t;
+      },
+      /** What the editor holds of a file now (undefined: never read). @param {string} path */
+      text(path) { return held.get(path)?.text; },
+      /** Change a file's text (read before; not saved yet). @param {string} path @param {string} text */
+      set(path, text) {
+        const f = held.get(path);
+        if (!f) throw new Error(`${path} wasn't read`);
+        if (f.text === text) return;
+        f.text = text;
+        tell(path, "change");
+      },
+      /** Has the editor changes of the file that aren't saved? @param {string} path */
+      unsaved(path) { const f = held.get(path); return !!f && f.text !== f.disk; },
+      /** The files with changes not saved. */
+      get changed() { return [...held].filter(([, f]) => f.text !== f.disk).map(([p]) => p); },
+      /**
+       * Write a file's text, if the disk still says what was read; else ask. Resolves to true when it was written.
+       * @param {string} path
+       */
+      async save(path) {
+        const f = held.get(path);
+        if (!f || f.text === f.disk) return false;
+        const now = await disk(path);
+        if (now !== f.disk) {
+          const a = await ask(`${path} was changed ${now === null ? "(removed) " : ""}outside the editor since it was read, and the editor has changes of it not saved.`, [
+            ...(now === null ? [] : [{ label: "Reload", value: "reload", title: "take the file as it is on the disk: the editor's changes to it go" }]),
+            { label: "Overwrite", value: "overwrite", title: "write the editor's text over what is on the disk" },
+            { label: "Leave it", value: "", title: "write nothing now (Save asks again)" }]);
+          if (a === "reload" && now !== null) { f.text = now; f.disk = now; tell(path, "reload"); setStatus(`${path}: read again from the disk (the game keeps what was changed until the page is reloaded)`); return false; }
+          if (a !== "overwrite") { setStatus(`${path}: not saved (it was changed outside the editor)`); return false; }
+        }
+        const text = f.text;
+        await studio.write(path, text);
+        f.disk = text;
+        tell(path, "saved");
+        return true;
+      },
+      /** Hear a file change: "change" (a tab changed its text), "reload" (read again from the disk), "saved". @param {(path: string, why: "change" | "reload" | "saved") => void} fn */
+      on(fn) { subs.push(fn); },
+    };
+  })();
+
+  /**
    * Save a file: through the studio into the game's folder, else with the browser's file picker (or as
-   * a download). Resolves to what happened, for the status line.
+   * a download). Resolves to what happened, for the status line, or null when nothing was written (the
+   * picker was cancelled): the tab keeps its changes as unsaved.
    * @param {string} path  where it goes in the game (its last part names the download)
    * @param {string | Uint8Array} content
+   * @returns {Promise<string | null>}
    */
   async function saveFile(path, content) {
     const name = path.split("/").pop() ?? "file", w = /** @type {any} */ (window);
@@ -289,7 +379,7 @@ Cutaway.editor = (function () {
         return `saved ${h.name}`;
       }
     } catch (e) {
-      if (/** @type {any} */ (e)?.name === "AbortError") return "not saved";
+      if (/** @type {any} */ (e)?.name === "AbortError") return null;
     }
     download(name, content);
     return `downloaded ${name}: put it at ${path}`;
@@ -574,8 +664,8 @@ Cutaway.editor = (function () {
       const path = studio.layer("room", { id }) || `${id}.geo.js`;
       try {
         const msg = await saveFile(path, text(id, await savedGeometry(id, path)));
-        out.push(msg);
-        if (msg === "not saved") continue;
+        out.push(msg ?? `${id}: not saved`);
+        if (msg === null) continue;
         dirtyRooms.delete(id);
         const warn = await notLoaded(path);
         if (warn) { out.push(warn); warned = true; }
@@ -1929,7 +2019,8 @@ Cutaway.editor = (function () {
 
   /** @param {string} id */
   async function openRoom(id) {
-    if (Cutaway.scene.room?.id !== id) await Cutaway.scene.load(id, { enter: false });
+    // only looked at: not visited, no autosave (a click in the room list mustn't put an empty game over the player's)
+    if (Cutaway.scene.room?.id !== id) await Cutaway.scene.load(id, { enter: false, peek: true });
     roomChanged();
   }
 
@@ -2073,7 +2164,7 @@ Cutaway.editor = (function () {
   Cutaway.events.on("room.entered", () => { panelDirty = true; });
 
   const api = {
-    open, close, text, geometry, items, problems, save, openRoom, studio, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
+    open, close, text, geometry, items, problems, save, openRoom, studio, files, ask, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
     list, fold, prefixGroups, playSequence, step, pan, notLoaded, relTo, scrollbars,
     /** Is the game paused by the editor? */
     get paused() { return holding; },

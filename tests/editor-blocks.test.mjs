@@ -66,6 +66,19 @@ export default async function (t) {
       out.push(Object.keys(Cutaway.dialog.get("bolt")).join(","));
       return out.join(" ");`);
     t.ok("dialogue: a node renamed takes its gotos along; undo", dl === "main,reach -,reach,end,main,main true main,shelf", dl);
+    // Ctrl+Z after another dialogue is picked in the list doesn't write the first one's tree into it
+    const du = await run(`Cutaway.dialog("chat2", { main: [{ text: "Hi.", goto: "end" }] }); E.refresh(); await frame(); await frame();
+      E.modules.dialogue.edit("bolt"); await frame(); await frame();
+      const inp = [...document.querySelectorAll(".cw-centre [data-f]")].find((x) => x.dataset.f === "node:shelf");
+      inp.value = "reach2"; inp.dispatchEvent(new Event("change")); await frame();
+      [...document.querySelectorAll(".cw-centre button")].find((b) => b.textContent === "Close").click(); await frame(); await frame();
+      document.querySelector('.cutaway-editor .cw-lst[data-id="dialogues"] .row[data-key="chat2"]').click(); await frame(); await frame();
+      document.body.focus();
+      document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); await frame();
+      const out = [Object.keys(Cutaway.dialog.get("chat2")).join(","), Object.keys(Cutaway.dialog.get("bolt")).join(",")].join(" ");
+      Cutaway.edits.revert("dialogs", "bolt");
+      return out;`);
+    t.ok("dialogue: Ctrl+Z after another dialogue is picked changes neither", du === "main main,reach2", du);
 
     // a recording: cut to the voice, levelled, played for its line
     const vo = await run(`E.show("voices"); await frame();

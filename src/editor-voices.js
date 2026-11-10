@@ -234,8 +234,9 @@
     const out = [];
     for (const l of Object.keys(changed)) {
       if (!Object.keys(changed[l]).length) continue;
-      out.push(await E.saveFile(E.studio.layer("voices", { lang: l }) || `assets/voices.${l}.js`, fileText(l)));
-      changed[l] = {};
+      const msg = await E.saveFile(E.studio.layer("voices", { lang: l }) || `assets/voices.${l}.js`, fileText(l));
+      out.push(msg ?? `${l}: not saved`);
+      if (msg !== null) changed[l] = {};
     }
     E.setStatus(out.length ? out.join("\n") + "\n(the game's page needs <script src=\"assets/voices.<lang>.js\"> once)" : "nothing changed");
   }

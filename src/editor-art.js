@@ -28,8 +28,13 @@
   let centre = "";
   /** @type {(ArtImport & {png: Uint8Array}) | null} a PNG read for import, not applied or saved yet */
   let pending = null;
-  /** @type {{path: string, text: string, saved: string} | null} a pxl source being edited */
+  /** @type {string | null} the source open in the centre (its text is the editor's one, E.files) */
   let source = null;
+  /** @type {Set<string>} the sources opened here (one text each: another opened keeps what this one has unsaved) */
+  const opened = new Set();
+  /** the source's text is being typed (its own change, heard back from E.files) */
+  let typing = false;
+  const sourceUnsaved = () => [...opened].filter((p) => E.files.unsaved(p)).length;
   /** @type {string[] | null} */
   let sourceList = null;
   /** @type {Set<string>} the names in the studio's import folder */
@@ -119,8 +124,9 @@
 
   /**
    * Write an import into the game's art folder (what build-atlas.mjs reads) and pack the imported atlas
-   * (the game's "art: imported" task). Resolves to what happened, a line each.
-   * @param {ArtImport} p @returns {Promise<string[]>}
+   * (the game's "art: imported" task). Resolves to what happened, a line each, or null when its picture wasn't
+   * written (no studio, the file picker cancelled): nothing is packed then.
+   * @param {ArtImport} p @returns {Promise<string[] | null>}
    */
   async function writeImport(p) {
     const dir = artDir(), fw = Math.floor(p.w / p.frames), kind = p.frames > 1 ? "anims" : "sprites", out = [];
@@ -132,10 +138,12 @@
         if (await E.studio.exists(f)) { await E.studio.remove(f); out.push(`removed ${f}`); }
       }
     }
-    out.push(await E.saveFile(`${dir}/${kind}/${p.name}.png`, png));
+    const pic = await E.saveFile(`${dir}/${kind}/${p.name}.png`, png);
+    if (pic === null) return null;
+    out.push(pic);
     if (p.frames > 1) out.push(await E.saveFile(`${dir}/anims/${p.name}.json`,
-      JSON.stringify({ frames: Array.from({ length: p.frames }, (_v, i) => ({ frame: { x: i * fw, y: 0, w: fw, h: p.h }, duration: msOf(p, i) })) }, null, 1)));
-    if (p.anchor) out.push(await E.saveFile(`${dir}/${kind}/${p.name}.anchor.json`, JSON.stringify({ anchor: p.anchor })));
+      JSON.stringify({ frames: Array.from({ length: p.frames }, (_v, i) => ({ frame: { x: i * fw, y: 0, w: fw, h: p.h }, duration: msOf(p, i) })) }, null, 1)) ?? `${p.name}.json: not saved`);
+    if (p.anchor) out.push(await E.saveFile(`${dir}/${kind}/${p.name}.anchor.json`, JSON.stringify({ anchor: p.anchor })) ?? `${p.name}.anchor.json: not saved`);
     out.push(...await pack());
     imported.add(p.name);
     E.refresh();
@@ -226,13 +234,13 @@
   /** Open a pxl source in the centre, at a line (1-based: it is selected and scrolled to). @param {string} path @param {number} [line] */
   async function openSource(path, line) {
     try {
-      const text = source?.path === path && source.text !== source.saved ? source.text : await E.studio.read(path);
-      if (source?.path !== path || source.text === source.saved) source = { path, text, saved: text };
-      srcArea.value = source.text;
+      const text = await E.files.read(path);           // what isn't saved stays; else as on the disk now
+      source = path; opened.add(path);
+      srcArea.value = text;
       centre = "source";
       E.show("art");
       buildSourceBar();
-      const lines = source.text.split("\n"), n = Math.max(1, Math.min(line ?? 1, lines.length));
+      const lines = text.split("\n"), n = Math.max(1, Math.min(line ?? 1, lines.length));
       const at = lines.slice(0, n - 1).reduce((s, l) => s + l.length + 1, 0);
       srcArea.setSelectionRange(at, line ? at + lines[n - 1].length : at);
       // the line a third down the view (13 px at 1.4: about 18 px a line)
@@ -241,17 +249,19 @@
     } catch (e) { E.setStatus(`${path}: ${/** @type {any} */ (e).message}`); }
   }
 
-  async function saveSource() {
-    if (!source) return;
-    source.text = srcArea.value;
-    E.setStatus(await E.saveFile(source.path, source.text));
-    source.saved = source.text;
+  /** Save a source (the one open), if the disk still says what was read: else the editor asks. @param {string | null} [path] */
+  async function saveSource(path = source) {
+    if (!path) return;
+    const was = E.files.unsaved(path), ok = await E.files.save(path);
+    E.setStatus(ok ? `saved ${path}` : was ? `${path}: not saved` : `${path}: nothing to save`);
     buildSourceBar();
+    E.refresh();
   }
 
   /** Save the source, run an art task, load the new art. @param {string} task */
   async function buildSource(task) {
-    if (source && source.text !== source.saved) await saveSource();
+    if (source && E.files.unsaved(source)) await saveSource();
+    if (source && E.files.unsaved(source)) return;                // not saved: nothing built from what the disk has
     const r = await E.runTask(task);
     if (r.code === 0) await reloadArt().catch((e) => E.setStatus(String(e.message)));
   }
@@ -259,7 +269,13 @@
   const srcArea = /** @type {HTMLTextAreaElement} */ (el("textarea", { spellcheck: false, wrap: "off",
     style: { flex: "1", width: "100%", boxSizing: "border-box", resize: "none", font: "13px/1.4 Consolas, Menlo, monospace", background: "#100d18",
       color: "#e8e0f0", border: "0", borderTop: "1px solid #3a3350", padding: "8px 10px", whiteSpace: "pre", outline: "none", tabSize: "2" },
-    oninput: () => { if (source) { const was = source.text !== source.saved; source.text = srcArea.value; if (was !== (source.text !== source.saved)) { buildSourceBar(); E.refresh(); } } },
+    oninput: () => {
+      if (!source) return;
+      const was = E.files.unsaved(source);
+      typing = true;
+      try { E.files.set(source, srcArea.value); } finally { typing = false; }
+      if (was !== E.files.unsaved(source)) { buildSourceBar(); E.refresh(); }
+    },
     onkeydown: (/** @type {KeyboardEvent} */ e) => {                // Tab: two spaces (Shift+Tab takes two away)
       if (e.key !== "Tab") return;
       e.preventDefault();
@@ -276,9 +292,9 @@
 
   function buildSourceBar() {
     const tasks = Object.keys(E.studio.config?.tasks ?? {}).filter((t) => t.startsWith("art"));
-    const dirty = !!source && source.text !== source.saved;
+    const dirty = !!source && E.files.unsaved(source);
     const pick = /** @type {HTMLSelectElement} */ (el("select", { onchange: () => { if (pick.value) openSource(pick.value); } },
-      [...new Set([...(sourceList ?? []), ...(source ? [source.path] : [])])].sort().map((s) => el("option", { value: s, textContent: s, selected: s === source?.path }))));
+      [...new Set([...(sourceList ?? []), ...opened])].sort().map((s) => el("option", { value: s, textContent: s + (E.files.unsaved(s) ? " ●" : ""), selected: s === source }))));
     const task = /** @type {HTMLSelectElement} */ (el("select", { title: "the art task to run" }, tasks.map((t) => el("option", { value: t, textContent: t }))));
     srcBar.replaceChildren(pick, el("span", { className: "cw-dirty", textContent: dirty ? " ●" : "" }),
       button("Save", () => { saveSource(); }, "Ctrl+S"),
@@ -364,7 +380,7 @@
       if (!sourceList) { loadSources(); sec.append("..."); }
       else {
         sec.append(el("div", { className: "cw-dim" }, ["open one in the centre: edit, save (Ctrl+S), build, reload the art"]));
-        for (const s of sourceList) sec.append(el("div", { textContent: s, style: { cursor: "pointer", color: s === source?.path ? "#ffe14a" : "#b8b0c8" }, onclick: () => { openSource(s); } }));
+        for (const s of sourceList) sec.append(el("div", { textContent: s, style: { cursor: "pointer", color: s === source ? "#ffe14a" : "#b8b0c8" }, onclick: () => { openSource(s); } }));
       }
       sec.append(el("div", {}, [button("Reload art", () => { reloadArt().catch((e) => E.setStatus(e.message)); }, "load the game's atlas scripts again (no page reload)")]));
       box.append(sec);
@@ -402,6 +418,7 @@
     if (!pending) return;
     apply();
     const lines = await writeImport(pending);
+    if (!lines) { E.setStatus(`${pending.name}: not saved`); return; }
     pending = null;
     E.setStatus(lines.join("\n"));
   }
@@ -410,7 +427,7 @@
   async function save(all) {
     const paint = E.modules.paint;
     if (all) {
-      if (source && source.text !== source.saved) await saveSource();
+      for (const p of opened) if (E.files.unsaved(p)) await saveSource(p);
       if (pending) await saveImport();
       if (paint?.unsaved) await paint.saveAll();
       return;
@@ -435,7 +452,7 @@
       { sep: true },
       { label: "Reload art", run: () => { reloadArt().catch((e) => E.setStatus(e.message)); }, enabled: s, title: "load the game's atlas scripts again" },
       { head: "pxl sources" },
-      ...(s ? (sourceList ?? []).slice(0, 30).map((p) => ({ label: p, checked: p === source?.path && centre === "source", run: () => { openSource(p); } }))
+      ...(s ? (sourceList ?? []).slice(0, 30).map((p) => ({ label: p, checked: p === source && centre === "source", run: () => { openSource(p); } }))
         : [{ label: "(with the studio)", enabled: false }]),
       ...(s && sourceList && !sourceList.length ? [{ label: "(none under art/)", enabled: false }] : []),
     ] };
@@ -458,8 +475,15 @@
   }
 
   Cutaway.events.on("art.reloaded", () => E.refresh());
+  // the open source shows what its file holds now: another tab's change, or the disk's text read again
+  E.files.on((path) => {
+    if (typing || path !== source) return;
+    const text = E.files.text(path) ?? "";
+    if (srcArea.value !== text) { const a = srcArea.selectionStart, b = srcArea.selectionEnd, top = srcArea.scrollTop; srcArea.value = text; srcArea.setSelectionRange(a, b); srcArea.scrollTop = top; }
+    buildSourceBar();
+  });
   E.tab({ id: "art", label: "Art", build, browse, menu, save,
-    get unsaved() { return (pending ? 1 : 0) + (source && source.text !== source.saved ? 1 : 0) + (E.modules.paint?.unsaved ?? 0); },
+    get unsaved() { return (pending ? 1 : 0) + sourceUnsaved() + (E.modules.paint?.unsaved ?? 0); },
     view() { return centre === "source" && source ? srcView : centre === "paint" ? E.modules.paint?.view ?? null : null; },
     onRoom() { E.refresh(); } });
   E.modules.art = { get unsaved() { return pending ? 1 : 0; }, strip, framesOf, layoutFrames, pngOf, readImport, apply, applyImport, writeImport, removeImport, pack,

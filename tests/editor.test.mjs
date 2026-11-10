@@ -57,6 +57,27 @@ export default async function (t) {
     const cam = await chrome.ev(`(async () => { await Cutaway.editor.openRoom("intro_sky"); const moved = Cutaway.editor.pan(0, 50);
       const y = Cutaway.scene.camera.y; await Cutaway.editor.openRoom("hall"); return [moved, y].join(" "); })()`);
     t.ok("editor: the camera pans in a taller room", cam === "true 50", cam);
+    // a room opened in the editor is only looked at: it writes no autosave and isn't visited
+    const peek = await chrome.ev(`(async () => {
+      let saves = 0;
+      const off = Cutaway.events.on("saved", (e) => { if (e.slot === "auto") saves++; }), v0 = Cutaway.state.visited("yard");
+      await Cutaway.editor.openRoom("yard");
+      const r = { room: Cutaway.scene.room.id, visited: Cutaway.state.visited("yard"), v0 };
+      await Cutaway.editor.openRoom("hall");
+      await new Promise((ok) => setTimeout(ok, 50));
+      off(); r.saves = saves;
+      return r; })()`);
+    t.ok("editor: a room opened in the editor writes no autosave and isn't visited", peek.room === "yard" && peek.saves === 0 && !peek.visited && !peek.v0, JSON.stringify(peek));
+    // a save dialog cancelled (no studio: the browser's file picker) leaves the work unsaved
+    const cancelled = await chrome.ev(`(async () => {
+      window.showSaveFilePicker = async () => { throw new DOMException("cancelled", "AbortError"); };
+      const M = Cutaway.editor.modules, out = {};
+      await M.things.change("prop:crate", { path: "flip", type: "bool" }, true);
+      await M.things.save(); out.things = !!M.things.unsaved;
+      M.texts.set("Clouds. Lots of them.", "en", "Rain clouds."); await M.texts.save(); out.texts = !!M.texts.unsaved;
+      M.sound.define("beep3", { tone: { wave: "square", from: 660, ms: 60 } }); await M.sound.save(); out.sound = !!M.sound.unsaved;
+      return out; })()`);
+    t.ok("editor: a save dialog cancelled leaves the work unsaved (Things, Texts, Sound)", cancelled.things && cancelled.texts && cancelled.sound, JSON.stringify(cancelled));
     const warn = await chrome.ev(`Cutaway.editor.notLoaded("rooms/hall.geo.js")`);
     t.ok("editor: a shapes file the page doesn't load is warned about", /WARNING: the page loads no hall\.geo\.js/.test(warn), warn);
     t.ok("editor: the script line for a layer, from the page's folder", await chrome.ev(`Cutaway.editor.relTo("demo/index.html", "game/rooms/a.geo.js") === "../game/rooms/a.geo.js" && Cutaway.editor.relTo("index.html", "game/rooms/a.geo.js") === "game/rooms/a.geo.js"`));

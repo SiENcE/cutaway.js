@@ -36,7 +36,8 @@ The editor docks around the game in its own page, like most editors:
   room to open, **▶ Play**, and whether the studio is connected.
 - **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
   Issues, Checks, Connections, Map, Schedule, Sequences; a ● marks one with unsaved work; the help isn't one of them:
-  the Help menu and F1 open it), the **rooms** (click one to open it), and what
+  the Help menu and F1 open it), the **rooms** (click one to open it: only to look at, so no enter script runs,
+  the room doesn't count as visited and no autosave is written over the player's), and what
   is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
   Things (its properties and scripts; actors always, and anything while Things is open). In the Art
   workspace the list shows the sprites instead (click: select, double-click: paint), in Voices the
@@ -196,7 +197,9 @@ the game shows that picture, not what its pxl source builds, until it is reverte
 - With the studio, the **pxl sources** (`art/**/*.px.js`) open in the centre as a large editor: Tab
   indents (two spaces), Ctrl+S saves, **Build** runs an art task (its output in the output pane),
   **Save + build + reload art** does all three, and **Reload art** loads the game's atlas scripts again
-  without reloading the page (so the editor and the game stay where they are).
+  without reloading the page (so the editor and the game stay where they are). Another file opened keeps what
+  this one has unsaved (● beside it in the list); a file another tab changes (a moment the Schedule tab writes, a
+  map) shows that tab's change here, as one text (see "The game's own files" under "Files the editor writes").
 
 ### Three ways to change art
 1. **Paint it here** (Edit pixels): quick fixes, new frames, a new prop. Saved as an import.
@@ -511,10 +514,16 @@ What it does." },
 })();
 ```
 
-A tab that writes the game's files uses `E.studio.read(path)` and `E.saveFile(path, text)` (only in the
-folders `write` lists), `E.modules.literal` to change one value where it is written (comments and layout
-kept, as the Schedule and Sequences tabs do), and `save`, `undo`, `redo` and `unsaved` in its `E.tab` so that
-Ctrl+S, Ctrl+Z and the unsaved marks reach it. A bigger example is Glass Sister's Iso-Editor (a room's map
+A tab that changes the game's own files as text uses `E.files` (only in the folders `write` lists):
+`await E.files.read(path)` gives the text (the editor's while it has unsaved changes, else read again from the
+disk), `E.files.set(path, text)` changes it, `E.files.unsaved(path)` and `await E.files.save(path)` (true when
+written; it asks when the disk changed), `E.files.on((path, why) => ...)` hears a change by another tab
+(`"change"`), the disk's text read again (`"reload"`) or a save; check the text is still what an undo step was
+made on before putting it back. `E.modules.literal` changes one value where it is written (comments and layout
+kept, as the Schedule and Sequences tabs do). A file the tab makes whole (a layer) goes through
+`E.saveFile(path, text)`, which resolves to null when nothing was written (the file picker cancelled): keep the
+work unsaved then. `save`, `undo`, `redo` and `unsaved` in its `E.tab` let Ctrl+S, Ctrl+Z and the unsaved marks
+reach it. A bigger example is Glass Sister's Iso-Editor (a room's map
 edited over its picture and baked by a task), which isn't in this repo.
 
 ## Files the editor writes
@@ -529,6 +538,18 @@ edited over its picture and baked by a task), which isn't in this repo.
 | voices | `assets/voices.<lang>.js` | recorded voices per line (embedded), one file per language |
 | art | `art/import/`, packed into `assets/imported.js` (`artAtlas`) | imported and painted pictures and animations |
 | graph | `out/graph/` (read only) | the connections' data the Connections tab shows (`tools/graph.mjs` writes it) |
+
+**The game's own files** (where a moment or a sequence is written, a pxl source, a map, any file the source
+editor opens) are changed as text, not as layers. The editor holds one text per file for every tab: the Schedule
+tab's change to a moment shows in the source editor when it opens the same file, and Save in either writes both.
+A file with nothing unsaved is read again before the next change, so a change made in another program comes in.
+Save writes only while the file on the disk is still what the editor read; if it was changed outside meanwhile,
+the editor asks: **Reload** (the disk's text; the editor's changes to that file go, and the game keeps them until
+the page is reloaded), **Overwrite** (the editor's text over the disk's) or **Leave it** (nothing written, still
+unsaved). After a reload, an undo made on the old text does nothing and says so.
+
+Without the studio, a save goes through the browser's file picker (or a download); cancelling it leaves the work
+unsaved.
 
 The page must load each layer after the game's own data (the game's `index.html`). The studio writes
 (and, for Revert, removes) only in the folders `studio.json` lists in `write`. Its `studio.json`:

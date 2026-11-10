@@ -23,6 +23,8 @@
   let viewOf = "";
   /** @type {any} the tree being edited (a copy; the game gets it after each change) */
   let model = null;
+  /** the dialogue the tree (and its undo) belongs to */
+  let modelOf = "";
   let selRow = "";
 
   /** Who talks it: the actor whose talk script opens it, if any. @param {string} id */
@@ -61,7 +63,8 @@
   function before() { undo.push(JSON.stringify(model)); if (undo.length > 200) undo.shift(); redo = []; }
   /** The game gets the tree; the view is built again (unless a field changed in place). @param {boolean} [again] */
   function commit(again = true) {
-    Cutaway.edits.change("dialogs", sel, clone(model));
+    if (!modelOf) return;
+    Cutaway.edits.change("dialogs", modelOf, clone(model));
     E.modules.things?.touch();
     changed++;
     if (again) render();
@@ -71,6 +74,7 @@
   function edit(fn, again = true) { before(); fn(); commit(again); }
   /** @param {string[]} from @param {string[]} to */
   function step(from, to) {
+    if (!modelOf || modelOf !== sel) return;
     const s = from.pop();
     if (s === undefined) return;
     to.push(JSON.stringify(model));
@@ -240,11 +244,14 @@
   function load() {
     const d = Cutaway.dialog.get(sel);
     model = d ? clone(d) : null;
+    modelOf = d ? sel : "";
     undo = []; redo = [];
     render();
   }
 
-  function close() { viewOf = ""; E.refresh(); }
+  /** Another dialogue picked, or the view closed: the undo was the tree's that was open. */
+  function forget() { undo = []; redo = []; model = null; modelOf = ""; }
+  function close() { viewOf = ""; forget(); E.refresh(); }
 
   /** The centre view for the picked dialogue (made again when another is picked). */
   function current() {
@@ -279,7 +286,7 @@
       }, "a new dialogue (an actor's talk script starts it: { dialog: id })")]));
     if (!ids.length) { box.append(el("div", { className: "cw-dim" }, ["No dialogues yet."])); return; }
     box.append(E.list({ id: "dialogues", selected: sel, filter: ids.length > 8, height: "160px",
-      pick: (id) => { sel = id; if (viewOf) { viewOf = id; view = null; } E.refresh(); }, open: (id) => { sel = id; viewOf = id; view = null; E.refresh(); },
+      pick: (id) => { if (id !== sel) forget(); sel = id; if (viewOf) { viewOf = id; view = null; } E.refresh(); }, open: (id) => { sel = id; viewOf = id; view = null; E.refresh(); },
       items: ids.map((id) => { const who = speaker(id); return { key: id, label: id + (who ? `  (${who})` : ""), mark: Cutaway.edits.changed("dialogs", id) ? "●" : "" }; }) }));
     const d = Cutaway.dialog.get(sel) ?? {}, who = speaker(sel), { from, reach } = links(d);
     if (who) box.append(el("div", { className: "cw-dim" }, [`${who} opens it when talked to`]));

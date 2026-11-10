@@ -117,6 +117,7 @@
     for (const l of Object.keys(changed)) {
       if (!Object.keys(changed[l]).length) continue;
       const msg = await E.saveFile(E.studio.layer("texts", { lang: l }) || `game/strings/${l}.texts.js`, layerText(l));
+      if (msg === null) { out.push(`${l}: not saved`); continue; }
       Cutaway.i18n.layer(l, changed[l]);
       changed[l] = {};
       out.push(msg);

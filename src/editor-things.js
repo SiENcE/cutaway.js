@@ -139,8 +139,11 @@
       `// light, effects, music, items, actors, their scripts, and dialogues. Loaded after the game's own data;\n` +
       `// objects merge, values (and scripts) replace, null removes, a dialogue is kept whole.\n"use strict";\n\n` +
       `Cutaway.edits(${E.fmt(Cutaway.edits.data())});\n`;
-    E.setStatus(await E.saveFile(E.studio.layer("edits") || "game/edits.js", text));
+    const msg = await E.saveFile(E.studio.layer("edits") || "game/edits.js", text);
+    E.setStatus(msg ?? "the edits layer: not saved");
+    if (msg === null) return false;
     dirty = false;
+    return true;
   }
 
   /** An input for a field. @param {Field} f @param {any} obj */

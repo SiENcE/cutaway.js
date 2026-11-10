@@ -75,13 +75,13 @@
       if (!d) continue;
       if (isRecorded(d)) { rec[n] = d; delete synth[n]; } else { synth[n] = d; delete rec[n]; }
     }
-    const out = [];
-    out.push(await E.saveFile(E.studio.layer("sounds") || "game/sounds.edit.js", layerText("sounds", synth)));
-    if (Object.keys(rec).length) out.push(await E.saveFile(E.studio.layer("audio") || "assets/audio.js", layerText("audio", rec)));
-    Cutaway.sfx.layer(synth, "sounds");
-    if (Object.keys(rec).length) Cutaway.sfx.layer(rec, "audio");
-    changed.clear();
-    E.setStatus(out.join("\n"));
+    const a = await E.saveFile(E.studio.layer("sounds") || "game/sounds.edit.js", layerText("sounds", synth));
+    const b = Object.keys(rec).length ? await E.saveFile(E.studio.layer("audio") || "assets/audio.js", layerText("audio", rec)) : "";
+    if (a !== null) Cutaway.sfx.layer(synth, "sounds");
+    if (b) Cutaway.sfx.layer(rec, "audio");
+    // what a file not written holds stays unsaved
+    for (const n of [...changed]) if (isRecorded(Cutaway.sfx.get(n) ?? {}) ? b !== null : a !== null) changed.delete(n);
+    E.setStatus([a ?? "the sounds: not saved", ...(b === "" ? [] : [b ?? "the recorded sounds: not saved"])].join("\n"));
   }
 
   function build(/** @type {HTMLElement} */ box) {

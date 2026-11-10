@@ -174,7 +174,7 @@ Cutaway.time.mark("01:00");
     const M = `${E}.modules.schedule`, file = join(dir, "demo", "layers", "times.js");
     const src0 = readFileSync(file, "utf8");
     t.ok("schedule: where a routine is written (its file and line)", JSON.stringify(await chrome.ev(`${M}.where("routine", "guard")`)) === '{"path":"layers/times.js","line":4}');
-    const ch = await chrome.ev(`(async () => { const ok = await ${M}.change("routine", "guard", 0, { from: "20:15" }); return { ok, live: Cutaway.time.routines.get("guard")[0].from, unsaved: ${M}.unsaved, text: ${M}.files.get("layers/times.js").src }; })()`);
+    const ch = await chrome.ev(`(async () => { const ok = await ${M}.change("routine", "guard", 0, { from: "20:15" }); return { ok, live: Cutaway.time.routines.get("guard")[0].from, unsaved: ${M}.unsaved, text: ${E}.files.text("layers/times.js") }; })()`);
     t.ok("schedule: a time changed in the game and in the file's text, only that value, not saved yet", ch.ok && ch.live === "20:15" && ch.unsaved === 1 && ch.text === src0.replace('from: "20:00", to: "22:00"', 'from: "20:15", to: "22:00"'), JSON.stringify(ch).slice(0, 300));
     const cats = await chrome.ev(`(async () => { const ok = await ${M}.change("routine", "cat_a", 0, { to: "19:45" }); return { ok, shared: ${M}.sharing("routine", "cat_a").join(), b: Cutaway.time.routines.get("cat_b")[0].to }; })()`);
     t.ok("schedule: routines a loop makes share their text: a change moves them all", cats.ok && cats.shared === "cat_a,cat_b" && cats.b === "19:45", JSON.stringify(cats));
@@ -183,7 +183,7 @@ Cutaway.time.mark("01:00");
     const days = await chrome.ev(`(async () => { const ok = await ${M}.change("moment", "bell", 0, { day: [1, 2] }); return { ok, day: Cutaway.time.moments.get("bell").day }; })()`);
     t.ok("schedule: a moment's days changed", days.ok && JSON.stringify(days.day) === "[1,2]", JSON.stringify(days));
     await chrome.ev(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
-    t.ok("schedule: Ctrl+Z undoes the last change, in the game and the text", (await chrome.ev(`Cutaway.time.moments.get("bell").day`)) === 1 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("day: [1, 2]"));
+    t.ok("schedule: Ctrl+Z undoes the last change, in the game and the text", (await chrome.ev(`Cutaway.time.moments.get("bell").day`)) === 1 && !(await chrome.ev(`${E}.files.text("layers/times.js")`)).includes("day: [1, 2]"));
     // a real click on a bar picks it (the bar takes the pointer when pressed, for a drag: the click must still pick)
     const mouseAt = async (fn, double = false) => {
       const p = await chrome.ev(`(() => { const b = [...${E}.centre.querySelectorAll("[title]")].find(${fn}), r = b.getBoundingClientRect(); return { x: r.left + Math.min(20, r.width / 2), y: r.top + r.height / 2 }; })()`);
@@ -204,18 +204,18 @@ Cutaway.time.mark("01:00");
     await chrome.ev(`${M}.select({ kind: "moment", id: "bell" }); ${M}.openScript("bell", "play")`);
     await sleep(300);
     t.ok("schedule: a moment's play opens as blocks in the centre", /moment bell: play/.test(await chrome.ev(`${E}.centre.textContent`)) && (await chrome.ev(`${M}.script?.id`)) === "bell");
-    const sc = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { set: "bell_rang" }]); return { ok, live: Cutaway.time.moments.get("bell").play, text: ${M}.files.get("layers/times.js").src }; })()`);
+    const sc = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { set: "bell_rang" }]); return { ok, live: Cutaway.time.moments.get("bell").play, text: ${E}.files.text("layers/times.js") }; })()`);
     t.ok("schedule: its steps changed: in the game and in the file", sc.ok && sc.live.length === 2 && sc.text.includes('play: [{ sfx: "_tick" }, { set: "bell_rang" }] });'), sc.text);
-    const sc2 = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { wait: 500 }, { set: "bell_rang" }]); return { ok, text: ${M}.files.get("layers/times.js").src }; })()`);
+    const sc2 = await chrome.ev(`(async () => { const ok = await ${M}.changeScript("bell", "play", [{ sfx: "_tick" }, { wait: 500 }, { set: "bell_rang" }]); return { ok, text: ${E}.files.text("layers/times.js") }; })()`);
     t.ok("schedule: a step put in between: only it is added, the others stay as written", sc2.ok && /\{ sfx: "_tick" \},\s*\{ wait: 500 \},\s*\{ set: "bell_rang" \}/.test(sc2.text) && sc2.text.includes("// a guard and two cats"), sc2.text);
     const ring = await chrome.ev(`(async () => ({ ok: await ${M}.changeScript("ring", "play", [{ wait: 100 }]), live: Cutaway.time.moments.get("ring").play.length }))()`);
     // steps that hold code: kept as written; a change to their code is left to the file; a list spread into it too
     const dog = await chrome.ev(`(async () => {
       const a = await ${M}.changeScript("dog", "play", [{ say: "pip", text: "Here, boy." }, { walk: "pip", to: [60, 140] }, { set: "dog_called" }]);
-      const textA = ${M}.files.get("layers/times.js").src;
+      const textA = ${E}.files.text("layers/times.js");
       const b = await ${M}.changeScript("dog", "play", [{ say: "pip", text: "Here, boy." }, { walk: "pip", to: [70, 140] }, { set: "dog_called" }]);
       const g = await ${M}.changeScript("gong", "play", [{ sfx: "_tick" }]);
-      return { a, b, g, textA, textB: ${M}.files.get("layers/times.js").src, gong: Cutaway.time.moments.get("gong").play.length }; })()`);
+      return { a, b, g, textA, textB: ${E}.files.text("layers/times.js"), gong: Cutaway.time.moments.get("gong").play.length }; })()`);
     t.ok("schedule: a step that holds code stays as written while another changes (its comment too)", dog.a && /text: "Here, boy\." \},\s+\/\/ pip calls\n\s+\{ walk: "pip", to: SPOT \},\s*\{ set: "dog_called" \}/.test(dog.textA), dog.textA.slice(dog.textA.indexOf('"dog"'), dog.textA.indexOf('"gong"')));
     t.ok("schedule: a change to a value the code computes (to: SPOT) is left to the file", !dog.b && dog.textB === dog.textA, JSON.stringify(dog.b) + dog.textB.slice(dog.textB.indexOf('"dog"'), dog.textB.indexOf('"gong"')));
     t.ok("schedule: a list spread into a script (...RING) is left to the file", !dog.g && dog.gong === 2);
@@ -226,7 +226,7 @@ Cutaway.time.mark("01:00");
     // Ctrl+Z twice: the dog's change, then the step put into the bell's
     await chrome.ev(`(() => { for (let i = 0; i < 2; i++) document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
     await sleep(200);
-    t.ok("schedule: Ctrl+Z: the changes go again, in the game and the file", (await chrome.ev(`Cutaway.time.moments.get("dog").play.length`)) === 2 && (await chrome.ev(`Cutaway.time.moments.get("bell").play.length`)) === 2 && !(await chrome.ev(`${M}.files.get("layers/times.js").src`)).includes("wait: 500"));
+    t.ok("schedule: Ctrl+Z: the changes go again, in the game and the file", (await chrome.ev(`Cutaway.time.moments.get("dog").play.length`)) === 2 && (await chrome.ev(`Cutaway.time.moments.get("bell").play.length`)) === 2 && !(await chrome.ev(`${E}.files.text("layers/times.js")`)).includes("wait: 500"));
     await chrome.ev(`${M}.save()`);
     await sleep(300);
     const saved = readFileSync(file, "utf8");
@@ -246,6 +246,57 @@ Cutaway.time.mark("01:00");
     await mouseAt(`(e) => /^bell:/.test(e.title)`, true);
     t.ok("schedule: a double click on a bar opens its room", (await chrome.ev(`${E}.activeTab`)) === "room" && (await chrome.ev("Cutaway.scene.room.id")) === "yard",
       `${await chrome.ev(`${E}.activeTab`)} ${await chrome.ev("Cutaway.scene.room.id")}`);
+
+    // one text per file for every tab (E.files). A file saved and then changed on the disk: the next change is made on
+    // the disk's text, so the disk's change stays
+    await chrome.ev(`${M}.save()`);
+    writeFileSync(file, readFileSync(file, "utf8").replace("// a guard and two cats", "// a guard and two cats (changed on the disk)"));
+    const re = await chrome.ev(`(async () => { const ok = await ${M}.change("routine", "guard", 0, { from: "20:30" }); await ${M}.save(); return ok; })()`);
+    const reText = readFileSync(file, "utf8");
+    t.ok("files: a file changed on the disk after a save: the next change is made on the disk's text", re && reText.includes("(changed on the disk)") && reText.includes('from: "20:30"'), reText.slice(0, 400));
+    // the source editor shows what the tab changed and not saved; a change there and the tab's both go into the file
+    await chrome.ev(`(async () => { await ${M}.change("routine", "guard", 0, { from: "20:15" }); await ${E}.modules.art.openSource("layers/times.js"); return 1; })()`);
+    await sleep(300);
+    const both = await chrome.ev(`(async () => {
+      const a = [...document.querySelectorAll("textarea")].find((x) => x.value.includes("a guard and two cats"));
+      const shown = !!a && a.value.includes('from: "20:15"');
+      if (a) { a.value = a.value.replace("// a guard and two cats (changed on the disk)", "// a guard, two cats"); a.dispatchEvent(new Event("input")); }
+      await ${M}.save();
+      return { shown, art: ${E}.modules.art.unsaved ?? 0, tab: ${E}.unsaved().join() }; })()`);
+    const bothText = readFileSync(file, "utf8");
+    t.ok("files: the source editor shows the tab's unsaved change; a change there and the tab's both go into the file", both.shown && bothText.includes('from: "20:15"') && bothText.includes("// a guard, two cats") && !both.tab,
+      JSON.stringify(both) + bothText.slice(0, 300));
+    // changed on the disk while the editor has unsaved changes: it isn't written over, the editor asks (reload, overwrite, leave it)
+    await chrome.ev(`${M}.change("routine", "guard", 0, { from: "20:30" })`);
+    writeFileSync(file, readFileSync(file, "utf8").replace("// a guard, two cats", "// a guard, two cats, a disk"));
+    const asking = chrome.ev(`${M}.save().then(() => 1)`);
+    let prompted = false;
+    for (let i = 0; i < 30 && !(prompted = await chrome.ev(`!!document.querySelector(".cw-ask")`)); i++) await sleep(50);
+    const kept = readFileSync(file, "utf8");
+    t.ok("files: a file changed on the disk while the editor has unsaved changes isn't written over: the editor asks", prompted && kept.includes("a disk") && kept.includes('from: "20:15"'), kept.slice(0, 300));
+    const answer = (/** @type {RegExp} */ re) => chrome.ev(`(() => { const b = [...document.querySelectorAll(".cw-ask button")].find((x) => ${re}.test(x.textContent)); if (b) b.click(); return !!b; })()`);
+    if (prompted) await answer(/Leave/);
+    await asking;
+    t.ok("files: left as it is, nothing is written and the change is still unsaved", readFileSync(file, "utf8") === kept && (await chrome.ev(`${E}.files.unsaved("layers/times.js")`)) === true);
+    const asking2 = chrome.ev(`${M}.save().then(() => 1)`);
+    prompted = false;
+    for (let i = 0; i < 30 && !(prompted = await chrome.ev(`!!document.querySelector(".cw-ask")`)); i++) await sleep(50);
+    if (prompted) await answer(/Reload/);
+    await asking2;
+    const reloaded = await chrome.ev(`(() => { const x = ${E}.files.text("layers/times.js"); return { text: x === ${JSON.stringify(kept)}, unsaved: ${E}.files.unsaved("layers/times.js"), shown: [...document.querySelectorAll("textarea")].some((a) => a.value.includes("a disk")) }; })()`);
+    t.ok("files: Reload takes the disk's text (the source editor shows it), nothing unsaved", reloaded.text && !reloaded.unsaved && reloaded.shown, JSON.stringify(reloaded));
+    await chrome.ev(`(() => { ${E}.show("schedule"); document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ", key: "z", ctrlKey: true, bubbles: true })); return 1; })()`);
+    await sleep(100);
+    t.ok("files: Ctrl+Z after Reload leaves the disk's text alone", (await chrome.ev(`${E}.files.text("layers/times.js")`)) === kept);
+    await chrome.ev(`${M}.change("routine", "guard", 0, { from: "20:45" })`);
+    writeFileSync(file, kept.replace("a disk", "a disk again"));
+    const asking4 = chrome.ev(`${M}.save().then(() => 1)`);
+    prompted = false;
+    for (let i = 0; i < 30 && !(prompted = await chrome.ev(`!!document.querySelector(".cw-ask")`)); i++) await sleep(50);
+    if (prompted) await answer(/Overwrite/);
+    await asking4;
+    const over = readFileSync(file, "utf8");
+    t.ok("files: Overwrite writes the editor's text", prompted && over.includes('from: "20:45"') && !over.includes("a disk again"), over.slice(0, 300));
     t.ok("map: no page errors", chrome.errors.length === 0, chrome.errors.join("\n"));
   } finally {
     await chrome.close();

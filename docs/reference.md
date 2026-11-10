@@ -641,7 +641,8 @@ The page loads each layer file after the game's own data.
 - Drawing over the room in screen space: `Cutaway.events.on("frame.screen", (ctx) => ...)` for what belongs
   to the picture (a computer's screen, a camera's display: room changes and fades cover it),
   `"frame.ui"` for what lies over the fade (under the subtitles, labels and cursor).
-- Events to listen to: `Cutaway.events.on("room.entered", fn)`, `"say"`, `"game.end"`, `"act"`,
+- Events to listen to: `Cutaway.events.on("room.entered", fn)` (`{ id }`; `{ id, peek: true }` when the editor only
+  shows the room: not visited, no autosave), `"say"`, `"game.end"`, `"act"`,
   `"sequence.start"`, `"sequence.shot"`, `"sequence.end"`, ...
 
 ## Tools

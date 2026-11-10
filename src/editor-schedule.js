@@ -264,8 +264,8 @@
 
   // ---- changing the game's file
 
-  /** @type {Map<string, {src: string, saved: string}>} the files touched: as they are now, as saved */
-  const files = new Map();
+  /** @type {Set<string>} the game's files this tab changed (their text is the editor's one, E.files) */
+  const touched = new Set();
   /** @typedef {{path: string, before: string, after: string, live: {o: any, key: string, before: any, after: any}[]}} TimeEdit */
   /** @type {TimeEdit[]} */ let undo = [];
   /** @type {TimeEdit[]} */ let redo = [];
@@ -322,9 +322,9 @@
     const w = where(kind, id);
     if (!w) { E.setStatus(`schedule: where ${what} is written isn't known: change it in the game's file`); return false; }
     const L = E.modules.literal;
-    if (!files.has(w.path)) { try { const t = await E.studio.read(w.path); files.set(w.path, { src: t, saved: t }); } catch (e) { E.setStatus(`schedule: ${w.path}: ${/** @type {any} */ (e).message}`); return false; } }
-    const f = /** @type {{src: string, saved: string}} */ (files.get(w.path));
-    let src = f.src;
+    let src = "";
+    try { src = await E.files.read(w.path); } catch (e) { E.setStatus(`schedule: ${w.path}: ${/** @type {any} */ (e).message}`); return false; }
+    const before = src;
     for (const [key, v] of Object.entries(values)) {
       const o = locate(src, kind, w.line, i, id), n = o ? L.field(o, key) : null;
       if (!o || n?.t === "code") { E.setStatus(`schedule: ${what} has its ${o ? key : "values"} computed in the code (${w.path}:${w.line}): change it there`); return false; }
@@ -336,7 +336,7 @@
       const obj = kind === "routine" ? T().routines.get(other)?.[i] : T().moments.get(other);
       if (obj) for (const [key, v] of Object.entries(values)) live.push({ o: obj, key, before: /** @type {any} */ (obj)[key], after: v });
     }
-    const ed = { path: w.path, before: f.src, after: src, live };
+    const ed = { path: w.path, before, after: src, live };
     undo.push(ed); if (undo.length > 200) undo.shift();
     redo = [];
     put(ed, true);
@@ -358,12 +358,13 @@
     const w = where("moment", id);
     if (!w) return { why: "where the moment is written isn't known" };
     if (sharing("moment", id).length > 1) return { why: `one text makes ${sharing("moment", id).join(", ")} (${w.path}:${w.line}): change it there`, w };
-    if (!files.has(w.path)) { try { const t = await E.studio.read(w.path); files.set(w.path, { src: t, saved: t }); } catch (e) { return { why: `${w.path}: ${/** @type {any} */ (e).message}` }; } }
-    const f = /** @type {{src: string, saved: string}} */ (files.get(w.path)), L = E.modules.literal, o = locate(f.src, "moment", w.line, 0, id);
+    let src = "";
+    try { src = await E.files.read(w.path); } catch (e) { return { why: `${w.path}: ${/** @type {any} */ (e).message}` }; }
+    const L = E.modules.literal, o = locate(src, "moment", w.line, 0, id);
     if (!o) return { why: `the moment's data is computed in the code (${w.path}:${w.line})`, w };
     const n = L.field(o, key);
     if (n && n.t !== "arr" && n.t !== "str") return { why: `its ${key} is computed in the code (${w.path}:${w.line}): change it there`, w };
-    return { w, f, o, n };
+    return { w, src, o, n };
   }
   /** Open a moment's script in the centre (computed in the code: the file opens there instead). @param {string} id @param {"play" | "unseen"} key */
   async function openScript(id, key) {
@@ -385,11 +386,11 @@
     const now = m[key] === undefined ? [] : Array.isArray(m[key]) ? m[key] : [m[key]];
     /** @type {{text: string} | {why: string}} */
     let r;
-    if (!at.n) r = { text: L.setKey(at.f.src, at.o, key, L.lit(v)) };
-    else if (at.n.t !== "arr") r = { text: L.put(at.f.src, at.n, L.lit(v)) };
-    else r = L.replaceList(at.f.src, at.n, now, v, (/** @type {string} */ text) => L.field(locate(text, "moment", at.w.line, 0, id), key) ?? null);
+    if (!at.n) r = { text: L.setKey(at.src, at.o, key, L.lit(v)) };
+    else if (at.n.t !== "arr") r = { text: L.put(at.src, at.n, L.lit(v)) };
+    else r = L.replaceList(at.src, at.n, now, v, (/** @type {string} */ text) => L.field(locate(text, "moment", at.w.line, 0, id), key) ?? null);
     if (!("text" in r)) { E.setStatus(`schedule: ${id}'s ${key}: ${r.why}`); return false; }
-    const ed = { path: at.w.path, before: at.f.src, after: r.text, live: [{ o: m, key, before: m[key], after: JSON.parse(JSON.stringify(v)) }] };
+    const ed = { path: at.w.path, before: at.src, after: r.text, live: [{ o: m, key, before: m[key], after: JSON.parse(JSON.stringify(v)) }] };
     undo.push(ed); if (undo.length > 200) undo.shift();
     redo = [];
     put(ed, true);
@@ -397,27 +398,40 @@
     return true;
   }
 
-  /** An edit done (true) or undone. @param {TimeEdit} ed @param {boolean} on */
+  /**
+   * An edit done (true) or undone; false when the file's text isn't what the edit was made on (changed since in another
+   * tab or read again from the disk): nothing is done then. @param {TimeEdit} ed @param {boolean} on
+   */
   function put(ed, on) {
-    const f = files.get(ed.path);
-    if (f) f.src = on ? ed.after : ed.before;
+    if (E.files.text(ed.path) !== (on ? ed.before : ed.after)) return false;
+    E.files.set(ed.path, on ? ed.after : ed.before);
+    touched.add(ed.path);
     for (const c of ed.live) { const v = on ? c.after : c.before; if (v === undefined) delete c.o[c.key]; else c.o[c.key] = v; }
     // the script open in the centre shows what it holds now (an undo from the tab)
     const shown = open ? T().moments.get(open.id) : null;
     if (open && shown && ed.live.some((c) => c.o === shown && c.key === open?.key)) /** @type {any} */ (open.view).blocks.value = shown[open.key] ?? [];
     T().apply();
     E.refresh(); draw();
+    return true;
   }
   /** @param {TimeEdit[]} from @param {TimeEdit[]} to @param {boolean} on */
-  function step(from, to, on) { const ed = from.pop(); if (!ed) return; to.push(ed); put(ed, on); }
-  /** The files changed, written. */
+  function step(from, to, on) {
+    const ed = from.pop();
+    if (!ed) return;
+    if (put(ed, on)) { to.push(ed); return; }
+    // the file isn't what these edits were made on: none of them can be taken back or done again in it
+    undo = []; redo = [];
+    E.setStatus(`schedule: ${ed.path} was changed since (in another tab, or read again from the disk): there is nothing to ${on ? "redo" : "undo"} here`);
+    E.refresh();
+  }
+  /** The files changed, written (each only while the disk still says what was read: else the editor asks). */
   async function save() {
     const out = [];
-    for (const [path, f] of files) if (f.src !== f.saved) { out.push(await E.saveFile(path, f.src)); f.saved = f.src; }
+    for (const path of touched) if (E.files.unsaved(path)) out.push(await E.files.save(path) ? `saved ${path}` : `${path} not saved`);
     E.setStatus(out.length ? `time: ${out.join(", ")}` : "time: nothing to save");
     E.refresh();
   }
-  const unsaved = () => [...files.values()].filter((f) => f.src !== f.saved).length;
+  const unsaved = () => [...touched].filter((p) => E.files.unsaved(p)).length;
 
   /** The fields of a picked entry or moment: from, to, the day; where it is written. @param {"routine" | "moment"} kind @param {string} id @param {number} i @param {any} o */
   function fields(kind, id, i, o) {
@@ -485,6 +499,6 @@
 
   E.tab({ id: "schedule", label: "Schedule", build, view: () => open?.view ?? view, selectNone: () => view.selectNone?.(), save: () => save(),
     undo: () => step(undo, redo, false), redo: () => step(redo, undo, true), get unsaved() { return unsaved(); } });
-  E.modules.schedule = { table, days, zoom, fit, change, save, where, sharing, openScript, changeScript, get script() { return open; }, get unsaved() { return unsaved(); }, files, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
+  E.modules.schedule = { table, days, zoom, fit, change, save, where, sharing, openScript, changeScript, get script() { return open; }, get unsaved() { return unsaved(); }, get width() { return tw; }, get day() { return shownDay ?? T().now.day; }, set day(n) { shownDay = n; E.refresh(); draw(); }, get selected() { return sel; },
     select(/** @type {any} */ s) { sel = s; E.refresh(); draw(); } };
 })();

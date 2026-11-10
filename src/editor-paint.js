@@ -588,6 +588,7 @@ Cutaway.paint = (function () {
     if (!d) return;
     apply(d, true);
     const lines = await art.writeImport(importOf(d));
+    if (!lines) { E.setStatus(`${d.name}: not saved`); E.refresh(); return; }
     d.dirty = false; d.isNew = false;
     E.setStatus(`saved ${d.name}: ${lines.join("\n")}`);
     E.refresh();

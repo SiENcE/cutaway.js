@@ -381,8 +381,8 @@
   // changed; its comments and layout stay), else into the edits layer; undo and redo
 
   /** @typedef {{id: string, before: string, after: string, file?: {path: string, before: string, after: string}}} SequenceEdit */
-  /** @type {Map<string, {src: string, saved: string}>} the game's files touched: as they are now, as saved */
-  const files = new Map();
+  /** @type {Set<string>} the game's files this tab changed (their text is the editor's one, E.files) */
+  const touched = new Set();
   const L = () => E.modules.literal;
   /** A script's address as a path in the game's folder ("game/intro.js"), or null. @param {string} url */
   function relPath(url) {
@@ -424,22 +424,25 @@
     let why = !E.studio.available ? "no studio" : !path ? "it isn't written in a file of the game" : Cutaway.edits.changed("sequences", id, ["steps"]) ? "the edits layer has its steps" : "";
     if (!why && path && L()) {
       try {
-        if (!files.has(path)) { const t = await E.studio.read(path); files.set(path, { src: t, saved: t }); }
-        const f = /** @type {{src: string, saved: string}} */ (files.get(path)), r = fileText(f.src, id, next);
-        if ("text" in r) ed.file = { path, before: f.src, after: r.text }; else why = r.why;
+        const src = await E.files.read(path), r = fileText(src, id, next);
+        if ("text" in r) ed.file = { path, before: src, after: r.text }; else why = r.why;
       } catch (e) { why = /** @type {any} */ (e).message; }
     }
     undo.push(ed); if (undo.length > 200) undo.shift();
     redo = [];
-    put(ed, true);
+    if (!put(ed, true)) { undo.pop(); E.setStatus(`sequences: ${id}: ${ed.file?.path} changed meanwhile: try again`); return; }
     E.setStatus(`sequences: ${id}: ${what} ${ed.file ? `in ${ed.file.path}` : `in the edits layer${why ? ` (${why})` : ""}`} (not saved: Ctrl+S)`);
   }
-  /** An edit done (true) or undone. @param {SequenceEdit} ed @param {boolean} on */
+  /**
+   * An edit done (true) or undone; false when its file's text isn't what the edit was made on (changed since in another
+   * tab or read again from the disk): nothing is done then. @param {SequenceEdit} ed @param {boolean} on
+   */
   function put(ed, on) {
     const v = JSON.parse(on ? ed.after : ed.before);
     if (ed.file) {
-      const f = files.get(ed.file.path);
-      if (f) f.src = on ? ed.file.after : ed.file.before;
+      if (E.files.text(ed.file.path) !== (on ? ed.file.before : ed.file.after)) return false;
+      E.files.set(ed.file.path, on ? ed.file.after : ed.file.before);
+      touched.add(ed.file.path);
       const d = Cutaway.sequence.get(ed.id);
       if (d) d.steps = v;
     } else {
@@ -447,18 +450,27 @@
       dirty = true;
       E.modules.things?.touch?.();
     }
-    if (seq !== ed.id) { pick(ed.id); return; }
+    if (seq !== ed.id) { pick(ed.id); return true; }
     retrace();
+    return true;
   }
   /** @param {SequenceEdit[]} from @param {SequenceEdit[]} to @param {boolean} fwd */
-  function step(from, to, fwd) { const u = from.pop(); if (!u) return; to.push(u); put(u, fwd); }
-  const unsavedFiles = () => [...files.values()].filter((f) => f.src !== f.saved).length;
+  function step(from, to, fwd) {
+    const u = from.pop();
+    if (!u) return;
+    if (put(u, fwd)) { to.push(u); return; }
+    // the file isn't what these edits were made on: none of them can be taken back or done again in it
+    undo = []; redo = [];
+    E.setStatus(`sequences: ${u.file?.path} was changed since (in another tab, or read again from the disk): there is nothing to ${fwd ? "redo" : "undo"} here`);
+    E.refresh();
+  }
+  const unsavedFiles = () => [...touched].filter((p) => E.files.unsaved(p)).length;
   async function save() {
     const out = [];
-    for (const [path, f] of files) if (f.src !== f.saved) { out.push(await E.saveFile(path, f.src)); f.saved = f.src; }
+    for (const path of touched) if (E.files.unsaved(path)) out.push(await E.files.save(path) ? path : `${path} (not saved)`);
     if (dirty) {
       const th = E.modules.things;
-      if (th?.save) { await th.save(); dirty = false; out.push("the edits layer"); } else E.setStatus("sequences: saving the edits layer needs the Things tab");
+      if (th?.save) { if (await th.save()) { dirty = false; out.push("the edits layer"); } else out.push("the edits layer (not saved)"); } else E.setStatus("sequences: saving the edits layer needs the Things tab");
     }
     E.setStatus(out.length ? `sequences: saved ${out.join(", ")}` : "sequences: nothing to save");
     E.refresh();
@@ -737,7 +749,7 @@
     pick, seekTo, retrace, togglePlay, lanes, add, del, commit, save, leave, newSequence, replace,
     get seq() { return seq; }, get trace() { return tr; }, get time() { return T; }, get selected() { return sel; },
     select(/** @type {string | null} */ p) { sel = p; E.refresh(); draw(); },
-    get busy() { return tracing || seeking; }, get unsaved() { return dirty || unsavedFiles() > 0; }, fileText, where, files, get pps() { return pps; },
+    get busy() { return tracing || seeking; }, get unsaved() { return dirty || unsavedFiles() > 0; }, fileText, where, get pps() { return pps; },
     /** The timeline's element (tests). */ get box() { return box; }, get map() { return map; },
     /** @param {number} i */ setIO(i) { setIO(/** @type {0 | 1} */ (i)); },
     get io() { return io; }, set loop(/** @type {boolean} */ v) { loop = v; },
