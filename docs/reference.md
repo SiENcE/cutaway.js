@@ -220,7 +220,7 @@ it changes the state; a `{ dialog }` counts as more), a square when it is the la
 | `{ play: "tv", anim: "tv_news", loop: true, wait: false }` | play a prop's animation from its first frame |
 | `{ letterbox: true, ms }`, `{ caption: "Paris, 1925.", at: "bl", type: true, ms }`, `{ dissolve: 800 }`, `{ tape: 1, ms }` | cinema, below |
 | `{ sequence: "flashback" }`, `{ shot: "name" }` | play a sequence; mark a shot in one ("Sequences and the intro") |
-| `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic |
+| `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic: such a step has only these keys (`{ give, if }` does nothing; validate says so). A `once` is marked by its place in the script, and an `if`'s `then` and `else` (or a `once`'s own steps and its `else`) count as the same place: a `once` first in both shares one mark, and validate calls that an error |
 | `{ hint: true }` | the hint for now, as the hint button gives it (each ask one plainer): a character or a thing that gives the hints |
 
 Add your own: `Cutaway.script.action("organ", async (step, ctx) => { ... })`. A third argument tells the
@@ -649,11 +649,11 @@ The page loads each layer file after the game's own data.
 
 | tool | |
 |---|---|
-| `node tools/validate.mjs index.html` | every reference resolves, shapes are sound, texts are translated |
+| `node tools/validate.mjs index.html` | every reference resolves (an act's `prologue` names a sequence, a hint's `act` an act), shapes are sound, texts are translated; a script step is never `null`, an `if` or `once` step has no keys it doesn't read, two `once` don't share a mark; `"time>=22"` (minutes, not hours) is warned about |
 | `node tools/solve.mjs index.html --full` | proves the game can be finished, lists soft-locks, checks hints (`--workers N`: threads that search, default one less than the cores, at most 12; `--max N` states). It plays what a player can: every choice of every dialogue a click opens (one inside another, several in a row, in a moment's script), items only where the room has its bag (not with `buttons: false`) and never a `fixed` one in the hand. Exit code 1: unsolvable, a soft-lock, a state without a fitting hint, or the search stopped at `--max` (nothing is proved then). A dialogue more than 40 choices deep is an error (one that changes the state with every choice never ends) |
-| `node tools/play.mjs index.html [--touch] [--intro]` | plays it through in headless Chrome with real clicks (or taps); `--intro` plays the intro first |
+| `node tools/play.mjs index.html [--touch] [--intro]` | plays it through in headless Chrome with real clicks (or taps); `--intro` plays the intro first. Only a demo's end (an act played alone, `--act`) may come before the path's: any other end before it fails |
 | `node tools/graph.mjs index.html [--act id] [--set f,g] [--out f.js]` | the game's connections: every state searched, every move watched (what it needs, what it brings about), as a puzzle dependency chart with the winning way, and how much each flag, item or once-mark multiplies the states; into `out/graph/<act>.js` (the studio's `graph` folder), shown by the editor's Connections tab and by `tools/graph.html` |
 | `node tools/studio.mjs [index.html]` | the editor's local server: saves into the game, runs its tasks (`studio.json`: write, layers, tasks with `{name}` parts the editor fills, palette, editor: the game's own tabs) |
-| `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`; `--intro` lets the intro play) |
+| `node tools/shot.mjs index.html ...` | screenshots (`--query`, `--eval`, `--out`, `--buffer`; `--intro` lets the intro play); a page that doesn't load (no `Cutaway` in it after 10 s) fails with no picture. The tools' Chrome (`tools/lib/chrome.mjs`) never hangs: a command fails when the page crashes, the connection closes or 5 minutes pass |
 | `node tools/build-atlas.mjs dir... out.js` | packs PNGs (pxl output) into an atlas script (an animation too big for a page goes frame by frame over several) |
 | `node tools/render-music.mjs index.html --out f.wav` | renders the music offline |

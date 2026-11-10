@@ -1,6 +1,11 @@
 // The game tools on the demo: validate passes, broken references fail; solve finds the end, an
 // unsolvable variant fails and a soft-lock is found; graph traces the moves (what each needs and brings about).
 import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { launch, sleep } from "../tools/lib/chrome.mjs";
 import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
 import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
@@ -196,4 +201,72 @@ export default async function (t) {
   t.ok("validate warns: { show } on a prop with if", showIf.some((w) => /window/.test(w) && /if/.test(w) && /door/.test(w)), showIf.join(" | "));
   t.ok("validate: the demo has no such warning", !(await warnsOf()).some((w) => /prop with if/.test(w)));
   t.ok("graph: the state budget names the once-mark that doubles the states", G.factors.some((f) => f.part === "once:hall.crate.use.0" && Math.abs(f.factor - 2) < 0.01), JSON.stringify(G.factors.slice(0, 3)));
+
+  // validate: a step with if or once carries only its own keys (the engine does nothing with the others)
+  const use = (/** @type {any} */ steps) => (/** @type {any} */ C) => { C.room.get("hall").hotspots.window.use = steps; };
+  const stray = await errorsOf(use([{ give: "key", if: "door_open" }, { if: "door_open", than: ["Open."] }, { once: ["Hi."], set: "x" }]));
+  t.ok("validate fails: { give, if }, { if, than } and { once, set } (keys an if or a once step doesn't read)",
+    stray.some((e) => /use\.0/.test(e) && /give/.test(e)) && stray.some((e) => /use\.1/.test(e) && /than/.test(e)) && stray.some((e) => /use\.2/.test(e) && /set/.test(e)), stray.join(" | "));
+  const nul = await errorsOf(use([null, "Hello."]));
+  t.ok("validate fails: null in a script (the engine stops there and loses the rest)", nul.some((e) => /use\.0/.test(e) && /null/.test(e)), nul.join(" | "));
+  // a once at the same place in an if's then and else (or a once's own and its else) shares one mark
+  const twin = await errorsOf(use([{ if: "door_open", then: [{ once: ["A."] }], else: [{ once: ["B."] }] }, { once: [{ once: ["C."] }], else: [{ once: ["D."] }] }]));
+  t.ok("validate fails: a once at the same place in then and else, and in a once and its else", twin.filter((e) => /once/.test(e) && /mark/.test(e)).length === 2, twin.join(" | "));
+  const apart = await errorsOf(use([{ if: "door_open", then: [{ once: ["A."] }], else: ["B.", { once: ["C."] }] }]));
+  t.ok("validate: a once at another place in the else is fine", !apart.some((e) => /once/.test(e)), apart.join(" | "));
+  // an act's prologue names a sequence; a hint's act is an act
+  const pro = await errorsOf((/** @type {any} */ C) => { C.act.get("act1").prologue = "nope"; });
+  t.ok("validate fails: an act's prologue that is no sequence", pro.some((e) => /act1/.test(e) && /prologue/.test(e) && /nope/.test(e)), pro.join(" | "));
+  const hintAct = await errorsOf((/** @type {any} */ C) => { C.hints([{ text: "Look around." }], { act: "act9" }); });
+  t.ok("validate fails: a hint for an act there isn't", hintAct.some((e) => /hints/.test(e) && /act9/.test(e)), hintAct.join(" | "));
+  // "time>=22" compares the minutes of the day with 22: always true in the evening
+  const bare = await warnsOf((/** @type {any} */ C) => { C.time.configure({ start: "18:00", end: "02:00" }); C.room.get("hall").hotspots.window.use = [{ if: "time>=22", then: ["Late."] }]; });
+  t.ok("validate warns: time compared with a bare number (\"time>=22\": minutes, write 22:00)", bare.some((w) => /time>=22/.test(w) && /22:00/.test(w)), bare.join(" | "));
+
+  // play.mjs: a game that ends before the path does fails (only a demo's end may come early)
+  const tmp = mkdtempSync(join(tmpdir(), "cutaway-play-"));
+  const pj = join(tmp, "path.json");
+  spawnSync(process.execPath, ["tools/solve.mjs", "demo/index.html", "--json", pj, "--workers", "0"], { encoding: "utf8" });
+  const solved = JSON.parse(readFileSync(pj, "utf8"));
+  writeFileSync(pj, JSON.stringify([...solved, solved[solved.length - 1]]));
+  const early = spawnSync(process.execPath, ["tools/play.mjs", "demo/index.html", "--path", pj], { encoding: "utf8" });
+  t.ok("play fails: the game ends before the path does (not a demo's end)", early.status !== 0 && /FAIL/.test(early.stdout), early.stdout.split("\n").slice(-4).join(" / "));
+  // (a copy of the demo whose act goes on to the next instead of ending the game: played alone, that is the demo's end)
+  cpSync(resolve("demo"), join(tmp, "demo"), { recursive: true });
+  cpSync(resolve("src"), join(tmp, "src"), { recursive: true });
+  const gameJs = join(tmp, "demo", "game.js");
+  writeFileSync(gameJs, readFileSync(gameJs, "utf8").replace('{ end: "The lamp shines. Thanks for playing the Cutaway.js demo!" }', '{ act: "next" }'));
+  const alone = spawnSync(process.execPath, ["tools/play.mjs", join(tmp, "demo", "index.html"), "--act", "act1", "--path", pj], { encoding: "utf8" });
+  t.ok("play: an act played alone may end before the path (the demo's end)", alone.status === 0 && /all passed/.test(alone.stdout), alone.stdout.split("\n").slice(-4).join(" / "));
+  // shot.mjs: a page that doesn't load is a failure, and no picture is written
+  const png = join(tmp, "none.png");
+  const shot = spawnSync(process.execPath, ["tools/shot.mjs", join(tmp, "missing.html"), "--out", png], { encoding: "utf8" });
+  t.ok("shot fails: a page that doesn't load (no picture of the error page)", shot.status !== 0 && !existsSync(png), `${shot.status} ${existsSync(png)}`);
+  // chrome.mjs: a command gets an answer or an error, never hangs: the page crashed, the browser gone
+  const within = (/** @type {Promise<any>} */ p, ms) => Promise.race([p.then(() => "resolved", (e) => "rejected: " + e.message), sleep(ms).then(() => "hung")]);
+  const c1 = await launch();
+  try {
+    await c1.open(pathToFileURL(resolve("demo/index.html")).href + "?manual&act=act1");
+    const waiting = c1.ev("new Promise(() => {})");
+    c1.send("Page.crash").catch(() => {});
+    const r = await within(waiting, 15000);
+    t.ok("chrome: a command under way when the page crashes ends with an error", r.startsWith("rejected"), r);
+  } finally { await c1.close(); }
+  const c2 = await launch();
+  try {
+    await c2.open(pathToFileURL(resolve("demo/index.html")).href + "?manual&act=act1");
+    const waiting = c2.ev("new Promise(() => {})");
+    c2.send("Browser.close").catch(() => {});
+    const r = await within(waiting, 15000);
+    t.ok("chrome: a command under way when the browser goes ends with an error", r.startsWith("rejected"), r);
+  } finally { await c2.close(); }
+  const c3 = await launch();
+  try {
+    const r = await within(c3.open("data:text/html,<p>no game here</p>", { timeout: 2000 }), 15000);
+    t.ok("chrome: open() fails on a page without the engine", r.startsWith("rejected"), r);
+  } finally { await c3.close(); }
+  const many = await Promise.allSettled([launch(), launch(), launch(), launch()]);
+  t.ok("chrome: four browsers start at once (each its own port)", many.every((m) => m.status === "fulfilled"), many.map((m) => m.status === "rejected" ? m.reason.message : "ok").join(" "));
+  for (const m of many) if (m.status === "fulfilled") await m.value.close();
+  rmSync(tmp, { recursive: true, force: true });
 }

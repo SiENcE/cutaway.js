@@ -5,7 +5,7 @@
 // title screen, then again from "Watch intro" with a click (the next shot) and Esc (skip it all); and the
 // first act's prologue on the new game (a click on, Esc skips it).
 //   node tools/play.mjs <index.html> [--act id] [--path path.json] [--max states] [--workers N] [--shots dir] [--touch] [--intro] [--size 844x390] [--dpr 3]
-// --act plays one act alone from its start, on to where it would go on to the next. Must end with "all passed"; a demo that ends before the path does stops there. --shots saves a screenshot after every move. --touch plays it like a
+// --act plays one act alone from its start, on to where it would go on to the next. Must end with "all passed"; a demo that ends before the path does stops there (any other end before the path's fails). --shots saves a screenshot after every move. --touch plays it like a
 // phone: a mobile viewport, taps for clicks and long presses for looks.
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
@@ -49,7 +49,7 @@ const HELPERS = `window.__play = {
     return "timeout";
   },
 };
-Cutaway.events.on("game.end", () => { __play.ended = true; });
+Cutaway.events.on("game.end", (e) => { __play.ended = true; __play.demo = !!(e && e.demo); });
 Cutaway.events.on("sequence.shot", (e) => { __play.shot = e.shot; });`;
 
 const [W, H] = (opt("--size") ?? (touch ? "844x390" : "960x540")).split("x").map(Number);
@@ -163,8 +163,13 @@ try {
   }
   for (const [n, m] of path.entries()) {
     const name = `${String(n + 1).padStart(2)}. ${describe(m)}`;
-    // a demo ends before the full game's path does: the rest of the path is for acts it doesn't have
-    if (await chrome.ev("__play.ended")) { check(`the game ended after ${n} moves (the path has ${path.length})`, true); break; }
+    // a demo ends before the full game's path does: the rest of the path is for acts it doesn't have; any other end
+    // before the path's is a failure (the path goes on where the game doesn't)
+    if (await chrome.ev("__play.ended")) {
+      const demo = await chrome.ev("__play.demo");
+      check(`the game ended after ${n} moves (the path has ${path.length})${demo ? ": the end of the demo" : ""}`, demo, "the game's own end came before the path's");
+      break;
+    }
     try {
       if (m.kind === "switch") await click(await point(`Cutaway.party.portraitPoint(${JSON.stringify(m.id)})`));
       else if (m.kind === "wait") {

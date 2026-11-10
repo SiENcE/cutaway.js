@@ -86,6 +86,8 @@ export function validate(C, o = {}) {
     if (cmp && (cmp[2] !== "=" || clockTime(cmp[3].trim()) || cmp[1] === "day" || cmp[1] === "time")) {
       const v = cmp[3].trim();
       if (cmp[2] !== "!=" && (v === "" || (!Number.isFinite(Number(v)) && !clockTime(v)))) err(where, `condition "${c}" compares with "${v}", not a number`);
+      // the game's clock counts minutes: "time>=22" holds from 00:22 on
+      else if (timeUsed && cmp[1] === "time" && v !== "" && Number.isFinite(Number(v))) warn(where, `condition "${c}" compares the minutes of the day with ${v}: write a clock time ("time${cmp[2]}${v}:00")`);
       if (!(timeUsed && (cmp[1] === "day" || cmp[1] === "time"))) flagsTested.add(cmp[1]);
       return;
     }
@@ -107,14 +109,36 @@ export function validate(C, o = {}) {
     else err(where, `unknown condition "${c}"`);
   }
 
+  /** where each once's mark is: the engine's path of the step (an if's then and else, a once's own and its else, add nothing to it) */
+  const onceMarks = new Map();
+  /** A branch as the engine runs it: one step is a list of one (its path gets ".0"). @param {any} x */
+  const branch = (x) => (x === undefined || x === null || Array.isArray(x) ? x : [x]);
+  /** Keys a step with if or once has that the engine doesn't read. @param {any} s @param {string[]} keys @param {string} where */
+  const only = (s, keys, where) => {
+    const extra = Object.keys(s).filter((k) => !keys.includes(k));
+    if (extra.length) err(where, `a step with "${keys[0]}" reads only ${keys.join(", ")}: ${extra.map((k) => `"${k}"`).join(", ")} would do nothing (a step of its own?)`);
+  };
   /** @param {any} s @param {string} roomId @param {string} where */
   function script(s, roomId, where) {
     if (s === undefined || s === null) return;
-    if (Array.isArray(s)) { s.forEach((x, i) => script(x, roomId, `${where}.${i}`)); return; }
+    if (Array.isArray(s)) {
+      s.forEach((x, i) => {
+        if (x === null || x === undefined) err(`${where}.${i}`, `a step that is ${x}: the engine stops there and the rest of the script is lost`);
+        else script(x, roomId, `${where}.${i}`);
+      });
+      return;
+    }
     if (typeof s === "string") { text(s, where); return; }
     if (typeof s !== "object") { err(where, "a script step must be a string or an object"); return; }
-    if ("if" in s) { cond(s.if, roomId, where); script(s.then, roomId, where + ".then"); script(s.else, roomId, where + ".else"); return; }
-    if ("once" in s) { script(s.once, roomId, where + ".once"); script(s.else, roomId, where + ".else"); return; }
+    if ("if" in s) { only(s, ["if", "then", "else"], where); cond(s.if, roomId, where); script(branch(s.then), roomId, where + ".then"); script(branch(s.else), roomId, where + ".else"); return; }
+    if ("once" in s) {
+      only(s, ["once", "else"], where);
+      const mark = where.replace(/\.(then|else|once)(?=\.|$)/g, ""), other = onceMarks.get(mark);
+      if (other !== undefined && other !== where) err(where, `this once shares its mark with the once at ${other} (the same place in an if's then and else, or in a once and its else): whichever runs first uses up both; put one a step further`);
+      else onceMarks.set(mark, where);
+      script(branch(s.once), roomId, where + ".once"); script(branch(s.else), roomId, where + ".else");
+      return;
+    }
     const name = Object.keys(s).find((k) => actions.has(k));
     if (!name) { err(where, "unknown action " + JSON.stringify(s)); return; }
     const v = s[name];
@@ -386,6 +410,7 @@ export function validate(C, o = {}) {
     if (a.title !== undefined) text(a.title, w + ".title");
     if (a.name !== undefined) text(a.name, w + ".name");
     script(a.start, a.room, w + ".start");
+    if (a.prologue !== undefined && !sequenceIds.has(a.prologue)) err(w + ".prologue", `unknown sequence "${a.prologue}"`);
   }
   // sequences: their steps in the room each goto shows (the props they move must be there)
   for (const id of sequenceIds) {
@@ -427,6 +452,7 @@ export function validate(C, o = {}) {
     if (!lines.length) err(w, "a hint needs text");
     lines.forEach((l, j) => text(l, `${w}.text.${j}`));
     for (const a of h.about === undefined ? [] : [].concat(h.about)) if (!known.has(a)) err(w + ".about", `"${a}" is no hotspot, actor or item`);
+    if (h.act !== undefined && !actIds.has(h.act)) err(w + ".act", `unknown act "${h.act}"`);
   });
 
   // game time: routines and moments (time.js)
