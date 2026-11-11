@@ -347,7 +347,8 @@ export function validate(C, o = {}) {
       if (!KINDS.has(f.kind)) { err(fw, `unknown effect "${f.kind}"`); return; }
       if (f.poly) polygon(f.poly, fw + ".poly");
       if (f.rect && (f.rect.length !== 4 || f.rect[2] <= 0 || f.rect[3] <= 0)) err(fw, "rect is [x, y, w, h] with w, h > 0");
-      if (["haze", "dust", "rain"].includes(f.kind) && !f.poly && !f.rect) err(fw, `"${f.kind}" needs a poly or rect`);
+      if (["haze", "dust", "rain", "mist"].includes(f.kind) && !f.poly && !f.rect) err(fw, `"${f.kind}" needs a poly or rect`);
+      if (f.kind === "mist") asset(f.image, fw + ".image");
       if (["drip", "steam"].includes(f.kind) && !xy(f.at, fw + ".at")) return;
       if (f.kind === "sparkle" && !(Array.isArray(f.points) && f.points.every((p) => Array.isArray(p) && p.length === 2))) err(fw, "sparkle needs points: [[x, y], ...]");
       color(f.color, fw + ".color");

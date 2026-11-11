@@ -539,7 +539,10 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 - `fx: [...]` (every particle is a function of time, so screenshots repeat):
   `{ kind: "haze", poly, color, alpha, fade }`, `{ kind: "dust", rect, count, color }`,
   `{ kind: "rain", rect, count, speed, slant, length }`, `{ kind: "drip", at, to, every }`,
-  `{ kind: "sparkle", points, every }`, `{ kind: "steam", at, count, rise }`; any with `if` or
+  `{ kind: "sparkle", points, every }`, `{ kind: "steam", at, count, rise }`,
+  `{ kind: "mist", image, poly | rect, at, drift: [vx, vy], bob, alpha }` (a texture drifting inside its area: tiled across from
+  `at`, and up and down too if it drifts that way, moved in whole pixels, clipped to the area; `bob` px it sways slowly; two at
+  their own speeds make a bank of mist churn, clouds pass); any with `if` or
   `lamp: "id"` (follows that lamp).
 
 ## Sound

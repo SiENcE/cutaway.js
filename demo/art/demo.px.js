@@ -155,3 +155,10 @@ sprite("lamppost", { w: 12, h: 64, outline: "k" },
 sprite("lamppost_lit", { base: "lamppost" }, rect(4, 5, 6, 5, "y"), rect(5, 6, 2, 2, "c"))
 sprite("hall_door_open", { w: 40, h: 87 }, rect(0, 0, 40, 87, "A"), rect(0, 50, 40, 37, "l"), rect(0, 44, 40, 6, "L"),
   rect(30, 0, 10, 87, "H"), rect(30, 0, 2, 87, "h"))
+// a band of cloud, seamless across its 160 px, for the intro's sky to drift past (the effect "mist"): puffs, each drawn again a
+// band's width on so the ends meet
+sprite("cloud_band", { w: 160, h: 26 }, (c) => {
+  for (const [x, y, rx, ry] of [[14, 14, 12, 6], [30, 10, 10, 7], [44, 15, 9, 5], [84, 12, 14, 7], [102, 16, 10, 5], [128, 11, 11, 6], [146, 15, 9, 5]])
+    for (const dx of [-160, 0, 160]) { c.ellipse(x + dx, y, rx, ry, "c"); c.ellipse(x + dx + 2, y + 3, rx - 2, ry - 3, "s") }
+})
+

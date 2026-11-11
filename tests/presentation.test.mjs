@@ -66,6 +66,18 @@ export default async function (t) {
   });
   t.ok("fx: dust stays inside its area", inside);
 
+  // mist: a texture drifting inside its area, tiled across, in whole pixels, clipped to the area, at its alpha
+  const realGet = C.assets.get, realDraw = C.assets.draw, tiles = [];
+  C.assets.get = (/** @type {string} */ n) => (n === "fog" ? { frames: [{ w: 40, h: 10 }] } : realGet(n));
+  C.assets.draw = (/** @type {any} */ ctx, /** @type {any} */ a, /** @type {number} */ x, /** @type {number} */ y, /** @type {any} */ o) => { tiles.push([x, y, o.alpha]); };
+  const mistAt = (ms, f = { kind: "mist", image: "fog", rect: [10, 20, 100, 30], drift: [-8, 0], alpha: 0.5 }) => { tiles.length = 0; const r = recorder(); C.fx.kinds.mist(r.ctx, f, ms, 1, 1); return { calls: r.calls, tiles: tiles.map((q) => q.slice()) }; };
+  const m0 = mistAt(0), m1 = mistAt(1000), again = mistAt(1000);
+  t.ok("fx: mist tiles its texture across its area, clipped to it, at its alpha", m0.tiles.length === 4 && m0.calls.some((c) => c.startsWith("clip")) && m0.tiles.every((q) => q[2] === 0.5 && q[1] === 20), JSON.stringify(m0.tiles));
+  t.ok("fx: mist drifts with time, in whole pixels, the same each time", m1.tiles[0][0] === m0.tiles[0][0] - 8 + 40 && JSON.stringify(m1) === JSON.stringify(again), JSON.stringify([m0.tiles[0], m1.tiles[0]]));
+  const up = mistAt(500, { kind: "mist", image: "fog", rect: [0, 0, 40, 30], drift: [0, 4] });
+  t.ok("fx: mist drifting up or down tiles that way too", new Set(up.tiles.map((q) => q[1])).size >= 3, JSON.stringify(up.tiles));
+  C.assets.get = realGet; C.assets.draw = realDraw;
+
   // depth scale and whole-pixel sizes
   t.ok("scale: far, near and between", near(C.scene.scaleAt(100), 0.8) && near(C.scene.scaleAt(180), 1) && near(C.scene.scaleAt(140), 0.9) && near(C.scene.scaleAt(20), 0.8));
   const s = C.assets.scaled({ w: 16, h: 36 }, 0.8);

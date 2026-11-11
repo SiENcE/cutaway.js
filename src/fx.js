@@ -22,7 +22,7 @@
 
 /**
  * @typedef {object} FxDef
- * @property {"haze" | "dust" | "rain" | "drip" | "sparkle" | "steam"} kind
+ * @property {"haze" | "dust" | "rain" | "drip" | "sparkle" | "steam" | "mist"} kind
  * @property {string} [id]           names it for geometry files (else its index)
  * @property {number[]} [poly]       area, flat [x0, y0, x1, y1, ...]
  * @property {[number, number, number, number]} [rect]  area: x, y, w, h
@@ -38,6 +38,9 @@
  * @property {number} [length]       rain: streak length
  * @property {number} [every]        drip, sparkle: ms between events
  * @property {number} [rise]         steam: how high the wisps rise
+ * @property {string} [image]        mist: the texture (a sprite), tiled across the area, its first tile's top left at `at` (else the area's)
+ * @property {[number, number]} [drift]  mist: px per second along x and y (y tiles it up and down too; default [-4, 0])
+ * @property {number} [bob]          mist: px it sways up and down, slowly (a breathing bank)
  * @property {string} [lamp]         follow this lamp's flicker and on/off state
  * @property {Cond} [if]
  */
@@ -179,6 +182,23 @@ Cutaway.fx = (function () {
         dot(ctx, x, y, color, k);
         if (ph === 1) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) dot(ctx, x + dx, y + dy, color, 0.7 * k);
       });
+    },
+    // a texture drifting inside its area (mist, smoke, clouds): tiled across (and up and down if it drifts that way), moved in whole
+    // pixels by the scene's time, clipped to the area, at its alpha; two of them drifting apart make a bank churn
+    mist(ctx, f, t, k) {
+      const ar = area(f), a = f.image ? Cutaway.assets.get(f.image) : null;
+      if (!ar || !a || !a.frames.length) return;
+      const { w, h } = a.frames[0], [vx, vy] = f.drift ?? [-4, 0];
+      const ox = (((Math.round(t * vx / 1000)) % w) + w) % w, oy = vy ? (((Math.round(t * vy / 1000)) % h) + h) % h : 0;
+      const sway = f.bob ? Math.round(Math.sin(t / 2600) * f.bob) : 0;
+      const x0 = (f.at?.[0] ?? ar.x) - w + ox, y0 = vy ? ar.y - h + oy : (f.at?.[1] ?? ar.y) + sway;
+      ctx.save();
+      ctx.beginPath();
+      ar.poly.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.clip();
+      for (let y = y0; y < ar.y + ar.h; y += vy ? h : Infinity) for (let x = x0; x < ar.x + ar.w; x += w) Cutaway.assets.draw(ctx, a, x, y, { anchor: [0, 0], frame: 0, alpha: (f.alpha ?? 0.2) * k });
+      ctx.restore();
     },
     steam(ctx, f, t, k, seed) {
       if (!f.at) return;

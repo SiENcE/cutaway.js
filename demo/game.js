@@ -119,6 +119,11 @@
       { id: "walker", image: "bolt_walk_r", at: [-20, 278] },
       { id: "post", image: "lamppost", at: [36, 348], depth: 1.4 },
     ],
+    // clouds drifting across the sky, two bands at their own speeds (the effect "mist": a texture drifting inside its area)
+    fx: [
+      { kind: "mist", image: "cloud_band", rect: [0, 0, 320, 130], at: [0, 24], drift: [-6, 0], alpha: 0.9 },
+      { kind: "mist", image: "cloud_band", rect: [0, 0, 320, 130], at: [40, 70], drift: [-11, 0], alpha: 0.6, bob: 2 },
+    ],
   });
 
   Cutaway.sequence("intro", {
