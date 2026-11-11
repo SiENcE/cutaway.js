@@ -204,7 +204,9 @@ Cutaway.sequence = (function () {
     hurrying(false);
     Cutaway.tween.finish();                                // camera drifts and moves that didn't wait
     Cutaway.cinema.reset();
-    Cutaway.scene.cameraFollow();
+    // left on its last shot (restore: false) where the one played isn't, the camera stays where the sequence put it: a view held
+    // until the next room (a fade out of it shows that view, not the room's corner)
+    if (o.restore !== false || Cutaway.scene.active?.room === Cutaway.scene.room?.id) Cutaway.scene.cameraFollow();
     cur = null;
     Cutaway.ui.setCutscene(false);
     Cutaway.events.emit("sequence.end", { id, skipped });

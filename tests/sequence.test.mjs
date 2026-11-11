@@ -75,6 +75,11 @@ export default async function (t) {
   await pass(C, 20000);
   await kept;
   t.ok("sequence: as a script step with restore: false, the scene stays on its last shot", C.state.flag("saw_c") && C.scene.room.id === "yard", C.scene.room.id);
+  C.sequence("tilt", { steps: [{ goto: "intro_sky" }, { camera: [0, 60], ms: 0 }, { wait: 200 }] });
+  const tilt = C.script.run([{ sequence: "tilt", restore: false }]);
+  await pass(C, 1000);
+  await tilt;
+  t.ok("... and its camera stays where the sequence left it (nobody played is there to follow)", C.scene.room.id === "intro_sky" && C.scene.camera.y === 60, JSON.stringify(C.scene.camera));
   await C.scene.load("hall");
   let err = "";
   try { await C.sequence.play("film", { from: "nope" }); } catch (e) { err = String(e.message); }
