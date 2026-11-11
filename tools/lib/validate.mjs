@@ -374,7 +374,8 @@ export function validate(C, o = {}) {
       if (x.loop !== undefined && x.loop !== "around" && x.loop !== "back") err(xw + ".loop", 'loop is "around" or "back"');
       if (x.block && x.path?.length) warn(xw, "block only holds an extra that stands (one with a path walks out of its hole)");
       if (x.if !== undefined) cond(x.if, id, xw + ".if");
-      if (xmap && (r.walk ?? []).length) for (const p of pts) if (!xmap.inside({ x: p[0], y: p[1] })) warn(xw, `[${p}] is outside the walk map: it would stand or walk where nobody can`);
+      if (x.apart && x.path?.length) warn(xw, "apart is for an extra that stands (behind a counter, on a crate): one with a path walks");
+      if (xmap && (r.walk ?? []).length) for (const p of pts) if (!(x.apart && !x.path?.length) && !xmap.inside({ x: p[0], y: p[1] })) warn(xw, `[${p}] is outside the walk map: it would stand or walk where nobody can (one that stands there on purpose: apart: true)`);
     });
     if (r.scale) {
       const ok = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite) && p[1] > 0;

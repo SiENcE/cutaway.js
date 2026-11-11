@@ -22,6 +22,8 @@
  * @property {number} [give]              px a standing extra leans away from whoever passes close (default 3)
  * @property {number} [side]              px a walking extra may step aside to let someone by (default 14)
  * @property {boolean} [block]            a standing extra is an obstacle: its space is cut out of the walk map
+ * @property {boolean} [apart]            a standing extra stands where nobody walks, on purpose (behind a counter, on a crate, on a stage):
+ *                                        validate doesn't take it for a mistake
  * @property {Cond} [if]                  only there while this holds (not asked of the walk map: a blocking one always blocks)
  */
 

@@ -195,6 +195,8 @@ extras: [
   [7, 4]); nobody walks into it. Where a crowd must not be walked through, leave it out of the walk
   map, or give a standing extra `block: true`: its space is cut out of the walk map (a hole, the same
   for the solver; its `if` isn't asked there).
+- `apart: true`: a standing extra stands where nobody walks, on purpose (a vendor behind a counter, someone on a
+  crate or a stage): outside the walk map, which validate otherwise warns about. It still idles, turns and looks.
 - `if: cond` shows it only while the condition holds.
 
 ## Items

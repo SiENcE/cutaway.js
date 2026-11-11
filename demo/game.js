@@ -77,6 +77,8 @@
       { costume: { idle: "bolt_idle_r", walk: "bolt_walk_r" }, at: [70, 140], path: [[300, 134]], loop: "back", speed: [14, 7], pause: 900, space: [9, 4] },
       { costume: { idle: "pip_idle_r", walk: "pip_walk_r" }, at: [296, 170], facing: "left", path: [[30, 168], [120, 160]], speed: [18, 9], space: [7, 4] },
       { costume: { idle: "pip_idle_r" }, at: [112, 152], facing: "right", space: [7, 4] },
+      // one stands up on the crate in the middle of the yard, where nobody walks (apart: on purpose, not a mistake)
+      { costume: { idle: "bolt_idle_r" }, at: [200, 148], facing: "left", apart: true },
     ],
     props: [
       { id: "mailbox", image: "mailbox", states: { open: "mailbox_open" }, at: [200, 150] },

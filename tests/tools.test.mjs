@@ -198,6 +198,9 @@ export default async function (t) {
     await boot(g, { instant: true });
     return validate(g.C, {}).issues.filter((i) => i.level === "warning").map((i) => `${i.where}: ${i.msg}`);
   };
+  const off = await warnsOf((/** @type {any} */ C) => { C.room.get("yard").extras.push({ costume: { idle: "pip_idle_r" }, at: [160, 20] }); });
+  t.ok("validate warns: an extra standing outside the walk map", off.some((w) => /extras\.4/.test(w) && /outside the walk map/.test(w)), off.join(" | "));
+  t.ok("validate: not for one that stands apart on purpose (the demo's on the crate)", !(await warnsOf()).some((w) => /extras/.test(w)));
   const showIf = await warnsOf((/** @type {any} */ C) => { C.room.get("hall").hotspots.window.use = [{ show: "door" }]; });
   t.ok("validate warns: { show } on a prop with if", showIf.some((w) => /window/.test(w) && /if/.test(w) && /door/.test(w)), showIf.join(" | "));
   t.ok("validate: the demo has no such warning", !(await warnsOf()).some((w) => /prop with if/.test(w)));
