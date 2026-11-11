@@ -150,6 +150,10 @@ Cutaway.actor("pip", {
   whose `walk` has a diagonal turns the actor to the diagonal of every step (a level step keeps the
   row it faced); `facing` and `{ face }` take `se ne sw nw` (and `left right up down`, shown as
   `sw se ne se`). A view missing for one row uses the other's.
+- `poses`: costume entries while a condition holds (the first pose naming a state wins). A pose's `walk`
+  (else its `idle`) also decides which ways a step turns the actor, so a figure drawn in the diagonals elsewhere
+  can have `{ down, up, right, left }` in one room seen from above; a pose's `speed: [x, y]` is its walking speed
+  while it holds (`poses: [{ if: "at:juno=market", idle: {...}, walk: {...}, speed: [40, 40] }]`).
 - Extra costume keys are one-shot animations: `{ anim: "pip:reach" }`.
 - An actor without a `costume` is a voice only (someone on the phone, a megaphone far away): it can
   `say` lines but is never drawn, so don't place it in a room.

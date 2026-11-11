@@ -39,8 +39,9 @@
  * @property {Script} [look]       when another actor is in control: right click
  * @property {Script} [talk]       left click
  * @property {Record<string, Script>} [with]  an item used on this actor (party members take items by default)
- * @property {({if: Cond} & Partial<Costume>)[]} [poses]  costume entries that apply while a condition holds
- *                                 (the first match wins), e.g. { if: "on_sofa", idle: "cody_sit_r" }
+ * @property {({if: Cond, speed?: [number, number]} & Partial<Costume>)[]} [poses]  costume entries that apply while a
+ *                                 condition holds (the first match wins), e.g. { if: "on_sofa", idle: "cody_sit_r" }; a pose's
+ *                                 walk also decides which ways a step turns the actor, and its speed how fast it walks
  */
 
 /** Does a costume entry have diagonal (isometric) views? @param {CostumeEntry | undefined} e */
@@ -187,7 +188,7 @@ Cutaway.actor = (function () {
      * @param {number} dx @param {number} dy @returns {Facing}
      */
     heading(dx, dy) {
-      const w = this.costume.walk, v = dy < 0 ? "up" : "down";
+      const w = this.entry("walk") ?? this.entry("idle"), v = dy < 0 ? "up" : "down";
       if (diagonal(w)) {
         // an isometric costume: the diagonal of the step (a flat step keeps the side it faced)
         if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return this.facing;
@@ -217,7 +218,7 @@ Cutaway.actor = (function () {
         if (d < 1e-6) { this.path.shift(); continue; }
         // speed along this direction: an ellipse between the x and y speeds
         const ux = dx / d, uy = dy / d;
-        const v = this.scale() / Math.hypot(ux / this.speed[0], uy / this.speed[1]);   // further away = slower
+        const sp = this.pace(), v = this.scale() / Math.hypot(ux / sp[0], uy / sp[1]);   // further away = slower
         this.facing = this.heading(dx, dy);
         const step = v * budget;
         if (step >= d) { this.x = p.x; this.y = p.y; this.path.shift(); budget -= d / v; }
@@ -231,10 +232,28 @@ Cutaway.actor = (function () {
       }
     }
 
+    /**
+     * The costume entry in effect for a state: the first pose that names it and holds, else the costume's.
+     * @param {string} state @returns {CostumeEntry | undefined}
+     */
+    entry(state) {
+      const pose = this.def.poses?.find((p) => p[state] !== undefined && Cutaway.state.test(p.if));
+      return /** @type {CostumeEntry | undefined} */ (pose?.[state] ?? this.costume[state]);
+    }
+
+    /**
+     * The walking speed now (px/s along x and y): the first pose with a speed that holds (a hurry somewhere, a
+     * room drawn at another scale), else the actor's.
+     * @returns {[number, number]}
+     */
+    pace() {
+      const pose = this.def.poses?.find((p) => p.speed && Cutaway.state.test(p.if));
+      return pose?.speed ?? this.speed;
+    }
+
     /** The animation name and mirroring for the current state and facing. */
     look() {
-      const pose = this.def.poses?.find((p) => p[this.state] !== undefined && Cutaway.state.test(p.if));
-      const entry = pose?.[this.state] ?? this.costume[this.state] ?? this.costume.idle;
+      const entry = this.entry(this.state) ?? this.costume.idle;
       if (typeof entry === "string") return { anim: entry, flip: this.facing === "left" || this.facing === "sw" || this.facing === "nw" };
       if (diagonal(entry)) return lookDiagonal(entry, toDiagonal(this.facing));
       const f = /** @type {"right" | "left" | "up" | "down"} */ (fromDiagonal(this.facing));

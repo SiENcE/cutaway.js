@@ -86,6 +86,7 @@ export default async function (t) {
     ["unknown stinger", (C) => { C.room.get("hall").hotspots.window.use = [{ stinger: "boing" }]; }, /unknown stinger "boing"/],
     ["voice in a room", (C) => { C.actor("radio", { name: "Radio", room: "hall", at: [100, 160] }); }, /voice only/],
     ["broken score", (C) => { C.score.get("hall").sections.a.next = "zz"; }, /next section "zz"/],
+    ["a pose's speed", (C) => { C.actors.get("pip").def.poses[0].speed = 30; }, /pose's speed/],
   ];
   for (const [name, patch, re] of broken) {
     const errs = await errorsOf(patch);

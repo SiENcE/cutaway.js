@@ -154,6 +154,8 @@
     name: "Pip", color: "#5af0c0", room: "hall", at: [90, 160], portrait: "pip_portrait",
     costume: { idle: "pip_idle_r", walk: "pip_walk_r", talk: "pip_talk_r" },
     speed: [16, 8],
+    // out in the yard's wind she hurries (a pose's speed; a pose's walk would also decide the ways a step turns her)
+    poses: [{ if: "at:pip=yard", speed: [24, 12] }],
     voice: { pitch: 74, range: 4, wave: "square", syllable: 65, speed: 1.15, gain: 0.2, formant: 1.15 },
     look: "Pip. Small, but full of ideas.", talk: [{ say: "pip", text: "Need anything, Bolt?" }, "Just checking on you."],
   });

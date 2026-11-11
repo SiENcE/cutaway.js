@@ -394,7 +394,8 @@ export function validate(C, o = {}) {
     else if (!d.costume.idle) err(w, "costume needs an idle animation");
     (d.poses ?? []).forEach((p, i) => {
       cond(p.if, d.room ?? "", `${w}.poses.${i}.if`);
-      for (const [k, e] of Object.entries(p)) if (k !== "if") for (const n of typeof e === "string" ? [e] : Object.values(e ?? {})) asset(n, `${w}.poses.${i}.${k}`);
+      if ("speed" in p && !(Array.isArray(p.speed) && p.speed.length === 2 && p.speed.every((v) => typeof v === "number" && v > 0))) err(`${w}.poses.${i}.speed`, "a pose's speed is [x, y] in px per second");
+      for (const [k, e] of Object.entries(p)) if (k !== "if" && k !== "speed") for (const n of typeof e === "string" ? [e] : Object.values(e ?? {})) asset(n, `${w}.poses.${i}.${k}`);
     });
     if (d.portrait) asset(d.portrait, w + ".portrait");
     if (d.room) { room(d.room, w + ".room"); if (d.at && roomIds.has(d.room)) mustReach.get(d.room).push([d.at[0], d.at[1], w + ".at", true]); }
