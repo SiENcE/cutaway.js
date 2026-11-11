@@ -71,6 +71,11 @@ export default async function (t) {
   await pass(C, 20000);
   const skipped = await film;
   t.ok("sequence: played to its end", C.state.flag("saw_c") && skipped === false && !C.sequence.playing() && C.scene.room.id === "hall");
+  const kept = C.script.run([{ sequence: "film", restore: false }]);
+  await pass(C, 20000);
+  await kept;
+  t.ok("sequence: as a script step with restore: false, the scene stays on its last shot", C.state.flag("saw_c") && C.scene.room.id === "yard", C.scene.room.id);
+  await C.scene.load("hall");
   let err = "";
   try { await C.sequence.play("film", { from: "nope" }); } catch (e) { err = String(e.message); }
   t.ok("sequence: from a shot it doesn't have: an error, nothing plays", /no shot "nope"/.test(err) && !C.sequence.playing(), err);

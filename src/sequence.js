@@ -254,7 +254,8 @@ Cutaway.sequence = (function () {
     f.draw(ctx, Cutaway.i18n.t(gate.prompt), Math.round(W / 2), H - 20, { align: "center", color: "#ffffff", outline: Cutaway.ui.style.outline });
   }
 
-  Cutaway.script.action("sequence", async (s) => { await play(String(s.sequence)); });
+  // restore: false leaves the scene on the sequence's last shot, so what the script does next (a goto) leaves from there
+  Cutaway.script.action("sequence", async (s) => { await play(String(s.sequence), { restore: s.restore === false ? false : undefined }); });
   Cutaway.script.action("shot", (s) => shot(String(s.shot)));
 
   sequence.play = play;

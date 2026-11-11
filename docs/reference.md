@@ -260,7 +260,7 @@ it changes the state; a `{ dialog }` counts as more), a square when it is the la
 | `{ open: "door_open", sfx: "creak", ms: 260 }`, `{ close: "door_open", sfx }` | show a hidden prop of this room for the scene only (a door standing open while someone comes or goes through it; not saved, gone when the room is entered again), with a sound, then wait `ms`; `close` takes it back. `"room/door_open"` names the room too (in a dialog, after a goto): in another room it does nothing |
 | `{ play: "tv", anim: "tv_news", loop: true, wait: false }` | play a prop's animation from its first frame |
 | `{ letterbox: true, ms }`, `{ caption: "Paris, 1925.", at: "bl", type: true, ms }`, `{ dissolve: 800 }`, `{ tape: 1, ms }` | cinema, below |
-| `{ sequence: "flashback" }`, `{ shot: "name" }` | play a sequence; mark a shot in one ("Sequences and the intro") |
+| `{ sequence: "flashback", restore: false }`, `{ shot: "name" }` | play a sequence (`restore: false`: the scene stays on its last shot instead of going back to the room it was in, so a `goto` after it changes rooms from there, with that room's transition); mark a shot in one ("Sequences and the intro") |
 | `{ if: cond, then: [...], else: [...] }`, `{ once: [...], else: [...] }` | logic: such a step has only these keys (`{ give, if }` does nothing; validate says so). A `once` is marked by its place in the script, and an `if`'s `then` and `else` (or a `once`'s own steps and its `else`) count as the same place: a `once` first in both shares one mark, and validate calls that an error |
 | `{ hint: true }` | the hint for now, as the hint button gives it (each ask one plainer): a character or a thing that gives the hints |
 
