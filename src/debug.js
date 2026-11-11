@@ -130,9 +130,9 @@ Cutaway.debug = (function () {
   }
 
   /**
-   * For a hotspot out of view in a room wider than the screen: a point on the walkable floor at the
-   * screen's edge on its side, where a click walks the played actor (and the camera) towards it; null
-   * when it is in view or there's no floor there. One a layer has scrolled away: where its layer says (`reveal`).
+   * For a hotspot out of view in a room bigger than the screen: a point on the walkable floor at the
+   * screen's edge on its side (left or right; else above or below), where a click walks the played actor (and the
+   * camera) towards it; null when it is in view or there's no floor there. One a layer has scrolled away: where its layer says (`reveal`).
    * For tools and headless playthroughs.
    * @param {string} id
    * @returns {{x: number, y: number} | null}
@@ -142,16 +142,31 @@ Cutaway.debug = (function () {
     if (shown) return shown;
     const h = Cutaway.scene.hotspots().find((q) => q.id === id), map = Cutaway.scene.walkMap;
     if (!h || !map) return null;
-    const xs = h.poly.map((p) => p.x), W = Cutaway.display.width, H = Cutaway.display.height;
+    const xs = h.poly.map((p) => p.x), ys = h.poly.map((p) => p.y), W = Cutaway.display.width, H = Cutaway.display.height;
     const left = Cutaway.scene.toScreen(Math.max(...xs), 0).x < 2, right = Cutaway.scene.toScreen(Math.min(...xs), 0).x >= W - 2;
-    if (!left && !right) return null;
-    const sx = left ? 3 : W - 4;
     // (clear of the satchel's bar, as in pointOn: a click there opens the bag)
     const bottom = Cutaway.inventory?.corner === "bottom";
     // (and clear of any hotspot: a finger's tap reaches a few px, and would take it instead of the floor)
     const clear = (/** @type {{x: number, y: number}} */ w) => [-9, 0, 9].every((dx) => [-9, 0, 9].every((dy) => !Cutaway.scene.hotspotAt(w.x + dx, w.y + dy)));
     /** @type {{x: number, y: number} | null} */
     let floor = null;
+    if (!left && !right) {
+      // in view sideways, but above or below it (a room that scrolls up and down too): from that edge inwards, as far as a quarter
+      // of the screen, from the hotspot's own x outwards
+      const top = Cutaway.scene.toScreen(0, Math.max(...ys)).y < (bottom ? 2 : 30), under = Cutaway.scene.toScreen(0, Math.min(...ys)).y >= H - (bottom ? 30 : 2);
+      if (!top && !under) return null;
+      const cx = Math.max(3, Math.min(W - 4, Math.round(Cutaway.scene.toScreen((Math.min(...xs) + Math.max(...xs)) / 2, 0).x)));
+      const sy = top ? (bottom ? 3 : 31) : H - (bottom ? 31 : 4);
+      for (let d = 0; d < H / 4; d += 4) for (let r = 0; r < W; r += 4) for (const x of r ? [cx - r, cx + r] : [cx]) {
+        if (x < 3 || x > W - 4) continue;
+        const y = top ? sy + d : sy - d, w = Cutaway.scene.toWorld(x, y);
+        if (!map.inside(w)) continue;
+        if (clear(w)) return { x, y };
+        floor ??= { x, y };
+      }
+      return floor;
+    }
+    const sx = left ? 3 : W - 4;
     // from the screen's edge inwards, as far as a quarter of it: any clear floor on that side will do
     for (let d = 0; d < W / 4; d += 8) for (let sy = H - (bottom ? 30 : 3); sy >= 30; sy--) {
       const x = left ? sx + d : sx - d, w = Cutaway.scene.toWorld(x, sy);
