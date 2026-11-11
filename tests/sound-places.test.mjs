@@ -39,4 +39,34 @@ export default async function (t) {
   t.ok("... the place set back", C.audio.placeNow.gain === 1 && C.audio.placeNow.pan === 0);
   pip.place("hall", 60, 140, "right");
   t.ok("the one played in another room: the listener is the middle of the view", S.listener().x === C.scene.camera.x + 160 && S.listener().y === C.scene.camera.y + 90);
+
+  // ---- a tune at a place: a loop that plays a theme of the score with a player of its own, beside the room's music (the yard's
+  // radio on the mailbox). A stand-in for the browser's audio: every node and parameter takes anything and connects to anything.
+  const fake = () => {
+    const f = function () { return fake(); };
+    return new Proxy(f, {
+      get: (o, k) => (k === "connect" ? (/** @type {any} */ n) => n : k in o ? o[k] : (o[k] = fake())),
+      set: (o, k, v) => { o[k] = v; return true; },
+    });
+  };
+  const ctx = fake();
+  ctx.currentTime = 0; ctx.sampleRate = 48000; ctx.state = "running";
+  C.audio.init({ context: ctx });
+  Object.assign(g.ctx.window, { setInterval, clearInterval, setTimeout, clearTimeout });     // the browser's timers
+  C.sfx.init();                                                                              // (the tools' boot leaves sound out)
+  const notes = [], play = C.synth.play;
+  C.synth.play = (inst, o) => { notes.push([inst, o.note, o.time]); return play.call(C.synth, inst, o); };
+  pip.place("yard", 190, 150, "right");
+  await C.scene.load("yard");
+  for (let k = 0; k < 40; k++) { ctx.currentTime += 0.1; await new Promise((r) => setTimeout(r, 55)); }
+  const bells = notes.filter(([inst]) => inst === "bell");
+  t.ok("a tune at a place plays its theme's notes", bells.length >= 8, `${bells.length} bell notes of ${notes.length}`);
+  const placed = S.heardNow().loops;              // the lamp post's hum, the mailbox's radio
+  t.ok("... heard from its place: full beside the mailbox, the hum further off quieter", placed.length === 2 && placed.filter((h) => h.gain === 1).length === 1, JSON.stringify(placed));
+  await C.scene.load("hall");
+  for (let k = 0; k < 5; k++) { ctx.currentTime += 0.1; await new Promise((r) => setTimeout(r, 55)); }
+  const left = notes.length;
+  for (let k = 0; k < 20; k++) { ctx.currentTime += 0.1; await new Promise((r) => setTimeout(r, 55)); }
+  t.ok("... and it stops with the room", notes.length === left, `${notes.length - left} notes after leaving`);
+  C.synth.play = play;
 }

@@ -358,6 +358,8 @@ export function validate(C, o = {}) {
     for (const a of r.ambience ?? []) {
       const n = typeof a === "string" ? a : a?.sfx;
       if (C.sfx && !C.sfx.get(n)?.loop) err(w + ".ambience", `"${n}" is not a sound loop`);
+      const tune = C.sfx?.get(n)?.loop?.theme;
+      if (tune && C.score && !C.score.has(tune)) err(w + ".ambience", `"${n}" plays an unknown music theme "${tune}"`);
       if (typeof a === "object" && a?.at !== undefined) place(a, `${w}.ambience.${n}`);
     }
     if (r.music && typeof r.music === "object" && r.music.at !== undefined) place(r.music, w + ".music");

@@ -21,7 +21,11 @@
  * @typedef {{wave?: OscillatorType, from: number | string, to?: number | string, ms?: number, attack?: number, gain?: number, vibrato?: [number, number], at?: number}} TonePart
  * @typedef {{filter?: BiquadFilterType, from: number, to?: number, q?: number, ms?: number, attack?: number, gain?: number, at?: number}} NoisePart
  * @typedef {{inst: string, notes: string, step?: number, gain?: number, at?: number}} InstPart
- * @typedef {{noise?: {filter?: BiquadFilterType, freq: number, q?: number}, tone?: {wave?: OscillatorType, freq: number}, sample?: string, gain?: number, wobble?: [number, number], crackle?: number}} LoopDef
+ * @typedef {{noise?: {filter?: BiquadFilterType, freq: number, q?: number}, tone?: {wave?: OscillatorType, freq: number}, sample?: string, gain?: number, wobble?: [number, number], crackle?: number,
+ *   theme?: string, section?: string, intensity?: number, speaker?: number}} LoopDef
+ *   theme: a tune of the score (Cutaway.score) played over and over by its own player, beside the room's music: a busker, a
+ *   jingle, a second radio, each at its place; speaker 0..1 how much it sounds through a small speaker (as audio.speaker); its gain
+ *   (default 1) scales the theme's own mix
  * @typedef {{tone?: TonePart | TonePart[], noise?: NoisePart | NoisePart[], inst?: InstPart | InstPart[], loop?: LoopDef, sample?: string, rate?: number, gain?: number}} SfxDef
  */
 
@@ -211,7 +215,7 @@ Cutaway.sfx = (function () {
     const c = /** @type {BaseAudioContext} */ (Cutaway.audio.ctx), b = /** @type {Buses} */ (Cutaway.audio.buses);
     const out = c.createGain(), t = c.currentTime;
     out.gain.setValueAtTime(0, t);
-    out.gain.linearRampToValueAtTime((l.gain ?? 0.1) * gain, t + 1.2);
+    out.gain.linearRampToValueAtTime((l.gain ?? (l.theme ? 1 : 0.1)) * gain, t + 1.2);      // a tune keeps its own mix
     /** @type {((h: Heard, seconds: number) => void) | undefined} */
     let set;
     if (place) {                                       // at a place: duller, to one side and quieter by distance
@@ -246,6 +250,29 @@ Cutaway.sfx = (function () {
         srcs.push(src);
       }).catch((e) => console.warn("Cutaway: a sample didn't decode", e));
       srcs.push(/** @type {any} */ ({ start() {}, stop() { stopped = true; } }));
+    }
+    if (l.theme) {                                     // a tune at its place: a theme of the score with a player of its own
+      const k = Math.max(0, Math.min(1, l.speaker ?? 0)), hp = c.createBiquadFilter(), mid = c.createBiquadFilter(), lp = c.createBiquadFilter(), into = c.createGain();
+      hp.type = "highpass"; hp.frequency.value = 20 * Math.pow(500 / 20, k);
+      mid.type = "peaking"; mid.frequency.value = 1500; mid.Q.value = 0.9; mid.gain.value = 7 * k;
+      lp.type = "lowpass"; lp.frequency.value = 20000 * Math.pow(2800 / 20000, k);
+      into.connect(hp).connect(mid).connect(lp).connect(out);
+      /** @type {Map<string, GainNode>} */
+      const layers = new Map();
+      const layer = (/** @type {string} */ name) => {
+        let g = layers.get(name);
+        if (!g) { g = c.createGain(); g.gain.value = name === "base" ? 1 : 0; g.connect(into); layers.set(name, g); }
+        return g;
+      };
+      const player = new Cutaway.sequencer.Player({
+        note(e) { Cutaway.synth.play(e.inst, { time: e.time, note: e.note, duration: e.duration, velocity: e.velocity, out: layer(e.layer) }); },
+        layerGain(name, g, time, ramp) { const p = layer(name).gain; p.cancelScheduledValues(time); p.setValueAtTime(p.value, time); p.linearRampToValueAtTime(g, time + Math.max(0.01, ramp)); },
+        section() {},
+      });
+      player.intensity = l.intensity ?? 1;
+      player.start(l.theme, c.currentTime + 0.05, l.section);
+      const timer = window.setInterval(() => player.pump(c.currentTime + 0.25), 50);
+      srcs.push(/** @type {any} */ ({ start() {}, stop() { clearInterval(timer); } }));
     }
     if (l.tone) {
       const osc = c.createOscillator(), g = c.createGain();

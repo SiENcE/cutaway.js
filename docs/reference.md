@@ -558,6 +558,10 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
   900 Hz at the reach). Ten times a second it is heard anew as the listener walks.
   - an ambience loop: `ambience: [{ sfx: "wok", at: [420, 300], reach: 260, near: 40, gain: 1 }]`
     (a market: each stall's sound where it is; loops without `at` play everywhere);
+  - a tune at a place, beside the room's music (a busker, a jingle, a second radio): a loop that plays a theme of the score
+    with a player of its own, `Cutaway.sfx.define("busker", { loop: { theme: "busker_tune", speaker: 0.6, gain: 1 } })`, then
+    `ambience: [{ sfx: "busker", at, reach }]`; `speaker` 0..1 makes it sound through a small speaker, `gain` (default 1)
+    scales the theme's own mix, `section` and `intensity` say where it starts and which layers play;
   - a room's music: `music: { theme: "radio_song", speaker: 1, at: [430, 310], reach: 300 }` (a radio
     on a stall: the music bus goes through the place, `Cutaway.audio.place`);
   - a one-shot: `{ sfx: "cleaver", at: [x, y], reach: 200 }`.

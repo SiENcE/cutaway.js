@@ -59,12 +59,15 @@
     enter: [{ if: "!visited:hall", then: ["Morning, hall.", { say: "bolt", text: "Morning, Pip." }, "Let's get the lamp in the yard working."] }],
   });
 
+  // the little radio on the mailbox: a tune at a place, its theme in demo/music.js, through a small speaker
+  Cutaway.sfx.define("mailbox_radio", { loop: { theme: "mailbox_radio", speaker: 1, gain: 0.5 } });
   Cutaway.room("yard", {
     name: "Yard",
     background: "yard_bg",
     music: { theme: "yard", intensity: 0.5 },
     // the wind everywhere; the lamp post's transformer hums where it stands
-    ambience: [{ sfx: "wind", gain: 0.6 }, { sfx: "hum", gain: 1.5, at: [270, 120], reach: 160 }],
+    // ... and a little radio on the mailbox plays its own tune, heard as Pip comes near (a tune at a place: demo/music.js)
+    ambience: [{ sfx: "wind", gain: 0.6 }, { sfx: "hum", gain: 1.5, at: [270, 120], reach: 160 }, { sfx: "mailbox_radio", at: [200, 140], reach: 120 }],
     scale: { far: [126, 0.86], near: [177, 1] },
     // the lamp post's light is not in the art: it comes on with the lamp (an added, flickering lamp)
     light: { lamps: [{ id: "lamp", at: [270, 80], r: 46, power: 1.15, color: "#ffe28a", flicker: 0.06, add: true, glow: 9, if: "state:lamp=lit" }] },

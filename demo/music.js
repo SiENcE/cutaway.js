@@ -90,6 +90,13 @@
     transitions: { hall: "to_hall" },
   });
 
+  // a tune at a place (an sfx loop with a theme, beside the room's music): the little radio on the yard's mailbox, through its speaker
+  Cutaway.score.theme("mailbox_radio", {
+    tempo: 120, key: "C",
+    tracks: { bell: { inst: "bell" } },
+    sections: { a: { bars: 2, tracks: { bell: bars("C6 . E6 . G6 . E6 . C6 . . . G5 . . .", "A5 . C6 . E6 . C6 . G5 . . . . . . .") } } },
+  });
+
   Cutaway.score.stinger("pickup", { inst: "bell", notes: "C6 E6 G6 C7 - - -", key: "C" });
   Cutaway.score.stinger("discovery", { inst: "brass", notes: "G4 C5 E5 G5+C6 - - - - - -", key: "C", stepsPerNote: 1 });
 })();
