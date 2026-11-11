@@ -1,6 +1,7 @@
 // Cutaway.js walking: walkable areas as polygons with holes, and shortest paths through them.
 // Pathfinding uses a visibility graph over the polygon corners plus A*: paths are exact and short,
-// with no grid. Points on an edge count as inside, so paths may run along walls and around the
+// with no grid. A line of sight is checked where it meets an edge and once between two such places
+// (only there can it go out or come back in), so a big room's map with hundreds of corners builds quickly. Points on an edge count as inside, so paths may run along walls and around the
 // corners of obstacles. A click outside the area walks to the nearest point inside; an unreachable
 // target walks to the reachable corner closest to it.
 // Pure geometry, no DOM: the Node tests load this file directly.
@@ -15,7 +16,6 @@ Cutaway.walk = (function () {
    */
 
   const EPS = 0.5;          // half a pixel: closer than this to an edge counts as on the edge
-  const STEP = 0.5;         // sampling step for line of sight, in pixels
 
   /** @param {Pt} p @param {Pt[]} poly even-odd rule */
   function inPoly(p, poly) {
@@ -37,11 +37,54 @@ Cutaway.walk = (function () {
   /** @param {Pt} a @param {Pt} b */
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
-  /** Distance from p to the outline of poly. @param {Pt} p @param {Pt[]} poly */
-  function edgeDist(p, poly) {
-    let best = Infinity;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) best = Math.min(best, dist(p, project(p, poly[j], poly[i])));
-    return best;
+  const ROW = 8;            // the rows a polygon's edges are sorted into, in pixels
+  /** @typedef {{box: number[], y0: number, rows: Float64Array[]}} Indexed  each row: its edges as x0, y0, x1, y1 in turn */
+  /**
+   * A polygon's edges sorted into rows of ROW px by their height (grown by EPS), so a point asks only the edges near it: a big
+   * room's outline has hundreds of corners.
+   * @param {Pt[]} poly @returns {Indexed}
+   */
+  function indexed(poly) {
+    const xs = poly.map((p) => p.x), ys = poly.map((p) => p.y);
+    const box = [Math.min(...xs) - EPS, Math.min(...ys) - EPS, Math.max(...xs) + EPS, Math.max(...ys) + EPS], y0 = box[1];
+    /** @type {number[][]} */
+    const rows = Array.from({ length: Math.max(1, Math.ceil((box[3] - y0) / ROW) + 1) }, () => []);
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i], b = poly[j], lo = Math.floor((Math.min(a.y, b.y) - EPS - y0) / ROW), hi = Math.floor((Math.max(a.y, b.y) + EPS - y0) / ROW);
+      for (let r = Math.max(0, lo); r <= Math.min(rows.length - 1, hi); r++) rows[r].push(a.x, a.y, b.x, b.y);
+    }
+    return { box, y0, rows: rows.map((r) => Float64Array.from(r)) };
+  }
+  /** The row of an indexed polygon's edges at p, or null when p is outside its box. @param {Indexed} ix @param {Pt} p */
+  function rowAt(ix, p) {
+    const b = ix.box;
+    if (p.x < b[0] || p.y < b[1] || p.x > b[2] || p.y > b[3]) return null;
+    return ix.rows[Math.floor((p.y - ix.y0) / ROW)] ?? null;
+  }
+  /** Is p inside an indexed polygon (even-odd)? @param {Indexed} ix @param {Pt} p */
+  function inIx(ix, p) {
+    const row = rowAt(ix, p);
+    if (!row) return false;
+    const px = p.x, py = p.y;
+    let c = false;
+    for (let i = 0; i < row.length; i += 4) {
+      const ax = row[i], ay = row[i + 1], ex = row[i + 2], ey = row[i + 3];
+      if ((ay > py) !== (ey > py) && px < (ex - ax) * (py - ay) / (ey - ay) + ax) c = !c;
+    }
+    return c;
+  }
+  /** Is p within EPS of an indexed polygon's outline? @param {Indexed} ix @param {Pt} p */
+  function nearIx(ix, p) {
+    const row = rowAt(ix, p);
+    if (!row) return false;
+    const px = p.x, py = p.y;
+    for (let i = 0; i < row.length; i += 4) {
+      const ax = row[i], ay = row[i + 1], dx = row[i + 2] - ax, dy = row[i + 3] - ay, l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+      const qx = px - ax - dx * t, qy = py - ay - dy * t;
+      if (qx * qx + qy * qy <= EPS * EPS) return true;
+    }
+    return false;
   }
 
   /** @param {number[]} flat @returns {Pt[]} */
@@ -60,6 +103,16 @@ Cutaway.walk = (function () {
       this.areas = (def.walk ?? []).map(toPts);
       /** @type {Pt[][]} */
       this.holes = (def.holes ?? []).map(toPts);
+      /** @type {Indexed[]} */
+      this.areaIx = this.areas.map(indexed);
+      /** @type {Indexed[]} */
+      this.holeIx = this.holes.map(indexed);
+      /** @type {[Pt, Pt, number, number, number, number][]} every edge with its box (x0, y0, x1, y1), for the line of sight */
+      this.edges = [];
+      for (const poly of [...this.areas, ...this.holes]) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const p = poly[j], q = poly[i];
+        this.edges.push([p, q, Math.min(p.x, q.x), Math.min(p.y, q.y), Math.max(p.x, q.x), Math.max(p.y, q.y)]);
+      }
       /** @type {Pt[]} graph nodes: every corner that lies in the walkable area */
       this.nodes = [];
       for (const poly of [...this.areas, ...this.holes]) for (const p of poly) {
@@ -77,16 +130,59 @@ Cutaway.walk = (function () {
 
     /** Is p walkable? Points on (or within half a pixel of) an edge count as inside. @param {Pt} p */
     inside(p) {
-      const inArea = this.areas.some((/** @type {Pt[]} */ a) => inPoly(p, a) || edgeDist(p, a) <= EPS);
-      return inArea && !this.holes.some((/** @type {Pt[]} */ h) => inPoly(p, h) && edgeDist(p, h) > EPS);
+      return this.areaIx.some((ix) => inIx(ix, p) || nearIx(ix, p)) && !this.holeIx.some((ix) => inIx(ix, p) && !nearIx(ix, p));
+    }
+
+    /** Is p inside the area itself, not only within half a pixel of its edge? @param {Pt} p */
+    within(p) {
+      return this.areaIx.some((ix) => inIx(ix, p)) && !this.holeIx.some((ix) => inIx(ix, p));
+    }
+
+    /** Is p off every edge (a line running along an edge between two places where it meets others stays on it)? @param {Pt} p */
+    offEdge(p) {
+      for (const [e, f, x0, y0, x1, y1] of this.edges) {
+        if (p.x < x0 - 1e-6 || p.x > x1 + 1e-6 || p.y < y0 - 1e-6 || p.y > y1 + 1e-6) continue;
+        const q = project(p, e, f);
+        if (dist(p, q) < 1e-6) return false;
+      }
+      return true;
     }
 
     /** Can one walk from a to b in a straight line? @param {Pt} a @param {Pt} b */
     visible(a, b) {
-      const n = Math.max(1, Math.ceil(dist(a, b) / STEP));
-      for (let i = 0; i <= n; i++) {
-        const t = i / n;
-        if (!this.inside({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })) return false;
+      const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+      if (len2 < 1e-12) return this.inside(a);
+      // most lines between far corners leave the area: a few points first say so cheaply
+      for (const t of [0.5, 0.25, 0.75]) if (!this.inside({ x: a.x + dx * t, y: a.y + dy * t })) return false;
+      // where the line meets an edge (crossing it, touching it, a corner on it): between two of these it is all in or all out
+      const ts = [0, 1];
+      const x0 = Math.min(a.x, b.x) - EPS, y0 = Math.min(a.y, b.y) - EPS, x1 = Math.max(a.x, b.x) + EPS, y1 = Math.max(a.y, b.y) + EPS;
+      for (const [p, q, ex0, ey0, ex1, ey1] of this.edges) {
+        if (ex1 < x0 || ex0 > x1 || ey1 < y0 || ey0 > y1) continue;
+        const ex = q.x - p.x, ey = q.y - p.y, den = dx * ey - dy * ex;
+        if (Math.abs(den) > 1e-9) {
+          const t = ((p.x - a.x) * ey - (p.y - a.y) * ex) / den, u = ((p.x - a.x) * dy - (p.y - a.y) * dx) / den;
+          if (t > 0 && t < 1 && u > -1e-9 && u < 1 + 1e-9) ts.push(t);
+        } else {
+          // parallel: the edge's ends where they lie on the line
+          for (const e of [p, q]) {
+            const t = ((e.x - a.x) * dx + (e.y - a.y) * dy) / len2;
+            if (t > 0 && t < 1 && Math.abs((e.x - a.x) * dy - (e.y - a.y) * dx) / Math.sqrt(len2) < 1e-6) ts.push(t);
+          }
+        }
+      }
+      ts.sort((m, n) => m - n);
+      const at = (/** @type {number} */ t) => ({ x: a.x + dx * t, y: a.y + dy * t });
+      for (let i = 0; i < ts.length; i++) {
+        if (!this.inside(at(ts[i]))) return false;
+        if (i + 1 >= ts.length || ts[i + 1] - ts[i] <= 1e-9) continue;
+        const m = at((ts[i] + ts[i + 1]) / 2);
+        if (!this.inside(m)) return false;
+        // in only by the half pixel beside an edge (not on it): it runs outside close by, and may drift further out; look along it
+        if (!this.within(m) && this.offEdge(m)) {
+          const n = Math.max(1, Math.ceil(Math.sqrt(len2) * (ts[i + 1] - ts[i]) / 0.5));
+          for (let k = 1; k < n; k++) if (!this.inside(at(ts[i] + (ts[i + 1] - ts[i]) * k / n))) return false;
+        }
       }
       return true;
     }

@@ -50,4 +50,30 @@ export default function (t) {
   let ok2 = true; p = { x: 5, y: 10 };
   for (const q of pp) { if (!U.visible(p, q)) ok2 = false; p = q; }
   t.ok("overlapping polygons work as one area", ok2 && pp.at(-1).y === 75, JSON.stringify(pp));
+
+  // a big room (a market at 4x4 screens): a wavy band with 60 stalls in it, about 300 corners. The line of sight checks only where
+  // a line meets an edge, so the map builds quickly; it says what a check every half pixel says, but for lines that graze a corner
+  // or run along an edge by less than a pixel
+  const top = [], bottom = [];
+  for (let x = 0; x <= 1280; x += 16) { top.push(x, Math.round(120 + 40 * Math.sin(x / 150))); bottom.unshift(x, Math.round(600 + 40 * Math.sin(x / 130 + 1))); }
+  const stalls = [];
+  for (let i = 0; i < 60; i++) { const x = 30 + (i % 12) * 104 + (i * 37) % 20, y = 210 + Math.floor(i / 12) * 72 + (i * 13) % 17; stalls.push([x, y, x + 34, y, x + 34, y + 22, x, y + 22]); }
+  const t0 = Date.now(), big = C.walk.create({ walk: [[...top, ...bottom]], holes: stalls }), ms = Date.now() - t0;
+  t.ok("a big room's walk map builds quickly", ms < 2000 && big.nodes.length > 250, `${ms} ms, ${big.nodes.length} corners`);
+  const sampled = (a, b) => { const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.25)); for (let i = 0; i <= n; i++) if (!big.inside({ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n })) return false; return true; };
+  const edgeNear = (q) => [...big.areas, ...big.holes].some((poly) => poly.some((v, i) => { const w = poly[(i + 1) % poly.length], P = C.walk.project(q, v, w); return Math.hypot(P.x - q.x, P.y - q.y) < 1; }));
+  let differ = 0, far = 0;
+  for (let i = 0; i < big.nodes.length; i += 3) for (let j = i + 1; j < big.nodes.length; j += 7) {
+    const a = big.nodes[i], b = big.nodes[j];
+    if (sampled(a, b) === big.visible(a, b)) continue;
+    differ++;
+    // where the sampled check finds it outside, it is never more than a pixel from an edge
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.25);
+    for (let k = 0; k <= n; k++) { const q = { x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n }; if (!big.inside(q) && !edgeNear(q)) far++; }
+  }
+  t.ok("a big room's line of sight: as a check every quarter pixel, but by under a pixel at an edge", far === 0, `${differ} differ, ${far} points far from an edge`);
+  const route = big.path({ x: 10, y: 180 }, { x: 1270, y: 560 });
+  let clear = true, from = { x: 10, y: 180 };
+  for (const q of route) { if (!big.visible(from, q)) clear = false; from = q; }
+  t.ok("a big room: a path across it, every leg in sight", clear && route.at(-1).x === 1270, JSON.stringify(route));
 }
