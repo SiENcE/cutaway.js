@@ -158,6 +158,41 @@ Cutaway.actor("pip", {
   (and `face`) on the actor says where to stand instead: someone behind a counter is talked to from its
   front (`face` then is the way the one played looks there, and neither turns).
 
+## Extras
+
+People who only make a room lively: a crowd, passers-by, a market's bustle. Load `extras.js` (after
+`time.js`) and give a room its `extras`:
+
+```js
+extras: [
+  { costume: { idle: { down: "man_idle_d", up: "man_idle_u", right: "man_idle_r" }, walk: { ... } },
+    at: [210, 300], path: [[480, 300], [480, 360]], loop: "back", speed: [24, 12], pause: 800 },  // walks there and back
+  { costume: { idle: "woman_idle_r" }, at: [140, 280], facing: "left" },                           // stands about
+  { costume: { idle: "guard_idle_r" }, at: [600, 200], block: true },                               // stands in the way
+]
+```
+
+- They are not actors: no id, nothing in `Cutaway.actors`, not saved, not clickable, never seen by the
+  solver, the graph or `debug.settle()`. Each room load starts them afresh where their data puts them;
+  as long as the one played doesn't move they move the same way every time (screenshots repeat).
+- A walking one goes from `at` through `path`, then on to `at` again (`loop: "around"`, the default) or
+  the same way back (`"back"`), at `speed` (px/s along x and y, slower up and down like the actors),
+  standing `pause` ms at each point.
+- A standing one plays its idle in its own time (no two in step), turns now and then to one of `turns`
+  (default: the ways its idle can face; `false`: never) and back to `facing`, turns to look at the one
+  played when she comes within `notice` px (default 24; 0: never), and leans `give` px (default 3)
+  away from whoever passes closer.
+- **They never stand in the way of the one played or of the actors.** They make way: a walking one
+  that meets someone steps aside just far enough (to its right for someone coming towards it, else away
+  from them; at most `side` px, default 14, and only where the walk map lets it stand), else waits, and
+  after 2.5 s turns back the way it came. Two walking ones pass each other on their right. The one
+  played is never held up, so a click walks exactly as in a room without them.
+- `space: [w, h]` is the room an extra keeps round its feet (half width and half height, default
+  [7, 4]); nobody walks into it. Where a crowd must not be walked through, leave it out of the walk
+  map, or give a standing extra `block: true`: its space is cut out of the walk map (a hole, the same
+  for the solver; its `if` isn't asked there).
+- `if: cond` shows it only while the condition holds.
+
 ## Items
 
 ```js
@@ -510,6 +545,17 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 - Recorded sounds: `{ sample: "data:audio/ogg;base64,...", gain, rate }`, loops
   `{ loop: { sample, gain } }` (the editor's Sound tab imports them).
 - Play one: `{ sfx: "boing", at: [x, y] }` (pans with the position).
+- **Sound places**: a sound at a room point is heard from the listener (the one played, where she
+  stands; else the middle of the view): full within `near` px (default a quarter of `reach`), falling
+  off, squared as the ear hears it, to nothing at `reach` (default 240), to the side it is on (by how
+  far across half the screen, never wholly in one ear), and duller with distance (a lowpass down to
+  900 Hz at the reach). Ten times a second it is heard anew as the listener walks.
+  - an ambience loop: `ambience: [{ sfx: "wok", at: [420, 300], reach: 260, near: 40, gain: 1 }]`
+    (a market: each stall's sound where it is; loops without `at` play everywhere);
+  - a room's music: `music: { theme: "radio_song", speaker: 1, at: [430, 310], reach: 300 }` (a radio
+    on a stall: the music bus goes through the place, `Cutaway.audio.place`);
+  - a one-shot: `{ sfx: "cleaver", at: [x, y], reach: 200 }`.
+  `Cutaway.sfx.heard(place, point)`, `heardNow()` and `listener()` say how it is heard (tests, tools).
 
 ## Music
 

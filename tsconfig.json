@@ -30,6 +30,7 @@
     "src/post.js",
     "src/script.js",
     "src/time.js",
+    "src/extras.js",
     "src/ui.js",
     "src/cinema.js",
     "src/sequence.js",

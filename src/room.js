@@ -86,6 +86,7 @@
  * @property {Script} [enter]           runs every time the room is entered
  * @property {any} [music]              music state for the room (see the music director)
  * @property {LightDef} [light]         runtime light: ambient for actors, flickering and added lamps
+ * @property {ExtraDef[]} [extras]     people who only make it lively (extras.js): not actors, not saved, never in the way
  * @property {FxDef[]} [fx]             effects: haze, dust, rain, drips, sparkles, steam
  * @property {(string | {sfx: string, gain?: number})[]} [ambience]  sound loops while the room shows
  * @property {{far: [number, number], near: [number, number]}} [scale]  actor scale by depth: [y, scale]
@@ -307,10 +308,13 @@ Cutaway.scene = (function () {
     Cutaway.events.emit("room.entered", o.peek ? { id, peek: true } : { id });
   }
 
+  /** A room's holes: its own and the extras that block (extras.js). @param {Room} def */
+  function holesOf(def) { return (def.holes ?? []).concat(Cutaway.extras ? Cutaway.extras.holes(def) : []); }
+
   /** The walk map of a room, built once (the visibility graph is costly). @param {Room} def */
   function mapOf(def) {
     let m = walkMaps.get(def);
-    if (!m) { m = Cutaway.walk.create({ walk: def.walk ?? [], holes: def.holes ?? [] }); walkMaps.set(def, m); }
+    if (!m) { m = Cutaway.walk.create({ walk: def.walk ?? [], holes: holesOf(def) }); walkMaps.set(def, m); }
     return m;
   }
 
@@ -555,7 +559,7 @@ Cutaway.scene = (function () {
   /** Rebuild the current room's walk map after its polygons changed (the room editor). */
   function refresh() {
     if (!current) return;
-    walkMap = Cutaway.walk.create({ walk: current.walk ?? [], holes: current.holes ?? [] });
+    walkMap = Cutaway.walk.create({ walk: current.walk ?? [], holes: holesOf(current) });
     walkMaps.set(current, walkMap);
   }
 
@@ -606,6 +610,9 @@ Cutaway.scene = (function () {
     /** @type {Drawable[]} */
     const people = [];
     for (const a of actorsHere()) people.push({ baseline: a.y, x: a.x, box: () => a.box(), silhouette: (c) => a.draw(c),
+      draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
+    // the extras (extras.js) are drawn as the actors are, sorted with them
+    for (const a of Cutaway.extras ? Cutaway.extras.here() : []) people.push({ baseline: a.y, x: a.x, box: () => a.box(), silhouette: (c) => a.draw(c),
       draw: (c) => a.draw(c, lit ? Cutaway.light.sample(a.x, a.y - a.height() / 2, { base: true }) : undefined) });
     let order;
     if (fronts) order = orderWithFronts(list, people);

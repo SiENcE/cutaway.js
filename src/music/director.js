@@ -15,8 +15,9 @@
 
 /**
  * speaker: 0..1, how much it sounds like a small speaker in the scene; fade: seconds to get there (also
- * how long a stop fades out, and how long a theme that starts from silence fades in).
- * @typedef {{theme?: string, section?: string, intensity?: number, speaker?: number, fade?: number, stop?: boolean}} MusicState
+ * how long a stop fades out, and how long a theme that starts from silence fades in). at, reach, near (a room's music
+ * only): the music plays at that room point (a radio on a stall), heard by distance (sfx.js, "sound places").
+ * @typedef {{theme?: string, section?: string, intensity?: number, speaker?: number, fade?: number, stop?: boolean, at?: [number, number], reach?: number, near?: number}} MusicState
  */
 
 Cutaway.music = (function () {
@@ -158,6 +159,7 @@ Cutaway.music = (function () {
     fader = null;
     Cutaway.audio.init({ context: c });
     Cutaway.audio.speaker(0, 0, 0);
+    Cutaway.audio.place({}, 0);                       // a render is heard from nowhere in particular: full and in the middle
     player = makePlayer();
     wanted = { intensity: 0.5 };
     log = o.onEvent ?? null;

@@ -298,6 +298,13 @@ export function validate(C, o = {}) {
     room_extras(r, id, w);
   }
 
+  /** A sound place: at a room point, a reach beyond its near. @param {any} p @param {string} where */
+  function place(p, where) {
+    if (!(Array.isArray(p.at) && p.at.length === 2 && p.at.every(Number.isFinite))) err(where + ".at", "at is a room point [x, y]");
+    if (p.reach !== undefined && !(p.reach > 0)) err(where + ".reach", "reach is a distance in px, over 0");
+    if (p.near !== undefined && !(p.near >= 0 && p.near < (p.reach ?? 240))) err(where + ".near", "near is a distance in px under the reach");
+  }
+
   /** light, effects, ambience and depth scale of a room */
   function room_extras(r, id, w) {
     const color = (c, where) => { if (c !== undefined && !/^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(c)) err(where, `colour "${c}" is not #rrggbb`); };
@@ -351,7 +358,24 @@ export function validate(C, o = {}) {
     for (const a of r.ambience ?? []) {
       const n = typeof a === "string" ? a : a?.sfx;
       if (C.sfx && !C.sfx.get(n)?.loop) err(w + ".ambience", `"${n}" is not a sound loop`);
+      if (typeof a === "object" && a?.at !== undefined) place(a, `${w}.ambience.${n}`);
     }
+    if (r.music && typeof r.music === "object" && r.music.at !== undefined) place(r.music, w + ".music");
+    // extras (extras.js): their costumes exist; where they stand and walk is walkable
+    const xmap = r.extras?.length ? C.walk.create({ walk: r.walk ?? [], holes: r.holes ?? [] }) : null;
+    (r.extras ?? []).forEach((x, i) => {
+      const xw = `${w}.extras.${i}`;
+      if (!C.extras) { err(xw, "a room's extras need extras.js loaded (after time.js)"); return; }
+      if (!x?.costume?.idle) { err(xw, "an extra needs a costume with an idle animation"); return; }
+      for (const [k, e] of Object.entries(x.costume)) for (const n of typeof e === "string" ? [e] : Object.values(e ?? {})) asset(n, `${xw}.costume.${k}`);
+      if (x.path?.length && !x.costume.walk) err(xw, "an extra with a path needs a walk animation");
+      const pts = [x.at, ...(x.path ?? [])];
+      if (!pts.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite))) { err(xw, "at and path are [x, y] points"); return; }
+      if (x.loop !== undefined && x.loop !== "around" && x.loop !== "back") err(xw + ".loop", 'loop is "around" or "back"');
+      if (x.block && x.path?.length) warn(xw, "block only holds an extra that stands (one with a path walks out of its hole)");
+      if (x.if !== undefined) cond(x.if, id, xw + ".if");
+      if (xmap && (r.walk ?? []).length) for (const p of pts) if (!xmap.inside({ x: p[0], y: p[1] })) warn(xw, `[${p}] is outside the walk map: it would stand or walk where nobody can`);
+    });
     if (r.scale) {
       const ok = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite) && p[1] > 0;
       if (!ok(r.scale.far) || !ok(r.scale.near)) err(w + ".scale", "scale is { far: [y, scale], near: [y, scale] }");

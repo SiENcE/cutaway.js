@@ -1,5 +1,6 @@
 // Cutaway.js audio: the WebAudio graph every sound goes through.
-//   music bus -> tone ┐  (tone: a small speaker on the scene's music, e.g. a radio; Cutaway.audio.speaker)
+//   music bus -> tone -> place ┐  (tone: a small speaker on the scene's music, e.g. a radio; Cutaway.audio.speaker;
+//                               place: where that music plays in the room, by distance: Cutaway.audio.place)
 //   voice bus ────────├─> master gain -> compressor -> speakers
 //   sfx bus   ┘
 //   reverb send (convolver with a generated impulse) and delay send feed the master too.
@@ -28,6 +29,11 @@ Cutaway.audio = (function () {
   /** @type {Tone | null} */
   let tone = null;
   let speakerAmount = 0;
+  /** @typedef {{lp: BiquadFilterNode, gain: GainNode, pan: StereoPannerNode}} Place */
+  /** @type {Place | null} */
+  let placeNodes = null;
+  /** @type {{gain: number, pan: number, cutoff: number}} where the music is heard from (Cutaway.audio.place) */
+  let placeNow = { gain: 1, pan: 0, cutoff: 20000 };
   const volume = { master: 0.8, music: 0.7, voice: 0.8, sfx: 0.8 };
   /** @type {(() => void)[]} */
   const readyFns = [];
@@ -69,7 +75,9 @@ Cutaway.audio = (function () {
     master.connect(comp).connect(c.destination);
     const hp = c.createBiquadFilter(), lp = c.createBiquadFilter(), mid = c.createBiquadFilter();
     hp.type = "highpass"; lp.type = "lowpass"; mid.type = "peaking"; mid.frequency.value = 1500; mid.Q.value = 0.9;
-    music.connect(hp).connect(lp).connect(mid).connect(master);
+    const plp = c.createBiquadFilter(), pgain = g(), ppan = c.createStereoPanner();
+    plp.type = "lowpass"; plp.frequency.value = 20000;
+    music.connect(hp).connect(lp).connect(mid).connect(plp).connect(pgain).connect(ppan).connect(master);
     for (const b of [voice, sfx]) b.connect(master);
     const conv = c.createConvolver();
     conv.buffer = impulse(c, 2.4, 2.6);
@@ -87,7 +95,9 @@ Cutaway.audio = (function () {
     ctx = c;
     buses = { master, music, voice, sfx, reverb, hall, delay };
     tone = { hp, lp, mid };
+    placeNodes = { lp: plp, gain: pgain, pan: ppan };
     speaker(speakerAmount, 0);
+    place(placeNow, 0);
     applyVolumes();
     if (!o.context) {                                 // offline renders don't start the game's sound
       if (held && "suspend" in c) /** @type {AudioContext} */ (c).suspend();
@@ -117,6 +127,21 @@ Cutaway.audio = (function () {
       else if (name === "mid") p.linearRampToValueAtTime(target[name], t + seconds);
       else p.exponentialRampToValueAtTime(target[name], t + seconds);
     }
+  }
+
+  /**
+   * Where the music is heard from: a source in the room (a radio on a stall) heard from where the one played
+   * stands: its loudness (0..1), its side (-1..1) and how dull the distance makes it (a lowpass, Hz). Glides
+   * there over `seconds` (the sound places of sfx.js call it as the listener moves).
+   * @param {{gain?: number, pan?: number, cutoff?: number}} p @param {number} [seconds]
+   */
+  function place(p, seconds = 0.08) {
+    placeNow = { gain: p.gain ?? 1, pan: p.pan ?? 0, cutoff: p.cutoff ?? 20000 };
+    if (!ctx || !placeNodes) return;
+    const t = ctx.currentTime, k = Math.max(0.001, seconds / 3);
+    placeNodes.gain.gain.setTargetAtTime(placeNow.gain, t, k);
+    placeNodes.pan.pan.setTargetAtTime(placeNow.pan, t, k);
+    placeNodes.lp.frequency.setTargetAtTime(placeNow.cutoff, t, k);
   }
 
   function applyVolumes() {
@@ -179,7 +204,7 @@ Cutaway.audio = (function () {
   }
 
   return {
-    init, hook, impulse, speaker, autoplay, hold,
+    init, hook, impulse, speaker, place, autoplay, hold,
     /** Is the sound held (the editor)? */
     get held() { return held; },
     /**
@@ -192,10 +217,12 @@ Cutaway.audio = (function () {
     set quiet(v) { quiet = v; },
     /** How much the music sounds like a small speaker now (the last value asked for). */
     get speakerAmount() { return speakerAmount; },
+    /** Where the music is heard from now (the last place asked for). */
+    get placeNow() { return { ...placeNow }; },
     /** The current context and buses, to put back after an offline render. */
-    save() { return { ctx, buses, tone, speakerAmount }; },
-    /** @param {{ctx: BaseAudioContext | null, buses: Buses | null, tone: Tone | null, speakerAmount: number}} s */
-    restore(s) { ctx = s.ctx; buses = s.buses; tone = s.tone; speakerAmount = s.speakerAmount; },
+    save() { return { ctx, buses, tone, speakerAmount, placeNodes, placeNow }; },
+    /** @param {{ctx: BaseAudioContext | null, buses: Buses | null, tone: Tone | null, speakerAmount: number, placeNodes?: Place | null, placeNow?: {gain: number, pan: number, cutoff: number}}} s */
+    restore(s) { ctx = s.ctx; buses = s.buses; tone = s.tone; speakerAmount = s.speakerAmount; placeNodes = s.placeNodes ?? null; placeNow = s.placeNow ?? placeNow; },
     /** The context, or null until audio is unlocked. */
     get ctx() { return ctx; },
     get buses() { return buses; },

@@ -2,6 +2,9 @@
 //   Cutaway.sfx.define("boing", { tone: { wave: "triangle", from: 220, to: 660, ms: 180 } })
 //   { sfx: "thump" }   { sfx: "door", at: [280, 120] }   (at = pans with the position on screen)
 //   room: { ambience: ["rain", { sfx: "hum", gain: 0.5 }] }   loops while the room is shown
+//   room: { ambience: [{ sfx: "wok", at: [420, 300], reach: 260 }] }   a loop at a place: louder, more to one side and
+//     clearer the closer the listener is (the one played, else the middle of the view); a room's music can say the same
+//     (`music: { theme, at, reach }`: a radio on a stall), and so can a one-shot ({ sfx, at, reach }). "Sound places".
 // A sound is a list of parts that start together (or `at` ms later):
 //   tone   { wave, from, to, ms, attack, gain, vibrato: [rate, cents] }   pitch sweep (Hz or note names)
 //   noise  { filter: "lowpass" | "highpass" | "bandpass", from, to, q, ms, attack, gain }   filtered noise sweep
@@ -27,7 +30,9 @@ Cutaway.sfx = (function () {
   const defs = new Map();
   /** @type {WeakMap<BaseAudioContext, AudioBuffer>} */
   const noiseBufs = new WeakMap();
-  /** @type {{key: string, stop: () => void}[]} */
+  /** @typedef {{at: [number, number], reach?: number, near?: number}} Place */
+  /** @typedef {{gain: number, pan: number, cutoff: number}} Heard */
+  /** @type {{key: string, stop: () => void, place?: Place, set?: (h: Heard, seconds: number) => void}[]} */
   let loops = [];
   /** @type {any[]} the ambience the room asked for (started once audio exists) */
   let wantAmbience = [];
@@ -84,7 +89,7 @@ Cutaway.sfx = (function () {
   /**
    * Play a sound now (or at `time` on the audio clock).
    * @param {string} name
-   * @param {{pan?: number, gain?: number, time?: number, at?: [number, number]}} [o]
+   * @param {{pan?: number, gain?: number, time?: number, at?: [number, number], reach?: number, near?: number}} [o]
    * @returns {boolean} false if it didn't play (no audio yet, unknown name)
    */
   function play(name, o = {}) {
@@ -97,7 +102,7 @@ Cutaway.sfx = (function () {
   /**
    * Play a sound's parts into a destination (the sfx bus, or an offline render's).
    * @param {BaseAudioContext} c @param {AudioNode} dest @param {SfxDef} d
-   * @param {{pan?: number, gain?: number, time?: number, at?: [number, number]}} o
+   * @param {{pan?: number, gain?: number, time?: number, at?: [number, number], reach?: number, near?: number}} o
    * @returns {number} when it ends (audio clock)
    */
   function sound(c, dest, d, o) {
@@ -105,7 +110,8 @@ Cutaway.sfx = (function () {
     const out = c.createGain(), pan = c.createStereoPanner();
     out.gain.value = (d.gain ?? 1) * (o.gain ?? 1);
     let p = o.pan ?? 0;
-    if (o.at) p = Cutaway.util.clamp((Cutaway.scene.toScreen(o.at[0], o.at[1]).x / Cutaway.display.width - 0.5) * 1.2, -0.8, 0.8);
+    if (o.at && o.reach) { const h = heard({ at: o.at, reach: o.reach, near: o.near }, listener()); p = h.pan; out.gain.value *= h.gain; }
+    else if (o.at) p = Cutaway.util.clamp((Cutaway.scene.toScreen(o.at[0], o.at[1]).x / Cutaway.display.width - 0.5) * 1.2, -0.8, 0.8);
     pan.pan.value = p;
     out.connect(pan).connect(dest);
     let end = t0;
@@ -173,15 +179,50 @@ Cutaway.sfx = (function () {
   }
 
   /**
-   * Start a loop; returns a stop function (fades out).
-   * @param {LoopDef} l @param {number} gain
+   * Where the room is heard from: the one played, where she stands in the room shown, else the middle of the view.
+   * @returns {{x: number, y: number}}
    */
-  function startLoop(l, gain) {
+  function listener() {
+    const a = Cutaway.scene.active, room = Cutaway.scene.room;
+    if (a && room && a.room === room.id) return { x: a.x, y: a.y };
+    const cam = Cutaway.scene.camera, d = Cutaway.display;
+    return { x: (cam?.x ?? 0) + (d?.width ?? 320) / 2, y: (cam?.y ?? 0) + (d?.height ?? 180) / 2 };
+  }
+
+  /**
+   * How a sound at a place is heard from p: full within `near` (default a quarter of the reach), falling off
+   * (squared, as the ear hears it) to nothing at `reach` (default 240 px); to the side it is on, by how far
+   * across half the screen; duller with distance (a lowpass from open down to 900 Hz at the reach).
+   * @param {Place} s @param {{x: number, y: number}} p @returns {Heard}
+   */
+  function heard(s, p) {
+    const reach = s.reach ?? 240, near = Math.min(s.near ?? reach / 4, reach - 1);
+    const d = Math.hypot(s.at[0] - p.x, s.at[1] - p.y), k = Math.max(0, Math.min(1, (d - near) / (reach - near)));
+    const half = (Cutaway.display?.width ?? 320) / 2;
+    return { gain: (1 - k) * (1 - k), pan: Math.max(-0.8, Math.min(0.8, (s.at[0] - p.x) / half * 0.8)), cutoff: 20000 * Math.pow(900 / 20000, k) };
+  }
+
+  /**
+   * Start a loop; returns a stop function (fades out) and, for one at a place, a setter for how it is heard.
+   * @param {LoopDef} l @param {number} gain @param {Place} [place]
+   * @returns {{stop: () => void, set?: (h: Heard, seconds: number) => void}}
+   */
+  function startLoop(l, gain, place) {
     const c = /** @type {BaseAudioContext} */ (Cutaway.audio.ctx), b = /** @type {Buses} */ (Cutaway.audio.buses);
     const out = c.createGain(), t = c.currentTime;
     out.gain.setValueAtTime(0, t);
     out.gain.linearRampToValueAtTime((l.gain ?? 0.1) * gain, t + 1.2);
-    out.connect(b.sfx);
+    /** @type {((h: Heard, seconds: number) => void) | undefined} */
+    let set;
+    if (place) {                                       // at a place: duller, to one side and quieter by distance
+      const lp = c.createBiquadFilter(), pan = c.createStereoPanner(), dist = c.createGain(), h = heard(place, listener());
+      lp.type = "lowpass"; lp.frequency.value = h.cutoff; pan.pan.value = h.pan; dist.gain.value = h.gain;
+      out.connect(lp).connect(pan).connect(dist).connect(b.sfx);
+      set = (hh, seconds) => {
+        const now = c.currentTime, k = Math.max(0.001, seconds / 3);
+        dist.gain.setTargetAtTime(hh.gain, now, k); pan.pan.setTargetAtTime(hh.pan, now, k); lp.frequency.setTargetAtTime(hh.cutoff, now, k);
+      };
+    } else out.connect(b.sfx);
     /** @type {AudioScheduledSourceNode[]} */
     const srcs = [];
     if (l.noise) {
@@ -217,12 +258,13 @@ Cutaway.sfx = (function () {
       const tick = () => {
         const cc = Cutaway.audio.ctx;
         if (!cc) return;
-        play("_tick", { gain: l.crackle, pan: Math.random() * 1.2 - 0.6 });
+        const h = place ? heard(place, listener()) : null;      // a placed loop's ticks come from its side
+        play("_tick", h ? { gain: (l.crackle ?? 0) * h.gain, pan: h.pan } : { gain: l.crackle, pan: Math.random() * 1.2 - 0.6 });
         crackle = window.setTimeout(tick, 40 + Math.random() * 260);
       };
       crackle = window.setTimeout(tick, 100);
     }
-    return () => {
+    const stop = () => {
       clearTimeout(crackle);
       const now = c.currentTime;
       out.gain.cancelScheduledValues(now);
@@ -231,24 +273,52 @@ Cutaway.sfx = (function () {
       for (const s of srcs) s.stop(now + 0.9);
       setTimeout(() => out.disconnect(), 1200);
     };
+    return { stop, set };
   }
 
   /**
-   * Set the ambience loops (a room's `ambience`): loops that keep playing carry on, others fade.
-   * @param {(string | {sfx: string, gain?: number})[]} want
+   * Set the ambience loops (a room's `ambience`): loops that keep playing carry on, others fade. One with `at`
+   * plays at that room point (`reach`, `near`: see heard()).
+   * @param {(string | {sfx: string, gain?: number, at?: [number, number], reach?: number, near?: number})[]} want
    */
   function ambience(want) {
     wantAmbience = want ?? [];
     if (!Cutaway.audio.ctx) return;
-    const next = wantAmbience.map((w) => (typeof w === "string" ? { sfx: w, gain: 1 } : { sfx: w.sfx, gain: w.gain ?? 1 }));
-    const keys = next.map((n) => `${n.sfx}@${n.gain}`);
+    const next = wantAmbience.map((w) => (typeof w === "string" ? { sfx: w, gain: 1, place: undefined }
+      : { sfx: w.sfx, gain: w.gain ?? 1, place: w.at ? { at: w.at, reach: w.reach, near: w.near } : undefined }));
+    const keys = next.map((n) => `${n.sfx}@${n.gain}` + (n.place ? `@${n.place.at}/${n.place.reach}/${n.place.near}` : ""));
     loops = loops.filter((l) => { if (keys.includes(l.key)) return true; l.stop(); return false; });
     for (const [i, n] of next.entries()) {
       if (loops.some((l) => l.key === keys[i])) continue;
       const d = defs.get(n.sfx);
-      if (d?.loop) loops.push({ key: keys[i], stop: startLoop(d.loop, n.gain) });
+      if (d?.loop) loops.push({ key: keys[i], place: n.place, ...startLoop(d.loop, n.gain, n.place) });
     }
   }
+
+  /**
+   * How the room's placed sounds are heard now from where the listener is: each placed loop, and the room's
+   * music if it plays at a place (else full and in the middle).
+   * @returns {{loops: Heard[], music: Heard}}
+   */
+  function heardNow() {
+    const p = listener(), m = /** @type {any} */ (Cutaway.scene.room)?.music;
+    return {
+      loops: loops.filter((l) => l.place).map((l) => heard(/** @type {Place} */ (l.place), p)),
+      music: m && typeof m === "object" && m.at ? heard(m, p) : { gain: 1, pan: 0, cutoff: 20000 },
+    };
+  }
+
+  // the sound places follow the listener: ten times a second the placed loops and a room's placed music are heard anew
+  let since = 0;
+  Cutaway.clock.onUpdate((/** @type {number} */ dt) => {
+    since += dt;
+    if (since < 100 || !Cutaway.scene.room) return;
+    since = 0;
+    const p = listener();
+    for (const l of loops) if (l.place && l.set) l.set(heard(l.place, p), 0.15);
+    const want = heardNow().music, was = Cutaway.audio.placeNow;
+    if (Math.abs(was.gain - want.gain) > 0.002 || Math.abs(was.pan - want.pan) > 0.002 || Math.abs(was.cutoff - want.cutoff) > 5) Cutaway.audio.place(want, 0.15);
+  });
 
   /** @param {string} name @param {SfxDef} def */
   function define(name, def) { defs.set(name, def); return name; }
@@ -272,7 +342,7 @@ Cutaway.sfx = (function () {
   define("hum", { loop: { tone: { wave: "sine", freq: 58 }, gain: 0.05 } });
 
   return {
-    define, play, ambience, render,
+    define, play, ambience, render, heard, heardNow, listener,
     /** A recorded sample's bytes decoded for an audio context (once; voices use it too). */
     decode: buffer,
     /**

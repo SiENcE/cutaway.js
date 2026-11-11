@@ -18,7 +18,8 @@
   Cutaway.room("hall", {
     name: "Hall",
     background: "hall_bg",
-    music: { theme: "hall", intensity: 0.4 },
+    // the hall's tune comes from the shelf (a radio up there, say): fuller and more to that side the nearer one is
+    music: { theme: "hall", intensity: 0.4, at: [58, 60], reach: 420, near: 60 },
     // the art is flat (unlit): the sunlight through the window is added at runtime, with a hazy beam
     light: { ambient: 1, lamps: [{ id: "sun", at: [158, 142], r: 46, power: 1.12, color: "#fff4d8", add: true }] },
     fx: [
@@ -62,13 +63,21 @@
     name: "Yard",
     background: "yard_bg",
     music: { theme: "yard", intensity: 0.5 },
-    ambience: [{ sfx: "wind", gain: 0.6 }],
+    // the wind everywhere; the lamp post's transformer hums where it stands
+    ambience: [{ sfx: "wind", gain: 0.6 }, { sfx: "hum", gain: 1.5, at: [270, 120], reach: 160 }],
     scale: { far: [126, 0.86], near: [177, 1] },
     // the lamp post's light is not in the art: it comes on with the lamp (an added, flickering lamp)
     light: { lamps: [{ id: "lamp", at: [270, 80], r: 46, power: 1.15, color: "#ffe28a", flicker: 0.06, add: true, glow: 9, if: "state:lamp=lit" }] },
     fx: [{ kind: "dust", rect: [250, 60, 40, 50], count: 10, color: "#fff2b0", lamp: "lamp" }],
     walk: [[6, 134, 52, 134, 316, 126, 316, 177, 4, 177]],
     holes: [[193, 145, 207, 145, 207, 152, 193, 152]],
+    // passers-by (extras.js), drawn with the robots' own sprites as placeholders: one paces along the fence and back, one
+    // crosses the front, one stands about and turns now and then; all of them make way for Pip and for each other
+    extras: [
+      { costume: { idle: "bolt_idle_r", walk: "bolt_walk_r" }, at: [70, 140], path: [[300, 134]], loop: "back", speed: [14, 7], pause: 900, space: [9, 4] },
+      { costume: { idle: "pip_idle_r", walk: "pip_walk_r" }, at: [296, 170], facing: "left", path: [[30, 168], [120, 160]], speed: [18, 9], space: [7, 4] },
+      { costume: { idle: "pip_idle_r" }, at: [112, 152], facing: "right", space: [7, 4] },
+    ],
     props: [
       { id: "mailbox", image: "mailbox", states: { open: "mailbox_open" }, at: [200, 150] },
       // whoever walks behind the lamp post shows through it
