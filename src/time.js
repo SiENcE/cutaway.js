@@ -16,7 +16,9 @@
 // to: "22:30", room: "cam03", at: [120, 140], face: "se", path: [[120, 140], [160, 120]] }, ...]);
 // outside every entry the actor is in no room. An entry may have an `if`. A `path` is walked round and
 // round while the actor is in the room shown (only for the look: positions aren't part of the state);
-// it pauses while a script runs, and nobody waits for it (Cutaway.debug.settle).
+// it pauses while a script runs, and nobody waits for it (Cutaway.debug.settle). With `once: true` the path
+// is walked once from its first point to its last, and the actor stays there (facing `face`, if given): someone
+// who comes in and stands, or goes out of the picture (a last point off the screen).
 //
 // Moments are scenes in a room within a window of time: Cutaway.moment("ring", { room: "cam04", day: 1,
 // from: "22:30", to: "22:45", play: [...], unseen: [...] }). Once the time is in the window, the moment
@@ -35,6 +37,7 @@
  * @property {[number, number]} [at]
  * @property {Facing} [face]
  * @property {[number, number][]} [path] walked round and round while the room is shown
+ * @property {boolean} [once]   walk the path once, from its first point to its last, and stay there
  */
 /**
  * @typedef {object} MomentDef
@@ -120,7 +123,7 @@ Cutaway.time = (function () {
       if (placed.get(id) === k && a.room === room) continue;
       placed.set(id, k);
       legs.delete(id);
-      const at = e?.at ?? e?.path?.[0];
+      const at = e?.once && e.path?.length ? e.path[0] : e?.at ?? e?.path?.[0];   // a path walked once starts at its beginning
       a.place(room, at ? at[0] : a.x, at ? at[1] : a.y, e?.face);
     }
   }
@@ -214,9 +217,12 @@ Cutaway.time = (function () {
       const a = Cutaway.actors.get(id), e = list[slotOf(list)];
       if (!a || a.room !== room || !e?.path?.length || a.state === "walk") continue;
       if (a.onceDone) continue;                     // playing a one-shot animation
-      const i = ((legs.get(id) ?? 0) + 1) % e.path.length, [x, y] = e.path[i];
+      const cur = legs.get(id) ?? 0;
+      if (e.once && cur >= e.path.length - 1) continue;   // walked once: it stays at the end
+      const i = (cur + 1) % e.path.length, [x, y] = e.path[i];
       legs.set(id, i);
-      a.walkTo(x, y, false, true);
+      const walk = a.walkTo(x, y, false, true);
+      const face = e.face; if (e.once && i === e.path.length - 1 && face) walk?.then?.(() => { if (a.state !== "walk") a.face(face); });
       a.ambient = true;                             // background life: settle() and the tools don't wait for it
     }
   }

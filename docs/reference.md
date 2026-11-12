@@ -360,7 +360,9 @@ Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   //
   (it happened, watched or not), `"seen:ring"` (it was watched).
 - **Routines:** when the time changes, every actor with a routine is put where its first entry that
   holds says (`day`: a number or a list, default every day; `from` up to `to`; `if`). An entry's `path`
-  is walked round and round while its room is shown (the look only: positions aren't saved state).
+  is walked round and round while its room is shown (the look only: positions aren't saved state);
+  with `once: true` it is walked once, from its first point (where the actor is put) to its last, and
+  the actor stays there facing `face`: someone who comes in and stands, or leaves past the screen's edge.
 - **Moments** happen once. Once the time is in the window, a moment plays its `play` script as soon as
   its room is the one shown (it waits for a watcher, within its window); if the window passes and nobody
   watched, it happens unseen and runs `unseen` (what it leaves behind). `next` stops at every
