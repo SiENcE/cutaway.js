@@ -881,22 +881,22 @@ Cutaway.paint = (function () {
   /** Keys while the paint view shows (the editor passes them unless a text field has the focus). @param {KeyboardEvent} e */
   function key(e) {
     if (!doc) return false;
-    const mod = e.ctrlKey || e.metaKey, c = e.code;
+    const mod = e.ctrlKey || e.metaKey, c = e.code, ch = E.letter(e);
     if (mod) {
-      if (c === "KeyC") copy(); else if (c === "KeyX") cut(); else if (c === "KeyV") paste(); else if (c === "KeyA") selectAll(); else return false;
+      if (ch === "c") copy(); else if (ch === "x") cut(); else if (ch === "v") paste(); else if (ch === "a") selectAll(); else return false;
       return true;
     }
     if (e.altKey) return false;
     if (c === "Space") { spaceHeld = true; return true; }
     if (e.shiftKey) {
-      if (c === "KeyM") { mirrorOn = !mirrorOn; updateUi(); schedule(); } else if (c === "KeyH") flip("h"); else if (c === "KeyV") flip("v");
+      if (ch === "m") { mirrorOn = !mirrorOn; updateUi(); schedule(); } else if (ch === "h") flip("h"); else if (ch === "v") flip("v");
       else if (c === "Equal") zoomStep(1); else return false;
       return true;
     }
-    const t = TOOLS.find(([, , k]) => c === "Key" + k);
+    const t = TOOLS.find(([, , k]) => ch === String(k).toLowerCase());
     if (t) { setTool(t[0]); return true; }
-    if (c === "KeyX") { [primary, secondary] = [secondary, primary]; E.refresh(); }
-    else if (c === "KeyO") { onion = !onion; updateUi(); schedule(); }
+    if (ch === "x") { [primary, secondary] = [secondary, primary]; E.refresh(); }
+    else if (ch === "o") { onion = !onion; updateUi(); schedule(); }
     else if (c === "Equal" || c === "NumpadAdd") zoomStep(1);
     else if (c === "Minus" || c === "NumpadSubtract") zoomStep(-1);
     else if (c === "Digit0" || c === "Numpad0") fit();

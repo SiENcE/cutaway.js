@@ -244,9 +244,9 @@
   /** Keys of the tab (and its list). @param {KeyboardEvent} e */
   function keys(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
-    if (e.code === "KeyR") { record(); return true; }
-    if (e.code === "KeyP") { play(); return true; }
-    if (e.code === "KeyN") { next(true); return true; }
+    if (E.letter(e) === "r") { record(); return true; }
+    if (E.letter(e) === "p") { play(); return true; }
+    if (E.letter(e) === "n") { next(true); return true; }
     if (e.code === "Delete") { remove(); return true; }
     return false;
   }

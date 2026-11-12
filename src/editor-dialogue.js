@@ -228,7 +228,7 @@
     const rows = /** @type {HTMLElement[]} */ ([...(root?.querySelectorAll(".cw-ch") ?? [])]), i = rows.indexOf(r);
     const mod = e.ctrlKey || e.metaKey;
     if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { moveChoice(selRow, e.key === "ArrowUp" ? -1 : 1); return true; }
-    if (mod && e.code === "KeyD") { dupChoice(selRow); return true; }
+    if (mod && E.letter(e) === "d") { dupChoice(selRow); return true; }
     if (mod) return false;
     const go = (/** @type {number} */ j) => { const x = rows[Cutaway.util.clamp(j, 0, rows.length - 1)]; if (x) { selRow = x.dataset.row ?? ""; x.focus(); x.scrollIntoView({ block: "nearest" }); } };
     switch (e.key) {

@@ -985,9 +985,20 @@ Cutaway.editor = (function () {
     changed();
   }
 
+  /**
+   * The letter a key types, in lower case, for the editor's shortcuts: by what it types, so Ctrl+Z is the key with Z on it on
+   * every layout (a German keyboard has its Z where an American one has its Y, and KeyboardEvent.code names the place); a key
+   * that types no Latin letter (another script) by its place. "" for no letter.
+   * @param {KeyboardEvent} e
+   */
+  function letter(e) {
+    const k = e.key?.length === 1 ? e.key.toLowerCase() : "";
+    return /^[a-z]$/.test(k) ? k : /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : "";
+  }
+
   /** @param {KeyboardEvent} e */
   function onKey(e) {
-    const mod = e.ctrlKey || e.metaKey;
+    const mod = e.ctrlKey || e.metaKey, ch = letter(e);
     if (menuBox && e.code === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
     if (e.code === "F10") { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (mod && e.code === "Digit0" && !currentView()) { e.preventDefault(); e.stopPropagation(); zoomBy(0); return; }   // the picture fitted again
@@ -997,16 +1008,16 @@ Cutaway.editor = (function () {
       panelDirty = true;
       return;
     }
-    if (mod && e.code === "KeyS") { e.preventDefault(); e.stopPropagation(); if (e.shiftKey) saveAll(); else saveActive(); return; }   // in text fields too
-    if ((mod && e.code === "KeyP") || e.code === "Pause") { e.preventDefault(); e.stopPropagation(); setHold(!holding); return; }       // not the browser's print
+    if (mod && ch === "s") { e.preventDefault(); e.stopPropagation(); if (e.shiftKey) saveAll(); else saveActive(); return; }   // in text fields too
+    if ((mod && ch === "p") || e.code === "Pause") { e.preventDefault(); e.stopPropagation(); setHold(!holding); return; }       // not the browser's print
     if (isField(e.target)) return;                          // the field's own keys (they don't reach the game: guard)
     if (["F9", "F11"].includes(e.code)) return;            // the debug overlay and fullscreen still work
     e.stopPropagation();
     if (e.code === "F8") { e.preventDefault(); step(); return; }
     const lst = /** @type {any} */ (e.target)?.closest?.(".cw-lst"), ctl = lst ? listOf.get(lst) : null;
     if (ctl?.key(e)) { e.preventDefault(); return; }       // a list has the keyboard: it moves, folds, opens
-    if (mod && e.code === "KeyZ") { e.preventDefault(); route(e.shiftKey ? "redo" : "undo"); return; }
-    if (mod && e.code === "KeyY") { e.preventDefault(); route("redo"); return; }
+    if (mod && ch === "z") { e.preventDefault(); route(e.shiftKey ? "redo" : "undo"); return; }
+    if (mod && ch === "y") { e.preventDefault(); route("redo"); return; }
     const v = currentView(), t = activeTab();
     if (v?.key?.(e) || t.key?.(e)) { e.preventDefault(); return; }
     if (e.code === "Escape") { route("selectNone"); return; }
@@ -2164,7 +2175,7 @@ Cutaway.editor = (function () {
   Cutaway.events.on("room.entered", () => { panelDirty = true; });
 
   const api = {
-    open, close, text, geometry, items, problems, save, openRoom, studio, files, ask, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output,
+    open, close, text, geometry, items, problems, save, openRoom, studio, files, ask, saveFile, download, el, button, fmt, unsaved, saveAll, runTask, output, letter,
     list, fold, prefixGroups, playSequence, step, pan, notLoaded, relTo, scrollbars,
     /** Is the game paused by the editor? */
     get paused() { return holding; },

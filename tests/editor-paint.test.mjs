@@ -89,6 +89,11 @@ export default async function (t) {
     t.ok("paint: and the one before", JSON.stringify(await row()) === JSON.stringify(orig), JSON.stringify(await row()));
     await key("KeyY", { ctrlKey: true });
     t.ok("paint: Ctrl+Y redoes", (await row()).every((c) => c === "#ff0000"));
+    // a German keyboard: its Z sits where an American one has its Y (KeyboardEvent.code KeyY), and the other way round
+    await key("KeyY", { key: "z", ctrlKey: true });
+    t.ok("paint: Ctrl+Z on a German keyboard (the key with Z on it, code KeyY) undoes", JSON.stringify(await row()) === JSON.stringify(orig), JSON.stringify(await row()));
+    await key("KeyZ", { key: "y", ctrlKey: true });
+    t.ok("... and its Ctrl+Y (code KeyZ) redoes", (await row()).every((c) => c === "#ff0000"));
     await chrome.ev("Cutaway.editor.menus().find((m) => m[0] === 'Edit')[1][0].run(); 1");
     t.ok("paint: Edit > Undo goes to the paint view", JSON.stringify(await row()) === JSON.stringify(orig));
     await key("KeyY", { ctrlKey: true });

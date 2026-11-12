@@ -485,17 +485,17 @@
       const mod = e.ctrlKey || e.metaKey;
       const go = (/** @type {number} */ j) => { const r = rows[Cutaway.util.clamp(j, 0, rows.length - 1)]; if (r) { selP = r.dataset.p ?? ""; r.focus(); r.scrollIntoView({ block: "nearest" }); } };
       if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { if (selP) move(selP, e.key === "ArrowUp" ? -1 : 1); return true; }
-      if (mod && e.code === "KeyD") { if (selP) dup(selP); return true; }
-      if (mod && (e.code === "KeyC" || e.code === "KeyX")) {
+      if (mod && E.letter(e) === "d") { if (selP) dup(selP); return true; }
+      if (mod && (E.letter(e) === "c" || E.letter(e) === "x")) {
         if (!selP) return true;
         const [l, j] = listAt(parse(selP));
         clip = [JSON.parse(JSON.stringify(l[j]))];
         navigator.clipboard?.writeText(JSON.stringify(l[j])).catch(() => {});
-        if (e.code === "KeyX") del(selP);
-        E.setStatus(e.code === "KeyX" ? "cut a step" : "copied a step");
+        if (E.letter(e) === "x") del(selP);
+        E.setStatus(E.letter(e) === "x" ? "cut a step" : "copied a step");
         return true;
       }
-      if (mod && e.code === "KeyV") { if (clip) insert(clip); return true; }
+      if (mod && E.letter(e) === "v") { if (clip) insert(clip); return true; }
       if (mod) return false;
       switch (e.key) {
         case "ArrowDown": go(i + 1); return true;
