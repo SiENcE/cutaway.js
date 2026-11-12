@@ -50,12 +50,16 @@
  * @property {number} [duration]      seconds the note is held (before the release)
  * @property {number} [velocity]      0..1
  * @property {AudioNode} [out]        default: the music bus
+ * @property {Sends} [sends]          where its reverb, hall, delay and a drum's gated room go (default: the score's)
+ */
+/**
+ * @typedef {{reverb: AudioNode, hall: AudioNode, delay: AudioNode, gated?: {input: AudioNode, gate: GainNode}}} Sends
  */
 
 Cutaway.synth = (function () {
   /** @type {Map<string, InstrumentDef>} */
   const defs = new Map();
-  /** @type {WeakMap<BaseAudioContext, {noise: AudioBuffer, pulses: Map<number, PeriodicWave>, gated: {input: GainNode, gate: GainNode}}>} */
+  /** @type {WeakMap<BaseAudioContext, {noise: AudioBuffer, pulses: Map<number, PeriodicWave>, gated: {input: GainNode, gate: GainNode}, pluckBufs: Map<string, AudioBuffer>}>} */
   const perCtx = new WeakMap();
   /** @type {Map<string, Float32Array>} */
   const plucks = new Map();
@@ -73,6 +77,19 @@ Cutaway.synth = (function () {
   /** @param {number} m */
   function hz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
+  /**
+   * A gated reverb: a bright short room whose output is opened per hit and slammed shut (a drum's `gate`).
+   * @param {BaseAudioContext} c @param {AudioNode} [dest] @returns {{input: GainNode, gate: GainNode}}
+   */
+  function gatedRoom(c, dest) {
+    const input = c.createGain(), conv = c.createConvolver(), gate = c.createGain();
+    conv.buffer = Cutaway.audio.impulse(c, 0.9, 1.2);
+    gate.gain.value = 0;
+    input.connect(conv).connect(gate);
+    if (dest) gate.connect(dest);
+    return { input, gate };
+  }
+
   /** @param {BaseAudioContext} c */
   function shared(c) {
     let s = perCtx.get(c);
@@ -80,14 +97,8 @@ Cutaway.synth = (function () {
     const noise = c.createBuffer(1, c.sampleRate, c.sampleRate), d = noise.getChannelData(0);
     let seed = 99;
     for (let i = 0; i < d.length; i++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; d[i] = seed / 0x3fffffff - 1; }
-    // gated reverb: a bright short room whose output is opened per hit and slammed shut
-    const input = c.createGain(), conv = c.createConvolver(), gate = c.createGain();
-    conv.buffer = Cutaway.audio.impulse(c, 0.9, 1.2);
-    gate.gain.value = 0;
     const buses = Cutaway.audio.buses;
-    input.connect(conv).connect(gate);
-    if (buses) gate.connect(buses.music);
-    s = { noise, pulses: new Map(), gated: { input, gate } };
+    s = { noise, pulses: new Map(), gated: gatedRoom(c, buses?.music), pluckBufs: new Map() };
     perCtx.set(c, s);
     return s;
   }
@@ -118,15 +129,19 @@ Cutaway.synth = (function () {
     return off + r * 1.5;
   }
 
-  /** Output chain: gain -> pan -> out, plus reverb and delay sends. @param {BaseAudioContext} c @param {InstrumentDef} def @param {AudioNode} out */
-  function chain(c, def, out) {
+  /**
+   * Output chain: gain -> pan -> out, plus reverb, hall and delay sends: to the score's (the buses', back into the music)
+   * or to the ones given (a tune played at a place: its own way to the sfx bus's).
+   * @param {BaseAudioContext} c @param {InstrumentDef} def @param {AudioNode} out @param {Sends} [sends]
+   */
+  function chain(c, def, out, sends) {
     const amp = c.createGain(), pan = c.createStereoPanner();
     pan.pan.value = def.pan ?? 0;
     amp.connect(pan).connect(out);
-    const b = Cutaway.audio.buses;
-    if (b && def.reverb) { const s = c.createGain(); s.gain.value = def.reverb; pan.connect(s).connect(b.reverb); }
-    if (b && def.hall && b.hall) { const s = c.createGain(); s.gain.value = def.hall; pan.connect(s).connect(b.hall); }
-    if (b && def.delay) { const s = c.createGain(); s.gain.value = def.delay; pan.connect(s).connect(b.delay); }
+    const w = sends ?? Cutaway.audio.buses;
+    if (w && def.reverb) { const s = c.createGain(); s.gain.value = def.reverb; pan.connect(s).connect(w.reverb); }
+    if (w && def.hall && w.hall) { const s = c.createGain(); s.gain.value = def.hall; pan.connect(s).connect(w.hall); }
+    if (w && def.delay) { const s = c.createGain(); s.gain.value = def.delay; pan.connect(s).connect(w.delay); }
     return amp;
   }
 
@@ -153,7 +168,7 @@ Cutaway.synth = (function () {
   /** @param {BaseAudioContext} c @param {InstrumentDef} def @param {PlayOptions} o @param {AudioNode} out */
   function sub(c, def, o, out) {
     const t = o.time, dur = o.duration ?? 0.2, f = hz(midi(o.note ?? 60) + 12 * (def.octave ?? 0));
-    const amp = chain(c, def, out), filt = c.createBiquadFilter(), F = def.filter ?? {};
+    const amp = chain(c, def, out, o.sends), filt = c.createBiquadFilter(), F = def.filter ?? {};
     filt.type = F.type ?? "lowpass";
     filt.Q.value = F.q ?? 1;
     const base = (F.cutoff ?? 2000) * Math.pow(f / 261.6, F.keyTrack ?? 0.5), peak = base + (F.env ?? 0) * (o.velocity ?? 1);
@@ -179,7 +194,7 @@ Cutaway.synth = (function () {
   /** @param {BaseAudioContext} c @param {InstrumentDef} def @param {PlayOptions} o @param {AudioNode} out */
   function fm(c, def, o, out) {
     const t = o.time, dur = o.duration ?? 0.3, f = hz(midi(o.note ?? 60) + 12 * (def.octave ?? 0));
-    const amp = chain(c, def, out), car = c.createOscillator(), mod = c.createOscillator(), mg = c.createGain();
+    const amp = chain(c, def, out, o.sends), car = c.createOscillator(), mod = c.createOscillator(), mg = c.createGain();
     car.frequency.value = f; mod.frequency.value = f * (def.ratio ?? 2);
     const idx = (def.index ?? 3) * f * (o.velocity ?? 1);
     mg.gain.setValueAtTime(idx, t);
@@ -213,9 +228,11 @@ Cutaway.synth = (function () {
       }
       plucks.set(key, data);
     }
-    const buf = c.createBuffer(1, data.length, c.sampleRate);
-    buf.getChannelData(0).set(data);
-    const src = c.createBufferSource(), amp = chain(c, def, out);
+    // one buffer per string and context, played by every note on it (a new one per note was garbage for the collector)
+    const bufs = shared(c).pluckBufs;
+    let buf = bufs.get(key);
+    if (!buf) { buf = c.createBuffer(1, data.length, c.sampleRate); buf.getChannelData(0).set(data); bufs.set(key, buf); }
+    const src = c.createBufferSource(), amp = chain(c, def, out, o.sends);
     src.buffer = buf;
     const end = t + (o.duration ?? 0.5) + 0.25;
     amp.gain.setValueAtTime((def.gain ?? 0.4) * (o.velocity ?? 1), t);
@@ -228,7 +245,7 @@ Cutaway.synth = (function () {
   /** @param {BaseAudioContext} c @param {InstrumentDef} def @param {PlayOptions} o @param {AudioNode} out */
   function drum(c, def, o, out) {
     const t = o.time, v = (def.gain ?? 0.5) * (o.velocity ?? 1), tune = def.tune ?? 1, sh = shared(c);
-    const amp = chain(c, def, out);
+    const amp = chain(c, def, out, o.sends);
     const noise = (/** @type {number} */ hp, /** @type {number} */ len, /** @type {number} */ level, /** @type {BiquadFilterType} */ type = "highpass") => {
       const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
       src.buffer = sh.noise; f.type = type; f.frequency.value = hp; f.Q.value = type === "bandpass" ? 1.2 : 0.7;
@@ -256,8 +273,10 @@ Cutaway.synth = (function () {
     if (def.gate) {
       const send = c.createGain();
       send.gain.value = 0.9;
-      amp.connect(send).connect(sh.gated.input);
-      const gp = sh.gated.gate.gain;
+      // (a tune at a place has a gated room of its own: one gate shared by two players would be shut by the one on the other)
+      const gated = o.sends?.gated ?? sh.gated;
+      amp.connect(send).connect(gated.input);
+      const gp = gated.gate.gain;
       gp.cancelScheduledValues(t);
       gp.setValueAtTime(0, t); gp.linearRampToValueAtTime(1, t + 0.004);
       gp.setValueAtTime(1, t + def.gate); gp.linearRampToValueAtTime(0, t + def.gate + 0.015);
@@ -284,7 +303,7 @@ Cutaway.synth = (function () {
   }
 
   return {
-    play, midi, hz,
+    play, midi, hz, gatedRoom,
     /** @param {string} name @param {InstrumentDef} def */
     define(name, def) { defs.set(name, def); },
     /** @param {string} name */

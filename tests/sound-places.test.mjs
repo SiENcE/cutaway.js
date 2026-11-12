@@ -42,12 +42,20 @@ export default async function (t) {
 
   // ---- a tune at a place: a loop that plays a theme of the score with a player of its own, beside the room's music (the yard's
   // radio on the mailbox). A stand-in for the browser's audio: every node and parameter takes anything and connects to anything.
+  // (it keeps every connection made, to follow where a sound goes)
+  /** @type {[any, any][]} */
+  const edges = [];
   const fake = () => {
     const f = function () { return fake(); };
     return new Proxy(f, {
-      get: (o, k) => (k === "connect" ? (/** @type {any} */ n) => n : k in o ? o[k] : (o[k] = fake())),
+      get: (o, k, self) => (k === "connect" ? (/** @type {any} */ n) => { edges.push([self, n]); return n; } : k in o ? o[k] : (o[k] = fake())),
       set: (o, k, v) => { o[k] = v; return true; },
     });
+  };
+  const reaches = (/** @type {any} */ from, /** @type {any} */ to) => {
+    const seen = new Set([from]), todo = [from];
+    while (todo.length) { const n = todo.pop(); if (n === to) return true; for (const [a, b] of edges) if (a === n && !seen.has(b)) { seen.add(b); todo.push(b); } }
+    return false;
   };
   const ctx = fake();
   ctx.currentTime = 0; ctx.sampleRate = 48000; ctx.state = "running";
@@ -55,7 +63,9 @@ export default async function (t) {
   Object.assign(g.ctx.window, { setInterval, clearInterval, setTimeout, clearTimeout });     // the browser's timers
   C.sfx.init();                                                                              // (the tools' boot leaves sound out)
   const notes = [], play = C.synth.play;
-  C.synth.play = (inst, o) => { notes.push([inst, o.note, o.time]); return play.call(C.synth, inst, o); };
+  /** @type {any} */
+  let sends = null;
+  C.synth.play = (inst, o) => { notes.push([inst, o.note, o.time]); sends = o.sends ?? sends; return play.call(C.synth, inst, o); };
   pip.place("yard", 190, 150, "right");
   await C.scene.load("yard");
   for (let k = 0; k < 40; k++) { ctx.currentTime += 0.1; await new Promise((r) => setTimeout(r, 55)); }
@@ -68,5 +78,26 @@ export default async function (t) {
   const left = notes.length;
   for (let k = 0; k < 20; k++) { ctx.currentTime += 0.1; await new Promise((r) => setTimeout(r, 55)); }
   t.ok("... and it stops with the room", notes.length === left, `${notes.length - left} notes after leaving`);
+
+  // its reverb, hall and echoes come from its place too (else a tune far off would be heard in its reverb at full): each send
+  // its own way through the tune's speaker and place into the sfx bus's returns; the score's come back into the music bus
+  const B = C.audio.buses, wet = C.audio.sfxSends();
+  t.ok("the score's reverb, hall and echoes come back into the music bus (its speaker, its place, its volume)",
+    ["reverb", "hall", "delay"].every((k) => reaches(B[k], B.music)));
+  t.ok("a tune at a place sends through a way of its own into the sfx bus's returns, not the score's",
+    sends && ["reverb", "hall", "delay"].every((k) => sends[k] !== B[k] && reaches(sends[k], wet[k]) && !reaches(sends[k], B.music)) && reaches(wet.reverb, B.sfx));
+  t.ok("... a drum's gated room of its own (one gate shared with the score's drums would be shut by them)", sends.gated && reaches(sends.gated.gate, B.sfx) && !reaches(sends.gated.gate, B.music));
+
+  // out of earshot it plays nothing (its notes would only load the sound), and comes in again as she comes near
+  pip.place("yard", 40, 150, "right");                  // 160 px from the radio, which reaches 120
+  await C.scene.load("yard");
+  let from = notes.length;
+  for (let k = 0; k < 20; k++) { ctx.currentTime += 0.1; C.clock.advance(1000 / 60); await new Promise((r) => setTimeout(r, 55)); }
+  t.ok("a tune out of earshot plays no notes", notes.filter(([inst], i) => i >= from && inst === "bell").length === 0, `${notes.length - from} notes`);
+  pip.place("yard", 190, 150, "right");
+  from = notes.length;
+  for (let k = 0; k < 20; k++) { ctx.currentTime += 0.1; C.clock.advance(1000 / 60); await new Promise((r) => setTimeout(r, 55)); }
+  t.ok("... and plays again as she comes near", notes.filter(([inst], i) => i >= from && inst === "bell").length >= 4, `${notes.length - from} notes`);
+  await C.scene.load("hall");
   C.synth.play = play;
 }

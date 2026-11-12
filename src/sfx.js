@@ -213,20 +213,35 @@ Cutaway.sfx = (function () {
    */
   function startLoop(l, gain, place) {
     const c = /** @type {BaseAudioContext} */ (Cutaway.audio.ctx), b = /** @type {Buses} */ (Cutaway.audio.buses);
-    const out = c.createGain(), t = c.currentTime;
-    out.gain.setValueAtTime(0, t);
-    out.gain.linearRampToValueAtTime((l.gain ?? (l.theme ? 1 : 0.1)) * gain, t + 1.2);      // a tune keeps its own mix
+    const t = c.currentTime, level = (l.gain ?? (l.theme ? 1 : 0.1)) * gain;          // a tune keeps its own mix
+    /** @type {Heard | null} how it is heard now (the last asked for) */
+    let h = place ? heard(place, listener()) : null;
+    let stopped = false;
+    /** @type {{fade: GainNode, lp?: BiquadFilterNode, pan?: StereoPannerNode, dist?: GainNode}[]} */
+    const strips = [];
+    // a way out for it: its fade (in over 1.2 s from the start), and at a place duller, to one side and quieter by distance.
+    // The loop's sound has one into the sfx bus; a tune's reverb, hall and echoes each one of their own (below)
+    const strip = (/** @type {AudioNode} */ dest) => {
+      const fade = c.createGain(), now = c.currentTime;
+      fade.gain.setValueAtTime(stopped ? 0 : level * Math.min(1, (now - t) / 1.2), now);
+      if (!stopped && now < t + 1.2) fade.gain.linearRampToValueAtTime(level, t + 1.2);
+      if (h) {
+        const lp = c.createBiquadFilter(), pan = c.createStereoPanner(), dist = c.createGain();
+        lp.type = "lowpass"; lp.frequency.value = h.cutoff; pan.pan.value = h.pan; dist.gain.value = h.gain;
+        fade.connect(lp).connect(pan).connect(dist).connect(dest);
+        strips.push({ fade, lp, pan, dist });
+      } else { fade.connect(dest); strips.push({ fade }); }
+      return fade;
+    };
+    const out = strip(b.sfx);
     /** @type {((h: Heard, seconds: number) => void) | undefined} */
-    let set;
-    if (place) {                                       // at a place: duller, to one side and quieter by distance
-      const lp = c.createBiquadFilter(), pan = c.createStereoPanner(), dist = c.createGain(), h = heard(place, listener());
-      lp.type = "lowpass"; lp.frequency.value = h.cutoff; pan.pan.value = h.pan; dist.gain.value = h.gain;
-      out.connect(lp).connect(pan).connect(dist).connect(b.sfx);
-      set = (hh, seconds) => {
-        const now = c.currentTime, k = Math.max(0.001, seconds / 3);
-        dist.gain.setTargetAtTime(hh.gain, now, k); pan.pan.setTargetAtTime(hh.pan, now, k); lp.frequency.setTargetAtTime(hh.cutoff, now, k);
-      };
-    } else out.connect(b.sfx);
+    const set = place ? (hh, seconds) => {
+      h = hh;
+      const now = c.currentTime, k = Math.max(0.001, seconds / 3);
+      for (const s of strips) {
+        s.dist?.gain.setTargetAtTime(hh.gain, now, k); s.pan?.pan.setTargetAtTime(hh.pan, now, k); s.lp?.frequency.setTargetAtTime(hh.cutoff, now, k);
+      }
+    } : undefined;
     /** @type {AudioScheduledSourceNode[]} */
     const srcs = [];
     if (l.noise) {
@@ -241,7 +256,6 @@ Cutaway.sfx = (function () {
       }
     }
     if (l.sample) {                                    // a recorded loop
-      let stopped = false;
       buffer(c, l.sample).then((buf) => {
         if (stopped) return;
         const src = c.createBufferSource();
@@ -249,14 +263,32 @@ Cutaway.sfx = (function () {
         src.connect(out); src.start();
         srcs.push(src);
       }).catch((e) => console.warn("Cutaway: a sample didn't decode", e));
-      srcs.push(/** @type {any} */ ({ start() {}, stop() { stopped = true; } }));
     }
     if (l.theme) {                                     // a tune at its place: a theme of the score with a player of its own
-      const k = Math.max(0, Math.min(1, l.speaker ?? 0)), hp = c.createBiquadFilter(), mid = c.createBiquadFilter(), lp = c.createBiquadFilter(), into = c.createGain();
-      hp.type = "highpass"; hp.frequency.value = 20 * Math.pow(500 / 20, k);
-      mid.type = "peaking"; mid.frequency.value = 1500; mid.Q.value = 0.9; mid.gain.value = 7 * k;
-      lp.type = "lowpass"; lp.frequency.value = 20000 * Math.pow(2800 / 20000, k);
-      into.connect(hp).connect(mid).connect(lp).connect(out);
+      // through a small speaker by `speaker` (as audio.speaker), its reverb and echoes too: they come out of the same box
+      const k = Math.max(0, Math.min(1, l.speaker ?? 0));
+      const box = (/** @type {AudioNode} */ dest) => {
+        const hp = c.createBiquadFilter(), mid = c.createBiquadFilter(), lp = c.createBiquadFilter();
+        hp.type = "highpass"; hp.frequency.value = 20 * Math.pow(500 / 20, k);
+        mid.type = "peaking"; mid.frequency.value = 1500; mid.Q.value = 0.9; mid.gain.value = 7 * k;
+        lp.type = "lowpass"; lp.frequency.value = 20000 * Math.pow(2800 / 20000, k);
+        hp.connect(mid).connect(lp).connect(dest);
+        return hp;
+      };
+      const into = box(out);
+      // its sends (reverb, hall, delay, a drum's gated room) each through the box and its place into the sfx bus's returns,
+      // made when a note first needs one: a tune far off is far off in its reverb too, and turned down with the sounds
+      /** @type {Record<string, AudioNode>} */
+      const own = {};
+      const wet = /** @type {{reverb: GainNode, hall: GainNode, delay: GainNode}} */ (Cutaway.audio.sfxSends());
+      /** @type {any} */
+      const sends = {};
+      for (const key of ["reverb", "hall", "delay"]) {
+        Object.defineProperty(sends, key, { get: () => (own[key] ??= box(strip(wet[/** @type {"reverb" | "hall" | "delay"} */ (key)]))) });
+      }
+      /** @type {{input: GainNode, gate: GainNode} | undefined} */
+      let gated;
+      Object.defineProperty(sends, "gated", { get: () => (gated ??= Cutaway.synth.gatedRoom(c, box(strip(b.sfx)))) });
       /** @type {Map<string, GainNode>} */
       const layers = new Map();
       const layer = (/** @type {string} */ name) => {
@@ -265,7 +297,11 @@ Cutaway.sfx = (function () {
         return g;
       };
       const player = new Cutaway.sequencer.Player({
-        note(e) { Cutaway.synth.play(e.inst, { time: e.time, note: e.note, duration: e.duration, velocity: e.velocity, out: layer(e.layer) }); },
+        // nothing played that can't be heard: out of earshot, its layer turned down, or its time past (the page held up)
+        note(e) {
+          if (e.silent || (h && h.gain < 0.002) || e.time < c.currentTime - 0.03) return;
+          Cutaway.synth.play(e.inst, { time: e.time, note: e.note, duration: e.duration, velocity: e.velocity, out: layer(e.layer), sends });
+        },
         layerGain(name, g, time, ramp) { const p = layer(name).gain; p.cancelScheduledValues(time); p.setValueAtTime(p.value, time); p.linearRampToValueAtTime(g, time + Math.max(0.01, ramp)); },
         section() {},
       });
@@ -285,20 +321,24 @@ Cutaway.sfx = (function () {
       const tick = () => {
         const cc = Cutaway.audio.ctx;
         if (!cc) return;
-        const h = place ? heard(place, listener()) : null;      // a placed loop's ticks come from its side
-        play("_tick", h ? { gain: (l.crackle ?? 0) * h.gain, pan: h.pan } : { gain: l.crackle, pan: Math.random() * 1.2 - 0.6 });
+        const hh = place ? heard(place, listener()) : null;     // a placed loop's ticks come from its side (none out of earshot)
+        if (!hh || hh.gain >= 0.002) play("_tick", hh ? { gain: (l.crackle ?? 0) * hh.gain, pan: hh.pan } : { gain: l.crackle, pan: Math.random() * 1.2 - 0.6 });
         crackle = window.setTimeout(tick, 40 + Math.random() * 260);
       };
       crackle = window.setTimeout(tick, 100);
     }
     const stop = () => {
+      stopped = true;
       clearTimeout(crackle);
       const now = c.currentTime;
-      out.gain.cancelScheduledValues(now);
-      out.gain.setValueAtTime(out.gain.value, now);
-      out.gain.linearRampToValueAtTime(0, now + 0.8);
+      for (const { fade } of strips) {
+        fade.gain.cancelScheduledValues(now);
+        fade.gain.setValueAtTime(fade.gain.value, now);
+        fade.gain.linearRampToValueAtTime(0, now + 0.8);
+      }
       for (const s of srcs) s.stop(now + 0.9);
-      setTimeout(() => out.disconnect(), 1200);
+      // (a tune's reverb rings on a little after its last note)
+      setTimeout(() => { for (const { fade } of strips) fade.disconnect(); }, l.theme ? 3000 : 1200);
     };
     return { stop, set };
   }

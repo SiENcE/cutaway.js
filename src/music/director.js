@@ -21,7 +21,8 @@
  */
 
 Cutaway.music = (function () {
-  const LOOKAHEAD = 0.15, TICK_MS = 25;
+  // (a quarter of a second ahead: a frame that takes long, a room being loaded, doesn't leave the music without its next notes)
+  const LOOKAHEAD = 0.25, TICK_MS = 25;
   /** @type {InstanceType<typeof Cutaway.sequencer.Player> | null} */
   let player = null;
   /** @type {Map<string, GainNode>} */
@@ -44,10 +45,22 @@ Cutaway.music = (function () {
     return g;
   }
 
+  /**
+   * Is a note worth playing? Not when its layer is turned down to nothing (its reverb would still sound), when the music
+   * plays at a place out of earshot, nor when its time is past (the page was held up longer than the look-ahead: the
+   * notes missed would all sound at once; the music goes on in time from the next).
+   * @param {{time: number, silent?: boolean}} e
+   */
+  function audible(e) {
+    const c = Cutaway.audio.ctx;
+    return !e.silent && Cutaway.audio.placeNow.gain > 0.002 && !(c && e.time < c.currentTime - 0.03);
+  }
+
   function makePlayer() {
     return new Cutaway.sequencer.Player({
       note(e) {
         log?.({ kind: "note", ...e });
+        if (!audible(e)) return;
         Cutaway.synth.play(e.inst, { time: e.time, note: e.note, duration: e.duration, velocity: e.velocity, out: layerNode(e.layer) });
       },
       layerGain(name, gain, time, ramp) {

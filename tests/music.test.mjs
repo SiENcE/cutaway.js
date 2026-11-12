@@ -88,6 +88,18 @@ export default function (t) {
     JSON.stringify(r.layers));
   t.ok("layers below their range stay silent", r.p.layerGains.get("drums") === 1 && run().p.layerGains.size === 0);
 
+  // a layer turned all the way down: its notes are marked silent once its ramp is done (a player need not play them, and their
+  // reverb, which doesn't go through the layer, would sound without them); turned up again they aren't
+  r = run();
+  r.p.intensity = 0.5;
+  r.p.start("hall", 0, "a");
+  r.p.pump(BAR);
+  const leadOff = r.ev.filter((e) => e.layer === "lead"), drumsOn = r.ev.filter((e) => e.layer === "drums");
+  t.ok("a layer turned down: its notes silent, the others not", leadOff.length > 0 && leadOff.every((e) => e.silent) && drumsOn.length > 0 && drumsOn.every((e) => !e.silent) && r.ev.filter((e) => e.layer === "base").every((e) => !e.silent));
+  r.p.setIntensity(1, BAR, 1);
+  r.p.pump(3 * BAR);
+  t.ok("... turned up: heard again", r.ev.filter((e) => e.layer === "lead" && e.time >= BAR).every((e) => !e.silent) && r.ev.some((e) => e.layer === "lead" && e.time >= BAR));
+
   C.score.theme("bad", { tempo: 0, tracks: { x: { inst: "nope", layer: "missing" } }, sections: { a: { bars: 0, next: "zz", tracks: { y: "Q9" } } }, transitions: { nowhere: "seg" } });
   const probs = C.score.check("bad");
   t.ok("broken score: every problem reported", probs.length >= 6, probs.join("; "));

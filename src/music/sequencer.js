@@ -72,6 +72,8 @@ Cutaway.sequencer = (function () {
    * @property {number} velocity
    * @property {number} duration seconds
    * @property {string} layer
+   * @property {boolean} [silent] its layer is turned all the way down by then (the intensity): nothing to hear, nor
+   *                              its reverb (a player need not play it)
    */
   /**
    * @typedef {object} PlayerHooks
@@ -95,6 +97,8 @@ Cutaway.sequencer = (function () {
       this.intensity = 0.5;
       /** @type {Map<string, number>} layer -> current gain */
       this.layerGains = new Map();
+      /** @type {Map<string, number>} layer -> from when it is silent (turned down to nothing, its ramp done) */
+      this.layerQuiet = new Map();
       this.stopAt = Infinity;
       this.cycle = -1;                                // walks through `next` lists in order
     }
@@ -152,6 +156,7 @@ Cutaway.sequencer = (function () {
         const [lo, hi] = range, g = hi <= lo ? (this.intensity >= lo ? 1 : 0) : Math.max(0, Math.min(1, (this.intensity - lo) / (hi - lo)));
         if (this.layerGains.get(name) === g) continue;
         this.layerGains.set(name, g);
+        if (g === 0) this.layerQuiet.set(name, time + ramp); else this.layerQuiet.delete(name);
         this.hooks.layerGain?.(name, g, time, ramp);
       }
     }
@@ -205,10 +210,11 @@ Cutaway.sequencer = (function () {
           if (!tr || !pat.length) continue;
           const ev = pat[index % pat.length];
           if (!ev) continue;
+          const layer = tr.layer ?? "base", time = this.nextTime + swing, quiet = this.layerQuiet.get(layer);
           for (const n of ev.notes) {
-            this.hooks.note({ time: this.nextTime + swing, theme: this.pos.theme, section: this.pos.section, bar: this.pos.bar,
+            this.hooks.note({ time, theme: this.pos.theme, section: this.pos.section, bar: this.pos.bar,
               step: this.pos.step, track, inst: tr.inst, note: n + (tr.transpose ?? 0), velocity: ev.vel * (tr.gain ?? 1),
-              duration: ev.len * dur * (tr.legato ?? 0.9), layer: tr.layer ?? "base" });
+              duration: ev.len * dur * (tr.legato ?? 0.9), layer, ...(quiet !== undefined && time >= quiet ? { silent: true } : {}) });
           }
         }
         this.nextTime += dur;

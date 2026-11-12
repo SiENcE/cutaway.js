@@ -564,7 +564,9 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
   - a tune at a place, beside the room's music (a busker, a jingle, a second radio): a loop that plays a theme of the score
     with a player of its own, `Cutaway.sfx.define("busker", { loop: { theme: "busker_tune", speaker: 0.6, gain: 1 } })`, then
     `ambience: [{ sfx: "busker", at, reach }]`; `speaker` 0..1 makes it sound through a small speaker, `gain` (default 1)
-    scales the theme's own mix, `section` and `intensity` say where it starts and which layers play;
+    scales the theme's own mix, `section` and `intensity` say where it starts and which layers play; its reverb, hall
+    and echoes come from its place and through its speaker too (sends of its own, `Cutaway.audio.sfxSends()`), and out of
+    earshot it plays no notes, so a market can have several at once;
   - a room's music: `music: { theme: "radio_song", speaker: 1, at: [430, 310], reach: 300 }` (a radio
     on a stall: the music bus goes through the place, `Cutaway.audio.place`);
   - a one-shot: `{ sfx: "cleaver", at: [x, y], reach: 200 }`.
@@ -574,12 +576,14 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 
 - Instruments: `Cutaway.synth.define(name, { type: "sub" | "fm" | "pluck" | "drum", ... })`.
   Sends: `reverb` (a short room), `hall` (a long, dark reverb, 6.5 s: distance, a city at night),
-  `delay` (echoes), each 0..1. Expression for `sub` and `fm`: `bend: { from: -120, time: 0.3 }` starts
+  `delay` (echoes), each 0..1. The score's come back into the music bus: they are turned down with the music,
+  sound through its speaker and come from its place. Expression for `sub` and `fm`: `bend: { from: -120, time: 0.3 }` starts
   every note 120 cents low and slides it onto its pitch (a CS-80's ribbon, a scoop);
   `vibrato: { rate, depth, delay, rise }` with `rise` waits `delay` seconds, then deepens over `rise`.
 - Themes: `Cutaway.score.theme(id, { tempo, key, tracks, layers, sections, start, transitions })`;
   sections loop or go `next`, and change only at jump points (`exits`: the bar, the end, listed bars).
-- Layers fade in and out with the intensity; stingers (`Cutaway.score.stinger`) play on the next beat
+- Layers fade in and out with the intensity (a layer turned all the way down isn't played: its notes are
+  `silent`, nor is music played at a place out of earshot, nor notes whose time the page let pass); stingers (`Cutaway.score.stinger`) play on the next beat
   in the current key.
 - The game sets states, not tracks: a room's `music`, or `{ music: { theme, section, intensity } }`.
 - `{ music: { stop: true, fade: 1.5 } }` doesn't wait for a jump point: what plays fades out over

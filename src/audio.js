@@ -3,7 +3,9 @@
 //                               place: where that music plays in the room, by distance: Cutaway.audio.place)
 //   voice bus ────────├─> master gain -> compressor -> speakers
 //   sfx bus   ┘
-//   reverb send (convolver with a generated impulse) and delay send feed the master too.
+//   The score's sends (reverb: a convolver with a generated impulse; hall; delay) come back into the music bus, so its
+//   reverb is turned down with the music, sounds through the same small speaker and comes from the same place. A tune
+//   played as a sound (a loop at a place, a jingle) has sends of its own that come back into the sfx bus (sfxSends).
 // Browsers only start audio after a user gesture: the context is created on the first click, tap or
 // key. Everything works on file:// (no audio files; sounds are synthesised).
 // Tools render offline with Cutaway.audio.init({ context: new OfflineAudioContext(...) }).
@@ -15,7 +17,7 @@
  * @property {GainNode} music
  * @property {GainNode} voice
  * @property {GainNode} sfx
- * @property {GainNode} reverb   send: whatever goes in comes out reverberated
+ * @property {GainNode} reverb   send: whatever goes in comes out reverberated, into the music bus
  * @property {GainNode} hall     send: a long, dark reverb (6.5 s)
  * @property {GainNode} delay    send: echoes
  */
@@ -62,6 +64,41 @@ Cutaway.audio = (function () {
   }
 
   /**
+   * The sends' returns into `dest`: the reverb (2.4 s), the hall (a long tail, its highs rolled off, so it stays behind
+   * like distance) and the delay's echoes.
+   * @param {BaseAudioContext} c @param {{reverb: GainNode, hall: GainNode, delay: GainNode}} s @param {AudioNode} dest
+   */
+  function returns(c, s, dest) {
+    const g = () => c.createGain();
+    const conv = c.createConvolver();
+    conv.buffer = impulse(c, 2.4, 2.6);
+    const wet = g(); wet.gain.value = 0.32;
+    s.reverb.connect(conv).connect(wet).connect(dest);
+    const hconv = c.createConvolver(), hlp = c.createBiquadFilter(), hwet = g();
+    hconv.buffer = impulse(c, 6.5, 2.2); hlp.type = "lowpass"; hlp.frequency.value = 2400; hwet.gain.value = 0.3;
+    s.hall.connect(hconv).connect(hlp).connect(hwet).connect(dest);
+    const dl = c.createDelay(2), fb = g(), dlf = c.createBiquadFilter();
+    dl.delayTime.value = 0.375; fb.gain.value = 0.32; dlf.type = "lowpass"; dlf.frequency.value = 2600;
+    s.delay.connect(dl).connect(dlf).connect(fb).connect(dl);
+    const dwet = g(); dwet.gain.value = 0.4;
+    dlf.connect(dwet).connect(dest);
+  }
+
+  /** @type {WeakMap<BaseAudioContext, {reverb: GainNode, hall: GainNode, delay: GainNode}>} */
+  const sfxWet = new WeakMap();
+  /**
+   * Sends whose returns come into the sfx bus, made on first use: for a tune played as a sound, whose notes reverberate
+   * where it plays (each loop at a place sends through its own place on the way in), not in the score's.
+   * @returns {{reverb: GainNode, hall: GainNode, delay: GainNode} | null}
+   */
+  function sfxSends() {
+    if (!ctx || !buses) return null;
+    let s = sfxWet.get(ctx);
+    if (!s) { s = { reverb: ctx.createGain(), hall: ctx.createGain(), delay: ctx.createGain() }; returns(ctx, s, buses.sfx); sfxWet.set(ctx, s); }
+    return s;
+  }
+
+  /**
    * Build the graph on a context (a live AudioContext, or an OfflineAudioContext for rendering).
    * @param {{context?: BaseAudioContext}} [o]
    */
@@ -79,19 +116,7 @@ Cutaway.audio = (function () {
     plp.type = "lowpass"; plp.frequency.value = 20000;
     music.connect(hp).connect(lp).connect(mid).connect(plp).connect(pgain).connect(ppan).connect(master);
     for (const b of [voice, sfx]) b.connect(master);
-    const conv = c.createConvolver();
-    conv.buffer = impulse(c, 2.4, 2.6);
-    const wet = g(); wet.gain.value = 0.32;
-    reverb.connect(conv).connect(wet).connect(master);
-    // the hall: a long tail, its highs rolled off, so it stays behind the music like distance
-    const hconv = c.createConvolver(), hlp = c.createBiquadFilter(), hwet = g();
-    hconv.buffer = impulse(c, 6.5, 2.2); hlp.type = "lowpass"; hlp.frequency.value = 2400; hwet.gain.value = 0.3;
-    hall.connect(hconv).connect(hlp).connect(hwet).connect(master);
-    const dl = c.createDelay(2), fb = g(), dlf = c.createBiquadFilter();
-    dl.delayTime.value = 0.375; fb.gain.value = 0.32; dlf.type = "lowpass"; dlf.frequency.value = 2600;
-    delay.connect(dl).connect(dlf).connect(fb).connect(dl);
-    const dwet = g(); dwet.gain.value = 0.4;
-    dlf.connect(dwet).connect(master);
+    returns(c, { reverb, hall, delay }, music);
     ctx = c;
     buses = { master, music, voice, sfx, reverb, hall, delay };
     tone = { hp, lp, mid };
@@ -204,7 +229,7 @@ Cutaway.audio = (function () {
   }
 
   return {
-    init, hook, impulse, speaker, place, autoplay, hold,
+    init, hook, impulse, speaker, place, autoplay, hold, sfxSends,
     /** Is the sound held (the editor)? */
     get held() { return held; },
     /**
