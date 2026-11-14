@@ -362,7 +362,8 @@ and warnings). Errors are red, warnings yellow, as in Issues. It needs the studi
   (`tools/handoff.mjs`): an act that reads a flag an earlier act sets but it neither keeps nor leaves (an
   error: there it is always unset; a left one is an info), a kept flag no run of the act reads and the next
   act doesn't keep (kept for nothing; an info naming where when the game tests it, since the solver doesn't
-  play looks that only talk), a flag the act sets and the game tests that nothing here reads and the next
+  play looks that only talk; a flag only the game's own code reads, a screen it draws, is told to the tools with
+  `Cutaway.state.readBy`, see the reference), a flag the act sets and the game tests that nothing here reads and the next
   act doesn't keep (a consequence that never arrives), a flag only some runs of the act set that others
   read (parts meant to stay apart that touch: one per flag, with the runs that set and read it), and the ways the act ends for the next (its end states as the next act
   keeps them, with how many end states each).
