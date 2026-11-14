@@ -190,13 +190,45 @@
     else await R().open(s.snap, `${title} (as the solver found it; "Play the way there" plays the moves to it)`);
   }
 
-  /** From the dock to the chart: the step of the move last played. @param {string} step */
-  function toChart(step) {
+  /** From the dock to the chart: the step of the move last played (in a list of runs, that run's data). @param {string} step @param {string} [run] */
+  async function toChart(step, run) {
     R().pause();
+    if (run && run !== source) await open(run);
     mode = "chart";
     E.refresh();
     g?.select(step);
     requestAnimationFrame(() => g?.focus(step, 1));
+  }
+
+  /**
+   * The runs in the folder in the order they are played: by act as the game has them (a run of the whole game
+   * first), in an act the run that shuts least away (its --set: the main way before the threads, which shut the
+   * rest), then by name. Files made before the ways were kept are left out (named).
+   * @param {{name: string, data: GraphData}[]} runs
+   */
+  function ordered(runs) {
+    const acts = Cutaway.act.ids();
+    return runs.filter((r) => r.data.replay?.turns?.length).sort((a, b) =>
+      (a.data.act ? acts.indexOf(a.data.act) : -1) - (b.data.act ? acts.indexOf(b.data.act) : -1)
+      || a.data.set.length - b.data.set.length || a.name.localeCompare(b.name));
+  }
+
+  /** Every run in the folder, its winning way, one after another (each from its own start). */
+  async function watchAll() {
+    if (running) return;
+    running = "all runs"; E.refresh();
+    /** @type {{name: string, data: GraphData}[]} */
+    const runs = [];
+    try {
+      for (const f of files) runs.push({ name: f.name, data: parse(await E.studio.read(`${folder()}/${f.name}`)) });
+    } catch (e) { E.setStatus(`connections: ${/** @type {any} */ (e).message}`); }
+    running = "";
+    const list = ordered(runs), left = runs.filter((r) => !list.includes(r)).map((r) => r.name);
+    if (!list.length) { E.setStatus("connections: no run in the folder keeps its ways: make them again"); E.refresh(); return; }
+    mode = "game";
+    E.refresh();
+    await R().load(R().listPlan(list.map((r) => ({ name: r.name, replay: r.data.replay }))));
+    E.setStatus(`connections: ${list.length} runs in turn: ${list.map((r) => r.name).join(", ")}${left.length ? `; left out (made before the ways were kept): ${left.join(", ")}` : ""}`);
   }
 
   /** The inspector's part for watching the solver: the winning way, the soft-locks, the states without a fitting hint. */
@@ -256,6 +288,8 @@
       sec.append(el("div", { style: { margin: "4px 0" } }, [
         ...tasks.map((t) => button(running === t ? t + " ..." : t, () => { if (!running) make(t); }, (E.studio.config.tasks[t] ?? []).join(" ") + " (searches every state: it can take minutes)")),
         button("↻", () => { listFiles(); }, "list the folder again")]));
+      if (files.length > 1) sec.append(el("div", { style: { margin: "4px 0" } }, [button(running === "all runs" ? "▶ All runs ..." : `▶ Play all runs (${files.length})`, () => { watchAll(); },
+        "every run's winning way in the game, one after another, each from its own start: by act, the main way before the threads, then by name")]));
       if (!tasks.length) sec.append(el("div", { className: "cw-dim" }, ['No tasks to make it: add one to studio.json, e.g. "graph": ["node", "lib/cutaway/tools/graph.mjs", "index.html"].']));
     } else {
       // without the studio this page can't run a task nor list a folder: it says how to make a file, and where it goes
@@ -310,6 +344,6 @@
   E.modules.replay?.render(toChart);
   E.tab({ id: "connections", label: "Connections", build, view: () => (g && mode !== "game" ? (mode === "budget" ? budgetView : chartView) : null),
     dock: () => (mode === "game" ? E.modules.replay?.dock ?? null : null), selectNone: () => g?.select(null) });
-  E.modules.graph = { show, open, listFiles, openStep, placesOf, wordOf, moveOf, stepsAt, section, watchWay, watchState, setMode,
+  E.modules.graph = { show, open, listFiles, openStep, placesOf, wordOf, moveOf, stepsAt, section, watchWay, watchState, watchAll, ordered, setMode,
     get mode() { return mode; }, get view() { return g; }, get data() { return data; } };
 })();

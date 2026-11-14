@@ -3,7 +3,7 @@
 // runs in the Things tab, a fact lists the places in the data that name it, the Things tab shows a hotspot's
 // steps; the state budget shows; the Handoffs tab shows the demo's one act with its run; and tools/graph.html
 // draws the same data as a page of its own.
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -86,6 +86,25 @@ export default async function (t) {
     t.ok("watch: where the game goes another way than the solver, it stops and says what differs", /another way/.test(off) && /tampered: the game true, the solver unset/.test(off), off);
     await chrome.ev(`${G}.watchState(${G}.data.replay.turns[2], "a state", false)`);
     t.ok("watch: a state opened as the solver found it", (await chrome.ev(`${R}.differences(Cutaway.save.capture({ live: true }), ${G}.data.replay.turns[2].snap).length === 0 && !${R}.plan && ${E}.paused`)));
+    // every run in the folder, one after another: a second run of the act (a copy that shuts one thing away, so it comes
+    // after), each from its own start, also after the game's end
+    {
+      const one = join(dir, "demo", "graphs", "demo.js"), text = readFileSync(one, "utf8");
+      writeFileSync(join(dir, "demo", "graphs", "demo_b.js"), text.replace(/"set":\[\]/, '"set":["nothing"]'));
+      writeFileSync(join(dir, "demo", "graphs", "a_old.js"), text.replace(/,"replay":\{.*\}\};\s*$/s, "};\n"));
+      await chrome.ev(`${G}.listFiles()`);
+      await sleep(300);
+      await chrome.ev(`[...document.querySelectorAll("button")].find((b) => /Play all runs/.test(b.textContent)).click(); 1`);
+      for (let i = 0; i < 50 && !(await chrome.ev(`${R}.plan?.turns.some((t) => t.run === "demo_b.js")`)); i++) await sleep(100);
+      const list = await chrome.ev(`(() => { const p = ${R}.plan; const runs = [...new Set(p.turns.map((t) => t.run))]; return { runs, begins: p.turns.filter((t) => t.begin).length }; })()`);
+      t.ok("watch: all runs in the folder in turn (the one that shuts least first), a file made before left out", list.runs.join(",") === "demo.js,demo_b.js" && list.begins === 2, JSON.stringify(list));
+      await chrome.ev(`${R}.speed = 8; ${R}.play(); 1`);
+      for (let i = 0; i < 1200 && (await chrome.ev(`${R}.busy || ${R}.playing`)); i++) await sleep(100);
+      const all = await chrome.ev(`({ note: ${R}.note, turn: ${R}.at.turn, turns: ${R}.plan.turns.length, ended: ${R}.ended })`);
+      t.ok("watch: they play one after another to the last one's end, the second from its own start after the first's end", all.ended && all.turn === all.turns && /demo_b\.js: the game ended/.test(all.note), JSON.stringify(all));
+      for (const f of ["demo_b.js", "a_old.js"]) rmSync(join(dir, "demo", "graphs", f));
+      await chrome.ev(`${G}.listFiles()`);
+    }
     await chrome.ev(`${G}.setMode("chart"); 1`);
     // the Handoffs tab: the demo's one act (the first: it keeps nothing) and its run from the graph folder
     await chrome.ev(`${E}.show("handoffs"); ${E}.refresh(); 1`);

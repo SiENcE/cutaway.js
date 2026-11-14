@@ -11,7 +11,9 @@
 
 /**
  * @typedef {{kind: string, id?: string, item?: string, a?: string, b?: string, choices?: number[]}} ReplayMove
- * @typedef {{moves: ReplayMove[], snap: any, step: string | null}} ReplayTurn
+ * @typedef {{moves: ReplayMove[], snap: any, step: string | null, run?: string, begin?: boolean}} ReplayTurn
+ *   run: the graph run it is from, in a list of runs (its data file); begin: the first turn of a run there, which begins
+ *   from that run's own start (the game is put in its state, nothing compared)
  * @typedef {{from: any, turns: ReplayTurn[], end: any, lost: {path: ReplayMove[], snap: any}[],
  *   unhinted: {hint: number, problem: string, path: ReplayMove[], snap: any}[]}} ReplayData
  * @typedef {{title: string, turns: ReplayTurn[], end: any, compareEnd: boolean}} ReplayPlan
@@ -170,6 +172,11 @@
     gen++;
     playing = false; stepOnce = false;
     E.pause(true);
+    await toState(snap);
+  }
+
+  /** The game in a state (as it plays on: nothing held). @param {any} snap */
+  async function toState(snap) {
     // a card that waits: it goes first; after the game's end it goes on to the title, which is let come before the state
     if (Cutaway.menu.card) {
       const toTitle = ended && Cutaway.acts.hasTitle;
@@ -195,7 +202,7 @@
     const t = Math.max(0, Math.min(turn, plan.turns.length - 1));
     await enter(plan.turns[t].snap);
     at = { turn: t, move: 0 };
-    note = `${plan.title}: at move ${moveNumber()} of ${count()}`;
+    note = `${title()}: at move ${moveNumber()} of ${count()}`;
     changed();
   }
 
@@ -206,6 +213,9 @@
     note = title;
     changed();
   }
+
+  /** The plan's title, with the run of a list the next move is in. */
+  const title = () => { const r = plan?.turns[Math.min(at.turn, plan.turns.length - 1)]?.run; return (plan?.title ?? "") + (r ? ` · ${r}` : ""); };
 
   /** The moves in the plan. */
   const count = () => (plan ? plan.turns.reduce((n, t) => n + t.moves.length, 0) : 0);
@@ -234,27 +244,34 @@
     try {
       while (plan && (playing || stepOnce) && at.turn < plan.turns.length) {
         const turn = plan.turns[at.turn], m = turn.moves[at.move];
-        note = `${plan.title}: move ${moveNumber()} of ${count()}, ${describe(m)}`;
+        note = `${title()}: move ${moveNumber()} of ${count()}, ${describe(m)}`;
         changed();
         await playMove(m);
-        if (ended) { note = `${plan.title}: the game ended after move ${moveNumber()}`; at = { turn: plan.turns.length, move: 0 }; pause(); break; }
-        if (++at.move >= turn.moves.length) {
+        // the next run of a list begins from its own start, also after the game's end
+        const nextRun = (ended || at.move + 1 >= turn.moves.length) && plan.turns[at.turn + 1]?.begin;
+        if (ended && !nextRun) { note = `${title()}: the game ended after move ${moveNumber()}`; at = { turn: plan.turns.length, move: 0 }; pause(); break; }
+        if (nextRun) {
+          at = { turn: at.turn + 1, move: 0 };
+          note = `${title()}: begins from its start`;
+          changed();
+          await toState(plan.turns[at.turn].snap);
+        } else if (++at.move >= turn.moves.length) {
           at = { turn: at.turn + 1, move: 0 };
           // the state now against the solver's: the next turn's start, or where the way ends (compareEnd)
           const next = plan.turns[at.turn]?.snap ?? (plan.compareEnd ? plan.end : null);
           const diff = next ? differences(Cutaway.save.capture({ live: true }), next) : [];
           if (diff.length) {
-            note = `${plan.title}: after move ${moveNumber() - 1} the game went another way than the solver:\n  ${diff.slice(0, 8).join("\n  ")}${diff.length > 8 ? `\n  ... and ${diff.length - 8} more` : ""}`;
+            note = `${title()}: after move ${moveNumber() - 1} the game went another way than the solver:\n  ${diff.slice(0, 8).join("\n  ")}${diff.length > 8 ? `\n  ... and ${diff.length - 8} more` : ""}`;
             pause();
             break;
           }
         }
-        if (stepOnce) { stepOnce = false; pause(); note = `${plan.title}: at move ${moveNumber()} of ${count()}`; break; }
+        if (stepOnce) { stepOnce = false; pause(); note = `${title()}: at move ${moveNumber()} of ${count()}`; break; }
         if (at.turn < plan.turns.length) await gap();
       }
       if (plan && at.turn >= plan.turns.length && !ended) { note = `${plan.title}: all ${count()} moves played`; pause(); }
     } catch (e) {
-      if (e !== CANCEL) { note = `${plan?.title ?? "the way"}: move ${moveNumber()} failed: ${/** @type {any} */ (e).message ?? e}`; pause(); }
+      if (e !== CANCEL) { note = `${plan ? title() : "the way"}: move ${moveNumber()} failed: ${/** @type {any} */ (e).message ?? e}`; pause(); }
     } finally {
       busy = false;
       changed();
@@ -271,6 +288,13 @@
 
   // ---- the plans a graph run's data gives
 
+  /**
+   * Several runs' winning ways one after another (in the order given), each from its own start.
+   * @param {{name: string, replay: ReplayData}[]} runs @returns {ReplayPlan}
+   */
+  const listPlan = (runs) => ({ title: `${runs.length} runs`, end: null, compareEnd: false,
+    turns: runs.flatMap((r) => r.replay.turns.map((t, i) => ({ ...t, run: r.name, begin: i === 0 }))) });
+
   /** The winning way. @param {ReplayData} r @returns {ReplayPlan} */
   const wayPlan = (r) => ({ title: "the winning way", turns: r.turns, end: r.end, compareEnd: false });
 
@@ -285,7 +309,7 @@
   let shownKey = "", scrolled = 0;
   const dock = el("div", { className: "cw-replay", style: { display: "flex", flexDirection: "column", height: "100%", padding: "4px 6px", boxSizing: "border-box" } });
 
-  /** The dock's content again. @param {(step: string) => void} [toChart] */
+  /** The dock's content again. @param {(step: string, run?: string) => void} [toChart] toChart: a step in the chart (of the run's data, in a list) */
   function render(toChart) {
     const row = el("div", { style: { display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" } });
     if (plan) {
@@ -297,8 +321,8 @@
         ...SPEEDS.map((s) => button(s === speed ? `● ${s}x` : `${s}x`, () => { speed = s; changed(); }, "how fast the game's clock runs")),
         button("■ Stop", () => { stop(); }, "stop and let go of the way (the game stays as it is)"));
       if (toChart) {
-        const step = currentStep();
-        if (step) row.append(button("Show in chart", () => toChart(step), "the step of the move last played, in the chart"));
+        const cur = currentStep();
+        if (cur) row.append(button("Show in chart", () => toChart(cur.step, cur.run), "the step of the move last played, in the chart"));
       }
       if (done) row.append(el("span", { className: "cw-dim" }, ["(at the end)"]));
     } else row.append(el("span", { className: "cw-dim" }, ["Pick a way in the inspector: the winning way, a soft-lock, a state without a fitting hint."]));
@@ -313,8 +337,8 @@
         n++;
         const past = ti < at.turn || (ti === at.turn && mi < at.move), now = ti === at.turn && mi === at.move;
         // the room, where it changes (the state a turn begins in)
-        const where = mi === 0 && t.snap?.room !== room ? (room = t.snap?.room ?? "") : "";
-        items.push({ key: `${ti}.${mi}`, label: `${String(n).padStart(3)}. ${describe(m)}${where ? `   (in ${where})` : ""}`, mark: now ? "▶" : "", dim: past,
+        const where = mi === 0 && (t.begin || t.snap?.room !== room) ? (room = t.snap?.room ?? "") : "";
+        items.push({ key: `${ti}.${mi}`, group: t.run, label: `${String(n).padStart(3)}. ${describe(m)}${where ? `   (in ${where})` : ""}`, mark: now ? "▶" : "", dim: past,
           title: mi ? "a click into a view, on the way to the move after it (a pick jumps to the start of its turn)" : "jump here (the state before this move)" });
       }));
       const key = `${at.turn}.${at.move}`;
@@ -328,15 +352,16 @@
     dock.replaceChildren(...kids);
   }
 
-  /** The chart step of the move last played (or the next one's), for the chart. */
+  /** The chart step of the move last played (or the next one's) and its run, for the chart. @returns {{step: string, run?: string} | null} */
   function currentStep() {
     if (!plan) return null;
-    for (let i = at.turn - 1; i >= 0; i--) { const s = plan.turns[i]?.step; if (s) return s; }
-    return plan.turns[at.turn]?.step ?? null;
+    for (let i = at.turn - 1; i >= 0; i--) { const t = plan.turns[i]; if (t?.step) return { step: t.step, run: t.run }; if (t?.begin) break; }
+    const t = plan.turns[at.turn];
+    return t?.step ? { step: t.step, run: t.run } : null;
   }
 
   E.modules.replay = {
-    describe, differences, load, jump, open, play, pause, stop, wayPlan, pathPlan, render, dock,
+    describe, differences, load, jump, open, play, pause, stop, wayPlan, pathPlan, listPlan, render, dock,
     /** @param {(() => void) | null} fn */
     set onChange(fn) { onChange = fn; },
     get plan() { return plan; },

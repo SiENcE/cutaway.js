@@ -355,7 +355,13 @@ The wheel zooms, a drag moves, a double click fits everything in.
   what differs. **Soft-locks** and **no fitting hint** list the nearest ones (30 at most) with the moves to
   them: **Open** puts the game in that state as the solver found it (the State tab shows the hint for it),
   **Play the way there** plays the moves to it from the start. A step of the winning way in the chart has
-  **Play the way from here**. Data made before the ways were kept says so: make it again.
+  **Play the way from here**. Data made before the ways were kept says so: make it again. **▶ Play all runs**
+  (beside the folder's files) plays every run's winning way one after another, each from its own start (also after
+  the game's end): by act in the game's order (a run of the whole game first), in an act the run that shuts least
+  away first (its `--set`: the main way before the threads that shut the rest), then by name; the moves are grouped
+  by run in the dock, **Show in chart** opens that run's data. Runs searched apart don't go on from each other: each
+  is the solver's own way from where it began. A file made before the ways were kept is left out (the status says
+  which).
 
 The same chart opens as a page of its own: `tools/graph.html?data=<the file's URL>` (graph.mjs prints the link).
 
