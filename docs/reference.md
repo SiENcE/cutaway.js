@@ -360,7 +360,10 @@ Cutaway.moment("ring", { room: "cam04", day: 1, from: "22:30", to: "22:45",   //
 
 - A game day runs 24 hours from `start`: a clock time earlier than the start is the next morning, so
   with `start: "18:00"` the time `"01:00"` comes after `"23:00"`. Give the time at an act's start
-  (`{ time: "21:30", day: 1 }`); before that it is day 1 at the start.
+  (`{ time: "21:30", day: 1 }`); before that it is day 1 at the start. Such a start begins the story there: a moment of
+  one day (`day` a number) whose window lies before it has passed, `moment:id` holds and `seen:id` doesn't, and neither
+  its `play` nor its `unseen` runs, so a later act (`{ time: "18:00", day: 5 }`) doesn't play what an earlier one left.
+  Going on to the next day (`day: "+1"`) is no start: what passes on the way happens unseen as always.
 - Conditions: `"time>=22:00"`, `"time<23:30"`, `"time=22:00"`, `"day=2"`, `"day>1"`; `"moment:ring"`
   (it happened, watched or not), `"seen:ring"` (it was watched).
 - **Routines:** when the time changes, every actor with a routine is put where its first entry that

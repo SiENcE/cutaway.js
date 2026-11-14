@@ -4,6 +4,8 @@
 //   { time: "22:00" }          on to 22:00 (never back)
 //   { time: "next" }           on to the next change: a routine's or a moment's start or end, a mark
 //   { time: "18:00", day: "+1" }   the next day at 18:00 (sleeping); { time: "21:30", day: 1 } sets both (an act's start)
+// An act's start begins its story there: a moment of one day whose window lies before the day and time it sets has passed
+// (`moment:id` holds, `seen:id` doesn't) without anything of it happening, so a later act doesn't play what an earlier one left.
 // A game day runs from `start` (Cutaway.time.configure({ start: "18:00", end: "04:00" })): a clock time
 // earlier than the start is the next morning, so "01:00" comes after "23:00". Conditions compare it:
 // "time>=22:00", "time<23:30", "day=2", "day>1".
@@ -193,12 +195,26 @@ Cutaway.time = (function () {
     await check();
   }
 
+  /**
+   * An act's start ({ time, day } with a day of its own): the moments of one day whose window is over by then have passed,
+   * marked so without their scripts (`unseen` is what a window passing while one plays leaves behind, not what an earlier act did).
+   * @param {number} to @param {number} toDay
+   */
+  function passBefore(to, toDay) {
+    for (const [id, m] of moments) {
+      if (typeof m.day !== "number" || Cutaway.state.peek(`~moment.${id}`)) continue;
+      if (m.day < toDay || (m.day === toDay && to >= parse(m.to))) Cutaway.state.set(`~moment.${id}`, "passed");
+    }
+  }
+
   /** The `time` action. @param {Record<string, any>} s */
   async function action(s) {
     const v = String(s.time).trim(), t = minutes();
     if (s.day !== undefined) {
-      const d = String(s.day).trim(), n = /^\+\d+$/.test(d) ? day() + Number(d.slice(1)) : Number(d);
-      return set(Number.isFinite(parse(v)) ? parse(v) : cfg?.start ?? 0, n);
+      const d = String(s.day).trim(), rel = /^\+\d+$/.test(d), n = rel ? day() + Number(d.slice(1)) : Number(d);
+      const to = Number.isFinite(parse(v)) ? parse(v) : cfg?.start ?? 0;
+      if (!rel) passBefore(to, n);
+      return set(to, n);
     }
     if (v === "next") { const n = next(); if (n !== null) await set(n); return; }
     if (/^\+\d+$/.test(v)) { const on = t + Number(v.slice(1)); if (!hold?.(on)) await set(on); return; }

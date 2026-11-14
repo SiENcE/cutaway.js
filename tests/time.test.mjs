@@ -77,6 +77,18 @@ export default async function (t) {
   await g2.C.script.run([{ time: "20:00" }]);
   t.ok("the window passed: it happened unseen", g2.C.state.test("moment:visit") && !g2.C.state.test("seen:visit") && g2.C.state.flag("missed_visit") === true);
 
+  // ---- an act's start on a later day: the moments before it have passed, and none of their scripts runs
+  const g5 = loadGame("demo/index.html");
+  withCamera(g5.C);
+  await boot(g5, { instant: true });
+  g5.C.moment("later", { room: "cam", day: 2, from: "18:00", to: "18:30", unseen: [{ set: "later_unseen" }] });
+  await g5.C.script.run([{ time: "18:15", day: 2 }]);
+  t.ok("a start on day 2: day 1's moment has passed, unseen and without its script", g5.C.state.test("moment:visit") && !g5.C.state.test("seen:visit")
+    && g5.C.state.flag("~moment.visit") === "passed" && g5.C.state.flag("missed_visit") === undefined);
+  t.ok("a start inside a window: that moment is still to come", !g5.C.state.test("moment:later"));
+  await g5.C.script.run([{ time: "18:00", day: "+1" }]);
+  t.ok("going on to the next day is no start: what passes on the way happens unseen", g5.C.state.flag("~moment.later") === "unseen" && g5.C.state.flag("later_unseen") === true);
+
   // ---- a save written while a moment plays: the game just before it, and the moment plays again once loaded
   const g3 = loadGame("demo/index.html");
   withCamera(g3.C);
