@@ -60,6 +60,33 @@ export default async function (t) {
     await chrome.ev(`[...document.querySelectorAll("button")].find((b) => /Budget/.test(b.textContent)).click(); 1`);
     await sleep(300);
     t.ok("connections: the budget shows the once-mark that doubles the states", /once:hall\.crate\.use\.0/.test(await chrome.ev(`${E}.centre.textContent`)));
+    // watching the solver: the winning way played in the game (the picture and the dock under it), to the end as the
+    // solver played it; a jump puts the game in the solver's state; a game that goes another way stops and says so
+    const R = `${E}.modules.replay`;
+    await chrome.ev(`${E}.show("connections"); ${E}.refresh(); 1`);
+    await sleep(200);
+    const moves = await chrome.ev(`${G}.data.replay.turns.reduce((n, t) => n + t.moves.length, 0)`);
+    await chrome.ev(`[...document.querySelectorAll("button")].find((b) => /The winning way/.test(b.textContent)).click(); 1`);
+    for (let i = 0; i < 50 && !(await chrome.ev(`!!${R}.plan`)); i++) await sleep(100);
+    await sleep(300);
+    const shown = await chrome.ev(`({ mode: ${G}.mode, centre: !!${E}.centre.querySelector(".cwg-chart"), rows: document.querySelectorAll(".cw-replay .cw-list > *, .cw-replay [data-key]").length,
+      dock: document.querySelector(".cw-replay")?.textContent ?? "", paused: ${E}.paused, room: Cutaway.scene.room?.id })`);
+    t.ok("watch: the winning way loads in the game, held at its start, its moves in the dock", shown.mode === "game" && !shown.centre && shown.paused && /Play/.test(shown.dock) && /1\. /.test(shown.dock) && moves > 3,
+      JSON.stringify({ ...shown, dock: shown.dock.slice(0, 200), moves }));
+    await chrome.ev(`${R}.speed = 8; ${R}.play(); 1`);
+    for (let i = 0; i < 900 && (await chrome.ev(`${R}.busy || ${R}.playing`)); i++) await sleep(100);
+    const end = await chrome.ev(`({ note: ${R}.note, turn: ${R}.at.turn, turns: ${G}.data.replay.turns.length, ended: ${R}.ended })`);
+    t.ok("watch: it plays the way to the game's end, as the solver did", end.ended && end.turn === end.turns && /ended after move/.test(end.note), JSON.stringify(end));
+    await chrome.ev(`${R}.jump(3)`);
+    const diff = await chrome.ev(`${R}.differences(Cutaway.save.capture({ live: true }), ${G}.data.replay.turns[3].snap)`);
+    t.ok("watch: a jump puts the game in the solver's state before that move (after the end card, too)", diff.length === 0 && (await chrome.ev(`${R}.at.turn === 3 && ${E}.paused && !Cutaway.acts.titleOpen && !Cutaway.menu.card`)), diff.join(" | "));
+    await chrome.ev(`Cutaway.state.set("tampered", true); ${R}.play(true); 1`);
+    for (let i = 0; i < 300 && (await chrome.ev(`${R}.busy || ${R}.playing`)); i++) await sleep(100);
+    const off = await chrome.ev(`${R}.note`);
+    t.ok("watch: where the game goes another way than the solver, it stops and says what differs", /another way/.test(off) && /tampered: the game true, the solver unset/.test(off), off);
+    await chrome.ev(`${G}.watchState(${G}.data.replay.turns[2], "a state", false)`);
+    t.ok("watch: a state opened as the solver found it", (await chrome.ev(`${R}.differences(Cutaway.save.capture({ live: true }), ${G}.data.replay.turns[2].snap).length === 0 && !${R}.plan && ${E}.paused`)));
+    await chrome.ev(`${G}.setMode("chart"); 1`);
     // the Handoffs tab: the demo's one act (the first: it keeps nothing) and its run from the graph folder
     await chrome.ev(`${E}.show("handoffs"); ${E}.refresh(); 1`);
     for (let i = 0; i < 100 && !(await chrome.ev(`!!${E}.modules.handoffs.report`)); i++) await sleep(100);

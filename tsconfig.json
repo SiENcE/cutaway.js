@@ -65,6 +65,7 @@
     "src/editor-issues.js",
     "src/editor-checks.js",
     "src/graph-view.js",
+    "src/editor-replay.js",
     "src/editor-graph.js",
     "src/editor-handoff.js",
     "src/editor-map.js",

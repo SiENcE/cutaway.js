@@ -6,6 +6,9 @@
 // hotspot, actor or item in the Things tab with the script the move runs, in the centre as blocks; a fact
 // lists every place in the data that sets or asks it (rooms, hotspots, actors, items, dialogues), each
 // opening there. The other way, the Things tab shows the steps of the hotspot or actor picked.
+// Watching the solver (editor-replay.js, from the data's `replay`): the winning way played in the game, a soft-lock
+// or a state without a fitting hint opened or reached by its way; the game picture in the centre ("Game"), the
+// moves and what plays them in the dock under it.
 "use strict";
 
 (function () {
@@ -166,15 +169,78 @@
     return out;
   }
 
+  // ---- watching the solver: its ways played in the game (editor-replay.js)
+
+  const R = () => E.modules.replay;
+
+  /** Show the game picture with the dock, the way loaded at a turn. @param {number} [turn] */
+  async function watchWay(turn = 0) {
+    if (!data?.replay?.turns?.length) return;
+    mode = "game";
+    E.refresh();
+    await R().load(R().wayPlan(data.replay), turn);
+  }
+
+  /** A state of the solver's: opened as it is, or reached by playing its way. @param {{path: any[], snap: any}} s @param {string} title @param {boolean} playIt */
+  async function watchState(s, title, playIt) {
+    if (!data?.replay) return;
+    mode = "game";
+    E.refresh();
+    if (playIt) await R().load(R().pathPlan(data.replay, s.path, s.snap, title));
+    else await R().open(s.snap, `${title} (as the solver found it; "Play the way there" plays the moves to it)`);
+  }
+
+  /** From the dock to the chart: the step of the move last played. @param {string} step */
+  function toChart(step) {
+    R().pause();
+    mode = "chart";
+    E.refresh();
+    g?.select(step);
+    requestAnimationFrame(() => g?.focus(step, 1));
+  }
+
+  /** The inspector's part for watching the solver: the winning way, the soft-locks, the states without a fitting hint. */
+  function watchSection() {
+    const r = data?.replay;
+    if (!r) return el("div", { className: "cw-dim", style: { margin: "4px 0" } }, ["This data was made before the solver could be watched: make it again to play its ways in the game."]);
+    const moves = (/** @type {any[]} */ p) => p.map((m) => R().describe(m));
+    /** @param {any[]} path */
+    const tail = (path) => (path.length > 3 ? "... > " : "") + moves(path.slice(-3)).join(" > ");
+    /** A row: what it is, Open, Play the way there. @param {string} label @param {string} title @param {{path: any[], snap: any}} s @param {string} name */
+    const row = (label, title, s, name) => el("div", { style: { margin: "3px 0" } }, [
+      el("div", { title }, [label]),
+      el("div", {}, [button("Open", () => { watchState(s, name, false); }, "the game in this state, as the solver found it"),
+        button("Play the way there", () => { watchState(s, name, true); }, "from the start, the moves to it, in the game")])]);
+    const way = r.turns.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.moves.length, 0);
+    return el("div", { className: "cw-sec" }, [E.fold("graph.watch", "watch the solver", () => [
+      el("div", {}, [button(r.turns.length ? `▶ The winning way (${way} moves)` : "no winning way", () => { watchWay(); }, "the solver's shortest way, played in the game: the moves one after another, or jump to one")]),
+      E.fold("graph.watch.lost", "soft-locks", () => r.lost.length ? r.lost.map((/** @type {any} */ l, /** @type {number} */ i) =>
+        row(`${i + 1}. after ${l.path.length} moves: ${tail(l.path)}`, moves(l.path).join(" > "), l, `soft-lock ${i + 1}`))
+        : [el("div", { className: "cw-dim" }, ["none"])], { note: String(r.lost.length) }),
+      E.fold("graph.watch.hints", "no fitting hint", () => r.unhinted.length ? r.unhinted.map((/** @type {any} */ h, /** @type {number} */ i) =>
+        row(`${i + 1}. ${h.hint >= 0 ? `hint ${h.hint}: ` : ""}${h.problem}; after ${h.path.length} moves: ${tail(h.path) || "(the start)"}`, moves(h.path).join(" > "), h, `no fitting hint ${i + 1}`))
+        : [el("div", { className: "cw-dim" }, ["none"])], { note: String(r.unhinted.length) }),
+    ])]);
+  }
+
   /** What shows under a selected node's details: Open for a step, the places for a fact. @param {GraphNode} n */
   function actions(n) {
     if (n.kind === "step") {
-      return [el("div", { style: { margin: "6px 0" } }, [button("Open in Things", () => { openStep(n); }, "the hotspot, actor or item with the script this move runs, in the centre")])];
+      const turn = data?.replay?.turns?.findIndex((/** @type {any} */ t) => t.step === n.id) ?? -1;
+      return [el("div", { style: { margin: "6px 0" } }, [button("Open in Things", () => { openStep(n); }, "the hotspot, actor or item with the script this move runs, in the centre"),
+        ...(turn >= 0 ? [button("Play the way from here", () => { watchWay(turn); }, "the winning way in the game, from the state before this step")] : [])])];
     }
     const word = wordOf(n.name), places = placesOf(word);
     return [el("div", { className: "k", style: { marginTop: "6px" } }, [`“${word}” in the data`]),
       el("ul", {}, places.length ? places.map((p) => el("li", { textContent: p.label, onclick: p.go, title: "open it" }))
         : [el("li", { textContent: "nowhere in the data: the game's own code sets or asks it", style: { cursor: "default" } })])];
+  }
+
+  /** Chart, budget or the game (leaving the game pauses a way that plays). @param {string} m */
+  function setMode(m) {
+    if (mode === "game" && m !== "game" && R()?.playing) R().pause();
+    mode = m;
+    E.refresh();
   }
 
   // ---- the inspector
@@ -210,9 +276,11 @@
     if (!g) return;
     box.append(el("div", { className: "cw-dim", style: { margin: "4px 0" } }, [g.about()]),
       el("div", { style: { margin: "4px 0" } }, [
-        button(mode === "chart" ? "● Chart" : "Chart", () => { mode = "chart"; E.refresh(); }, "the puzzle dependency chart"),
-        button(mode === "budget" ? "● Budget" : "Budget", () => { mode = "budget"; E.refresh(); }, "how much each part of the state multiplies the states"),
+        button(mode === "chart" ? "● Chart" : "Chart", () => { setMode("chart"); }, "the puzzle dependency chart"),
+        button(mode === "budget" ? "● Budget" : "Budget", () => { setMode("budget"); }, "how much each part of the state multiplies the states"),
+        ...(data?.replay ? [button(mode === "game" ? "● Game" : "Game", () => { setMode("game"); }, "the game picture, to watch the solver's ways in it")] : []),
         ...(mode === "chart" ? [button("Fit", () => g?.fit(), "everything in view (or a double click on the chart)")] : [])]));
+    box.append(watchSection());
     if (mode === "chart") g.side(box);
   }
 
@@ -238,7 +306,10 @@
       : [el("div", { className: "cw-dim" }, ["no step here changes anything (in the data loaded)"])], { note: String(list.length) })]);
   }
 
-  E.tab({ id: "connections", label: "Connections", build, view: () => (g ? (mode === "budget" ? budgetView : chartView) : null),
-    selectNone: () => g?.select(null) });
-  E.modules.graph = { show, open, listFiles, openStep, placesOf, wordOf, moveOf, stepsAt, section, get view() { return g; }, get data() { return data; } };
+  if (E.modules.replay) E.modules.replay.onChange = () => E.modules.replay.render(toChart);
+  E.modules.replay?.render(toChart);
+  E.tab({ id: "connections", label: "Connections", build, view: () => (g && mode !== "game" ? (mode === "budget" ? budgetView : chartView) : null),
+    dock: () => (mode === "game" ? E.modules.replay?.dock ?? null : null), selectNone: () => g?.select(null) });
+  E.modules.graph = { show, open, listFiles, openStep, placesOf, wordOf, moveOf, stepsAt, section, watchWay, watchState, setMode,
+    get mode() { return mode; }, get view() { return g; }, get data() { return data; } };
 })();

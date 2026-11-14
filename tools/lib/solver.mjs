@@ -17,7 +17,8 @@
 // With `trace`, every move played is watched (trace.mjs): what it read of the state and what it changed;
 // the search then returns that per move (`trace`), every state it found (`snaps`), the states that end it
 // (`wins`, packed: what an act hands over to the next), the state it began from (`from`) and the winning
-// way's moves by room (`way`), for tools/graph.mjs.
+// way's moves by room (`way`), for tools/graph.mjs; and to play it again in the editor: the winning way turn by turn with
+// the state each begins from (`turns`), the state it ends in (`end`) and the nearest soft-locks with their states (`lost`).
 import { Worker } from "node:worker_threads";
 import { createHash } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
@@ -46,6 +47,9 @@ export function loadFor(setup) {
 }
 
 /** @typedef {{kind: string, id?: string, item?: string, a?: string, b?: string, choices?: number[]}} Move */
+
+/** How many soft-locks a traced search keeps with their states (the nearest). */
+const KEEP = 30;
 
 /** Does a script do more than talk? (looks that only talk can't change the state) */
 function acts(script) {
@@ -375,7 +379,11 @@ export async function makeSolver(g, opts = {}) {
     };
     /** The moves to a state, counted. @param {string} k */
     const depthOf = (k) => { let d = 0; for (let n = nodes.get(k); n && n.move; n = n.parent ? nodes.get(n.parent) : null) d++; return d; };
-    let softlocks = [], hints = null;
+    /** @type {Move[][]} */
+    let softlocks = [];
+    let hints = null;
+    /** @type {{path: Move[], snap: Uint8Array}[]} the nearest soft-locks with their states (the editor opens them) */
+    let lost = [];
     if (o.full && complete) {
       // moves to the end from every state: a breadth-first search backwards from the wins
       /** @type {Map<string, number>} */
@@ -386,20 +394,27 @@ export async function makeSolver(g, opts = {}) {
       const todo = [...nodes].filter(([, n]) => n.win).map(([k]) => k);
       for (const k of todo) dist.set(k, 0);
       for (let i = 0; i < todo.length; i++) for (const p of back.get(todo[i]) ?? []) if (!dist.has(p)) { dist.set(p, /** @type {number} */ (dist.get(todo[i])) + 1); todo.push(p); }
-      softlocks = [...nodes.keys()].filter((k) => !dist.has(k)).map((k) => pathTo(k)).sort((a, b) => a.length - b.length);
+      const locked = [...nodes.keys()].filter((k) => !dist.has(k)).map((k) => ({ k, path: pathTo(k) })).sort((a, b) => a.path.length - b.path.length);
+      softlocks = locked.map((l) => l.path);
+      lost = locked.slice(0, KEEP).map((l) => ({ path: l.path, snap: /** @type {any} */ (nodes.get(l.k)).snap }));
       say("the way back from the end done; the hints");
       if (C.hints.any()) hints = await checkHints(pool, nodes, dist, pathTo, depthOf);
       say("the hints done");
     }
     const out = { solved: !!winKey, path: pathTo(winKey), states: nodes.size, complete, softlocks, hints };
     if (!tracer) return out;
-    /** @type {string[]} the winning way's steps (tracer.stepOf; moves that changed nothing left out) */
-    const way = [];
+    // the winning way turn by turn (a state to the next: the clicks into a view, then the move), each with the state it
+    // begins from and its step (tracer.stepOf; null for a move that changed nothing): the editor plays it and jumps in it
+    /** @type {{moves: Move[], snap: Uint8Array, step: string | null}[]} */
+    const turns = [];
     for (let n = winKey ? nodes.get(winKey) : null; n && n.move; n = n.parent ? nodes.get(n.parent) : null) {
-      const { pre, ...m } = /** @type {any} */ (n.move), step = tracer.stepOf(unpack(/** @type {any} */ (nodes.get(/** @type {string} */ (n.parent))).snap), m, unpack(n.snap), n.win);
-      if (step) way.unshift(step);
+      const { pre, ...m } = /** @type {any} */ (n.move), before = /** @type {any} */ (nodes.get(/** @type {string} */ (n.parent))).snap;
+      turns.unshift({ moves: [...(pre ?? []), m], snap: before, step: tracer.stepOf(unpack(before), m, unpack(n.snap), n.win) });
     }
-    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), wins: [...nodes.values()].filter((n) => n.win).map((n) => n.snap), from, way };
+    /** @type {string[]} the winning way's steps (moves that changed nothing left out) */
+    const way = turns.map((t) => t.step).filter((s) => s !== null);
+    const end = winKey ? /** @type {any} */ (nodes.get(winKey)).snap : null;
+    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), wins: [...nodes.values()].filter((n) => n.win).map((n) => n.snap), from, way, turns, end, lost };
   }
 
   /**
@@ -416,7 +431,7 @@ export async function makeSolver(g, opts = {}) {
     /** @type {{path: Move[], depth: number, hint: number, problem: string}[]} */
     const problems = [];
     /** A problem; its path (the moves to it) is made when asked for: there may be very many. @param {string} k @param {number} hint @param {string} problem */
-    const found = (k, hint, problem) => problems.push({ hint, problem, depth: depthOf(k), get path() { return pathTo(k); } });
+    const found = (k, hint, problem) => problems.push({ hint, problem, depth: depthOf(k), get path() { return pathTo(k); }, get snap() { return /** @type {any} */ (nodes.get(k)).snap; } });
     const keys = [...nodes].filter(([k, n]) => !n.win && dist.has(k)).map(([k]) => k);
     /** @type {Map<string, number>} */
     const current = new Map();

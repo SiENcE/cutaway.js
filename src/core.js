@@ -107,6 +107,8 @@ Cutaway.clock = (function () {
     set paused(p) { paused = p; },
     /** The editor holds the game (its own switch beside the menus' `paused`). */
     get held() { return held; },
+    /** A manual clock (setManual): it moves only on advance. */
+    get manual() { return manual; },
     /** @param {boolean} h */
     set held(h) { held = h; },
     /** Run `fn(dt)` on every logic step. @param {(dt: number) => void} fn */

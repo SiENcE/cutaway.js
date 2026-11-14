@@ -132,7 +132,7 @@
 Cutaway.editor = (function () {
   const GRAB = 2.5, MENU_H = 24, STATUS_H = 22, LEFT_W = 200, RIGHT_W = 360, OUT_H = 170, DOCK_H = 260, SPLIT = 6;
   const MODULES = ["timeline.js", "editor-literal.js", "editor-texts.js", "editor-script.js", "editor-things.js", "editor-art.js", "editor-paint.js", "editor-sound.js", "editor-voices.js", "editor-dialogue.js", "editor-state.js",
-    "editor-issues.js", "editor-checks.js", "editor-graph.js", "editor-handoff.js", "editor-map.js", "editor-schedule.js", "editor-sequences.js", "editor-help.js", "editor-guide.js"];
+    "editor-issues.js", "editor-checks.js", "editor-replay.js", "editor-graph.js", "editor-handoff.js", "editor-map.js", "editor-schedule.js", "editor-sequences.js", "editor-help.js", "editor-guide.js"];
   const COLORS = { walk: "#3df27a", hole: "#ff4a5a", hotspot: "#ffa03a", prop: "#3ae8ff", lamp: "#fff27a", fx: "#6aa8ff", walkTo: "#ffe14a" };
   let isOpen = false, showHud = false;
   /** @type {string | null} */

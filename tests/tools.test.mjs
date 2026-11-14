@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { launch, sleep } from "../tools/lib/chrome.mjs";
 import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
-import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
+import { makeSolver, loadFor, describe } from "../tools/lib/solver.mjs";
 import { buildGraph, handoffOf } from "../tools/lib/graph.mjs";
 import { handoff, parseGraph, flagOf } from "../tools/lib/handoff.mjs";
 import { makeTracer } from "../tools/lib/trace.mjs";
@@ -180,6 +180,18 @@ export default async function (t) {
   const box = G.moves.filter((m) => m.room === "yard" && m.move === "act mailbox");
   t.ok("graph: one click, a step per outcome (the mailbox opens, gives the bulb, closes)", box.length === 3, box.map((m) => m.writes.join(",")).join(" | "));
   t.ok("graph: combining is the same step in every room", G.moves.filter((m) => m.move.startsWith("combine")).length === 1);
+  // what the editor needs to play the solver's ways: the way turn by turn, each with the state it begins from
+  {
+    const rp = G.replay, flat = rp.turns.flatMap((/** @type {any} */ x) => x.moves);
+    t.ok("graph: the replay holds the winning way turn by turn, from the state the search began in",
+      flat.map(describe).join(" > ") === tr.path.map(describe).join(" > ") && rp.turns[0].snap.room === rp.from.room && JSON.stringify(rp.turns[0].snap.state) === JSON.stringify(rp.from.state)
+      && rp.turns.every((/** @type {any} */ x) => x.snap?.state && (x.step === null || G.moves.some((m) => m.id === x.step))) && !!rp.end && rp.lost.length === 0 && rp.unhinted.length === 0,
+      `${flat.length} moves, path ${tr.path.length}`);
+    const tl = await (await makeSolver(await demo((C) => { C.room.get("yard").hotspots.lamp.with.bulb = [{ remove: "bulb" }, "Oops. It broke."]; }), { trace: true })).search({ full: true });
+    const lost = buildGraph(/** @type {any} */ (tl), []).replay.lost;
+    t.ok("graph: the replay keeps the nearest soft-locks with their states (the bulb broken)", lost.length > 0 && lost.length <= 30 && lost[0].path.some((/** @type {any} */ m) => m.item === "bulb")
+      && !(lost[0].snap.state.inv?.pip ?? []).includes("bulb"), JSON.stringify(lost[0]?.path));
+  }
   t.ok("graph: the winning way runs through the steps and ends with the end", G.way.length > 3 && G.way.every((id) => G.moves.some((m) => m.id === id)) && !!G.moves.find((m) => m.id === G.way[G.way.length - 1])?.wins, G.way.join(" > "));
   // the tracer: a hotspot that takes its box from a prop needs what makes the prop be there
   {

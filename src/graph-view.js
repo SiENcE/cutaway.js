@@ -15,8 +15,10 @@
  * @typedef {{page: string, act: string | null, set: string[], states: number, complete: boolean, moves: GraphStep[],
  *   facts: {id: string, by: string[], needs: string[], unless: string[]}[], quantities: string[], way: string[],
  *   factors: {part: string, values: number, factor: number}[], from?: string | null, keep?: string[] | null, next?: string | null,
- *   nextKeep?: string[] | null, start?: string[], ends?: {wins: number, variants: number | null, projections: {flags: Record<string, any>, n: number}[]} | null}} GraphData
- *   (from ... ends: what the act searched hands over, tools/lib/graph.mjs handoffOf; tools/lib/handoff.mjs checks it)
+ *   nextKeep?: string[] | null, start?: string[], ends?: {wins: number, variants: number | null, projections: {flags: Record<string, any>, n: number}[]} | null,
+ *   replay?: any}} GraphData
+ *   (from ... ends: what the act searched hands over, tools/lib/graph.mjs handoffOf; tools/lib/handoff.mjs checks it;
+ *   replay: the solver's ways to play in the editor, tools/lib/graph.mjs replayOf, the editor's editor-replay.js)
  * @typedef {{id: string, kind: "step" | "fact", room: string, move: string, name: string, writes: string[], reads: [string, number][], neg: [string, number][],
  *   n: number, wins: number, variants: GraphStep[], by: string[], needs: string[], unless: string[], w: number, h: number, x: number, y: number,
  *   el: SVGGElement | null}} GraphNode

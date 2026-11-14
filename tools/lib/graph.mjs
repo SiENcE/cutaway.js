@@ -65,6 +65,27 @@ export function buildGraph(r, views) {
     quantities: [...many].sort(),
     way,
     factors: stateFactors(r.snaps, views),
+    replay: replayOf(r, renamed),
+  };
+}
+
+/** How many states without a fitting hint the data keeps (the nearest). */
+const KEEP_HINTS = 30;
+
+/**
+ * What the editor needs to play the solver's ways in the game (its Connections tab): the state the search began
+ * from, the winning way turn by turn (the moves of a turn: the clicks into a view, then the move; the state it
+ * begins from; its step in the chart, null when it changed nothing), the state it ends in, the nearest soft-locks
+ * and states without a fitting hint, each with the moves to it and the state itself. States as save snapshots.
+ * @param {any} r a traced search's result @param {Map<string, string>} renamed a traced step's name -> its folded one
+ */
+export function replayOf(r, renamed) {
+  return {
+    from: r.from ?? null,
+    turns: (r.turns ?? []).map((/** @type {any} */ t) => ({ moves: t.moves, snap: unpack(t.snap), step: t.step ? renamed.get(t.step) ?? null : null })),
+    end: r.end ? unpack(r.end) : null,
+    lost: (r.lost ?? []).map((/** @type {any} */ l) => ({ path: l.path, snap: unpack(l.snap) })),
+    unhinted: (r.hints?.problems ?? []).slice(0, KEEP_HINTS).map((/** @type {any} */ p) => ({ hint: p.hint, problem: p.problem, path: p.path, snap: unpack(p.snap) })),
   };
 }
 

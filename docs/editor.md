@@ -343,6 +343,19 @@ The wheel zooms, a drag moves, a double click fits everything in.
   object's state, a once-mark, where an actor is): ×2 doubles them, ×1 follows from the rest.
 - The other way: the Things tab shows a hotspot's or an actor's steps (**connections**, while data is
   loaded); a click shows the step in the chart.
+- **Watch the solver:** its ways played in the game. **▶ The winning way** shows the game picture (**Game**,
+  beside Chart and Budget) with the way's moves in a dock under it, the game held at the way's start (the solver's
+  own state, kept in the data). **Play** plays the moves one after another as the solver plays them, on the game's
+  clock: the one played walks there, the lines are said, a dialogue's choices show a moment before the solver's
+  is taken, a card goes after a moment. **One move** plays the next and stops, **1x** to **8x** is how fast the
+  clock runs, **⏮** goes back to the start, a click on a move jumps to the state before it, **Show in chart**
+  selects the step of the move last played, **Stop** lets go of the way (the game stays as it is). After each
+  move the game's state is compared with the solver's: where the game in the page goes another way than in the
+  tools (a difference between the browser and Node, a script that depends on the frame clock), it stops and lists
+  what differs. **Soft-locks** and **no fitting hint** list the nearest ones (30 at most) with the moves to
+  them: **Open** puts the game in that state as the solver found it (the State tab shows the hint for it),
+  **Play the way there** plays the moves to it from the start. A step of the winning way in the chart has
+  **Play the way from here**. Data made before the ways were kept says so: make it again.
 
 The same chart opens as a page of its own: `tools/graph.html?data=<the file's URL>` (graph.mjs prints the link).
 
