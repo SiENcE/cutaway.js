@@ -122,6 +122,8 @@ Cutaway.state = (function () {
 
   /** flags that only say what is shown (a window open, a page): saved, but no part of the game's state for the solver */
   const viewFlags = new Set();
+  /** @type {Map<string, string[]>} flags a game's own code reads (a screen it draws), by where: the validator counts them as tested */
+  const readers = new Map();
   return {
     test, flag, has, key,
     /**
@@ -144,6 +146,14 @@ Cutaway.state = (function () {
     peek(name) { return s.flags[name]; },
     /** The view flags. */
     views() { return [...viewFlags]; },
+    /**
+     * Say that the game's own code reads these flags (a screen it draws, as a ledger page): no condition in the data asks
+     * them, so the validator and the hand-over check would think them unread. Only for the tools; nothing changes in play.
+     * @param {string} where  what reads them (shown where the validator lists where a flag is tested) @param {string[]} names
+     */
+    readBy(where, names) { readers.set(where, [...(readers.get(where) ?? []), ...names]); },
+    /** What readBy was told: where -> flags. */
+    readers() { return [...readers].map(([where, names]) => ({ where, names: [...names] })); },
     /** @param {string} name @param {any} [value] */
     set(name, value = true) { s.flags[name] = value; Cutaway.events.emit("state.changed", { flag: name }); },
     /** @param {string} name */

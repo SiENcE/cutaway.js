@@ -221,6 +221,15 @@ export default async function (t) {
     const v = validate(g.C, { languages: g.options.languages });
     t.ok("validate fails: an act keeps a flag nothing sets", v.issues.some((i) => i.level === "error" && i.where === "act act2.keep" && /keeps "never_set", which nothing sets/.test(i.msg)), JSON.stringify(v.issues.filter((i) => /keep/.test(i.where))));
     t.ok("validate warns: an act keeps a flag nothing tests", v.issues.some((i) => i.level === "warning" && i.where === "act act2.keep" && /"waved"/.test(i.msg)) && !v.issues.some((i) => /"got_bulb"/.test(i.msg)));
+    // a flag the game's own code reads (a screen it draws) counts as tested: Cutaway.state.readBy
+    {
+      const g2 = await demo(twoActs(["got_bulb", "waved"]));
+      g2.C.state.readBy("the postcard screen", ["waved"]);
+      await boot(g2, { instant: true });
+      const v2 = validate(g2.C, { languages: g2.options.languages });
+      t.ok("validate: a flag read by the game's code (readBy) is tested, there", !v2.issues.some((i) => /"waved"/.test(i.msg)) && (v2.flags.testedAt.waved ?? []).includes("code the postcard screen") && v2.flags.testedInPlay.has("waved"),
+        JSON.stringify(v2.issues.filter((i) => /waved/.test(i.msg))));
+    }
     const a2 = v.acts.find((a) => a.id === "act2"), bulb = a2?.keep.find((k) => k.flag === "got_bulb");
     t.ok("validate: a kept flag's values and where it is set and tested", !!bulb && JSON.stringify(bulb.values) === '["true"]' && bulb.setAt.some((w) => /mailbox\.use/.test(w)) && bulb.testedAt.some((w) => /mailbox\.use/.test(w)), JSON.stringify(bulb));
     t.ok("validate: the flags' values, set and tested places", JSON.stringify(v.flags.values.waved) === '["true"]' && v.flags.setAt.waved?.[0] === "room hall.hotspots.window.use.0" && !!v.flags.testedAt.got_key?.length);

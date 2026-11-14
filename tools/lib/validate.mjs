@@ -568,6 +568,9 @@ export function validate(C, o = {}) {
     }
   }
 
+  // what the game's own code reads (Cutaway.state.readBy: a screen it draws) counts as tested, in play
+  for (const r of C.state.readers?.() ?? []) for (const f of r.names) testFlag(f, `code ${r.where}`);
+
   for (const f of flagsTested) if (!f.startsWith("~") && !flagsSet.has(f)) err("flags", `flag "${f}" is tested but never set`);
   for (const f of flagsSet) if (!flagsTested.has(f)) warn("flags", `flag "${f}" is set but never tested`);
 

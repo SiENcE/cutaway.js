@@ -315,6 +315,11 @@ each state it opens every view it can (by moves that change nothing else), plays
 puts the clicks that open a view into its path (so `play.mjs` clicks them too). A view may change what can
 be clicked, never what a click does.
 
+`Cutaway.state.readBy("the ledger page", ["ledger_a", "ledger_b"])` says that the game's own code reads these flags (a
+screen it draws), where no condition in the data asks them. Only the tools use it: the validator counts them as tested
+("code the ledger page" among the places that test them), so a flag set for such a screen is no "set but never tested",
+and the hand-over check doesn't call a kept one "kept for nothing". `Cutaway.state.readers()` lists what it was told.
+
 `Cutaway.state.watch(fn)` tells `fn(kind, name, value)` of every read of the state (kind `"flag"`, `"item"`,
 `"obj"`, `"hidden"`, `"visited"` or `"at"`); `watch(null)` stops it. Tools use it: `graph.mjs` asks what each
 move depends on. `Cutaway.state.peek(name)` reads a flag without telling it: the engine's own bookkeeping (the
