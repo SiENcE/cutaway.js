@@ -66,6 +66,7 @@
     "src/editor-checks.js",
     "src/graph-view.js",
     "src/editor-graph.js",
+    "src/editor-handoff.js",
     "src/editor-map.js",
     "src/editor-schedule.js",
     "src/editor-literal.js",

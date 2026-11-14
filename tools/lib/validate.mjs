@@ -2,7 +2,15 @@
 // loadGame() + boot(): rooms, hotspots, props, actors, items, dialogs, scripts, conditions, assets,
 // walk polygons (valid, reachable points) and strings in every language; sequences (their steps, the
 // rooms they show, the props they move) and the intro and gate start options.
+// Acts that keep flags (`fresh` with `keep`): a kept flag must be set somewhere (an error) and tested
+// somewhere (a warning); each flag's values as the data sets them, and where it is set and tested, are
+// returned with the acts' hand-over variants (tools/lib/handoff.mjs checks the hand-over from traced runs).
 /** @typedef {{level: "error" | "warning", where: string, msg: string}} Issue */
+/** @typedef {{flag: string, values: string[] | null, setAt: string[], testedAt: string[]}} KeptFlag
+ *   values: what the data sets it to (true, a value), null when it counts (inc) or a game's action sets it */
+/** @typedef {{id: string, fresh: boolean, keep: KeptFlag[], variants: number | null}} ActHandoff
+ *   variants: how many ways the act can begin (each kept flag's values and unset); 1 for the first act, null when a
+ *   kept flag counts, or when the act isn't fresh after another (all the act before leaves comes along) */
 
 const FACINGS = new Set(["left", "right", "up", "down", "se", "ne", "sw", "nw"]);
 const EASES = new Set(["linear", "in", "out", "inOut"]);
@@ -11,7 +19,8 @@ const PLACES = new Set(["bl", "br", "tl", "tr", "c"]);
 /**
  * @param {any} C the Cutaway namespace of a booted game
  * @param {{languages?: string[], demo?: any, title?: any, intro?: string, gate?: any}} [o]  (o: the game's start options)
- * @returns {{issues: Issue[], texts: Set<string>, flags: {set: Set<string>, tested: Set<string>}}}
+ * @returns {{issues: Issue[], texts: Set<string>, acts: ActHandoff[], flags: {set: Set<string>, tested: Set<string>, testedInPlay: Set<string>,
+ *   values: Record<string, string[] | null>, setAt: Record<string, string[]>, testedAt: Record<string, string[]>}}}
  */
 export function validate(C, o = {}) {
   /** @type {Issue[]} */
@@ -20,6 +29,23 @@ export function validate(C, o = {}) {
   const warn = (where, msg) => issues.push({ level: "warning", where, msg });
   const texts = new Set(), keys = new Set();
   const flagsSet = new Set(), flagsTested = new Set();
+  /** @type {Map<string, Set<string> | null>} each flag's values as set (null: counted, or set by a game's action) */
+  const flagValues = new Map();
+  /** @type {Map<string, string[]>} */
+  const setAt = new Map(), testedAt = new Map();
+  const AT = 5;   // places kept per flag
+  /** flags tested by more than the hints (what the game does, not only what it hints at) */
+  const testedInPlay = new Set();
+  /** @param {Map<string, string[]>} m @param {string} f @param {string} where */
+  const note = (m, f, where) => { let l = m.get(f); if (!l) m.set(f, (l = [])); if (l.length < AT && !l.includes(where)) l.push(where); };
+  /** A flag set somewhere, to a value (undefined: unknown, many). @param {string} f @param {string} where @param {any} [v] */
+  const setFlag = (f, where, v) => {
+    flagsSet.add(f); note(setAt, f, where);
+    if (v === undefined) flagValues.set(f, null);
+    else { const vs = flagValues.get(f); if (vs !== null) { if (vs) vs.add(String(v)); else flagValues.set(f, new Set([String(v)])); } }
+  };
+  /** @param {string} f @param {string} where */
+  const testFlag = (f, where) => { flagsTested.add(f); note(testedAt, f, where); if (!where.startsWith("hints.")) testedInPlay.add(f); };
   const actions = new Set(C.script.names());
   /** game time (time.js): its flags `day` and `time` read as set from the start */
   const timeUsed = !!C.time?.used;
@@ -88,11 +114,11 @@ export function validate(C, o = {}) {
       if (cmp[2] !== "!=" && (v === "" || (!Number.isFinite(Number(v)) && !clockTime(v)))) err(where, `condition "${c}" compares with "${v}", not a number`);
       // the game's clock counts minutes: "time>=22" holds from 00:22 on
       else if (timeUsed && cmp[1] === "time" && v !== "" && Number.isFinite(Number(v))) warn(where, `condition "${c}" compares the minutes of the day with ${v}: write a clock time ("time${cmp[2]}${v}:00")`);
-      if (!(timeUsed && (cmp[1] === "day" || cmp[1] === "time"))) flagsTested.add(cmp[1]);
+      if (!(timeUsed && (cmp[1] === "day" || cmp[1] === "time"))) testFlag(cmp[1], where);
       return;
     }
     const colon = s.indexOf(":");
-    if (colon < 0) { flagsTested.add(s.split("=")[0]); return; }
+    if (colon < 0) { testFlag(s.split("=")[0], where); return; }
     const kind = s.slice(0, colon), arg = s.slice(colon + 1);
     if (kind === "has") item(arg, where);
     else if (kind === "visited") room(arg, where);
@@ -145,7 +171,7 @@ export function validate(C, o = {}) {
     // a game's action that says which flags it sets or reads (Cutaway.script.action(name, fn, { sets, tests }))
     const meta = C.script.meta?.(name);
     if (meta) {
-      try { for (const f of meta.sets?.(s) ?? []) flagsSet.add(String(f)); for (const f of meta.tests?.(s) ?? []) flagsTested.add(String(f)); }
+      try { for (const f of meta.sets?.(s) ?? []) setFlag(String(f), where); for (const f of meta.tests?.(s) ?? []) testFlag(String(f), where); }
       catch (e) { err(where, `${name}: ${e.message}`); }
     }
     switch (name) {
@@ -171,7 +197,9 @@ export function validate(C, o = {}) {
       case "give": item(v, where); if (s.to) actor(s.to, where); break;
       case "take": item(v, where); if (s.hide) object(s.hide, roomId, where); break;
       case "remove": item(v, where); if (s.from) actor(s.from, where); break;
-      case "set": case "unset": case "inc": flagsSet.add(String(v)); break;
+      case "set": setFlag(String(v), where, "value" in s ? s.value : true); break;
+      case "unset": flagsSet.add(String(v)); note(setAt, String(v), where); break;
+      case "inc": setFlag(String(v), where); break;
       case "state": object(v, roomId, where); break;
       case "show": case "hide": {
         object(v, roomId, where);
@@ -541,6 +569,23 @@ export function validate(C, o = {}) {
   for (const f of flagsTested) if (!f.startsWith("~") && !flagsSet.has(f)) err("flags", `flag "${f}" is tested but never set`);
   for (const f of flagsSet) if (!flagsTested.has(f)) warn("flags", `flag "${f}" is set but never tested`);
 
+  // the hand-over between acts: what a fresh act keeps must be set somewhere, and asked about
+  /** @param {string} f */
+  const valuesOf = (f) => { const v = flagValues.get(f); return v === null ? null : v ? [...v].sort() : []; };
+  /** @type {ActHandoff[]} */
+  const acts = [...actIds].map((id, i) => {
+    const a = C.act.get(id), w = `act ${id}.keep`, keep = Array.isArray(a.keep) ? a.keep.map(String) : [];
+    if (a.keep !== undefined && !Array.isArray(a.keep)) err(w, "keep is a list of flags");
+    if (keep.length && !a.fresh) warn(w, "keep does nothing without fresh: true (everything the act before leaves comes along)");
+    for (const f of keep) {
+      if (!flagsSet.has(f)) err(w, `keeps "${f}", which nothing sets`);
+      else if (!flagsTested.has(f)) warn(w, `keeps "${f}", which nothing tests`);
+    }
+    const kept = keep.map((f) => ({ flag: f, values: valuesOf(f), setAt: setAt.get(f) ?? [], testedAt: testedAt.get(f) ?? [] }));
+    const variants = i === 0 ? 1 : !a.fresh || kept.some((k) => k.values === null) ? null : kept.reduce((n, k) => n * (/** @type {string[]} */ (k.values).length + 1), 1);
+    return { id, fresh: !!a.fresh, keep: kept, variants };
+  });
+
   // texts the game shows through its own code (Cutaway.i18n.declare)
   for (const d of C.i18n.declared?.() ?? []) text(d.text, `declared: ${d.where}`);
 
@@ -551,5 +596,9 @@ export function validate(C, o = {}) {
     const table = C.i18n.strings(l), missing = [...texts].filter((t) => !(t in table));
     if (missing.length) warn("strings", `${missing.length} of ${texts.size} texts not translated to "${l}", e.g. ${missing.slice(0, 3).map((t) => JSON.stringify(t)).join(", ")}`);
   }
-  return { issues, texts, flags: { set: flagsSet, tested: flagsTested } };
+  const all = [...new Set([...flagsSet, ...flagsTested])].sort();
+  return { issues, texts, acts, flags: { set: flagsSet, tested: flagsTested, testedInPlay,
+    values: Object.fromEntries([...flagsSet].sort().map((f) => [f, valuesOf(f)])),
+    setAt: Object.fromEntries(all.filter((f) => setAt.has(f)).map((f) => [f, /** @type {string[]} */ (setAt.get(f))])),
+    testedAt: Object.fromEntries(all.filter((f) => testedAt.has(f)).map((f) => [f, /** @type {string[]} */ (testedAt.get(f))])) } };
 }

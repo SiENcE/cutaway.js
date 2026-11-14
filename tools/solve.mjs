@@ -8,6 +8,7 @@
 import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { makeSolver, loadFor, describe } from "./lib/solver.mjs";
+import { verdicts } from "./lib/verdict.mjs";
 
 const args = process.argv.slice(2);
 const page = args.find((a) => !a.startsWith("--") && !/^\d+$/.test(a) && !a.endsWith(".json"));
@@ -30,20 +31,4 @@ if (!r.solved) {
   const out = opt("--json");
   if (out) { writeFileSync(out, JSON.stringify(r.path, null, 1)); console.log("wrote " + out); }
 }
-if (args.includes("--full")) {
-  if (!r.complete) { console.log("soft-lock check incomplete: raise --max"); process.exitCode = 1; }
-  else if (r.softlocks.length) {
-    console.log(`SOFT-LOCKS: ${r.softlocks.length} states can't reach the end. Shortest ways into one:`);
-    for (const p of r.softlocks.slice(0, 5)) console.log("  " + p.map(describe).join(" > "));
-    process.exitCode = 1;
-  } else console.log("no soft-locks");
-  if (r.hints) {
-    const all = g.C.hints.all(), text = (i) => { const h = all[i]; return JSON.stringify((Array.isArray(h.text) ? h.text[0] : h.text).slice(0, 50)); };
-    if (r.hints.problems.length) {
-      console.log(`HINTS: ${r.hints.problems.length} states without a fitting hint. The nearest:`);
-      for (const p of r.hints.problems.slice(0, 5)) console.log(`  ${p.hint >= 0 ? "hint " + p.hint + " " + text(p.hint) : ""} ${p.problem}, after: ${p.path.map(describe).join(" > ") || "(the start)"}`);
-      process.exitCode = 1;
-    } else console.log(`hints: every state on the way has one (${all.length} hints)`);
-    r.hints.uses.forEach((n, i) => { if (!n) console.log(`  warn: hint ${i} ${text(i)} never holds`); });
-  }
-}
+if (args.includes("--full") && verdicts(r, g.C)) process.exitCode = 1;

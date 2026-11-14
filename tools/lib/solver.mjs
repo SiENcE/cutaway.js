@@ -15,8 +15,9 @@
 // (solver-worker.mjs), level by level, merged in a fixed order: the same states, paths and results as
 // one thread, many times faster on a big game.
 // With `trace`, every move played is watched (trace.mjs): what it read of the state and what it changed;
-// the search then returns that per move (`trace`), every state it found (`snaps`) and the winning way's
-// moves by room (`way`), for tools/graph.mjs.
+// the search then returns that per move (`trace`), every state it found (`snaps`), the states that end it
+// (`wins`, packed: what an act hands over to the next), the state it began from (`from`) and the winning
+// way's moves by room (`way`), for tools/graph.mjs.
 import { Worker } from "node:worker_threads";
 import { createHash } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
@@ -398,7 +399,7 @@ export async function makeSolver(g, opts = {}) {
       const { pre, ...m } = /** @type {any} */ (n.move), step = tracer.stepOf(unpack(/** @type {any} */ (nodes.get(/** @type {string} */ (n.parent))).snap), m, unpack(n.snap), n.win);
       if (step) way.unshift(step);
     }
-    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), way };
+    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), wins: [...nodes.values()].filter((n) => n.win).map((n) => n.snap), from, way };
   }
 
   /**

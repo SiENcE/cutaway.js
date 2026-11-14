@@ -30,7 +30,7 @@ const out = (/** @type {string} */ p, /** @type {string | Buffer} */ text) => { 
 
 // ---------------------------------------------------------------- the engine, as a game keeps it
 
-const TOOLS = ["validate", "solve", "play", "graph", "build-atlas", "cutout", "shot", "render-music", "studio"];
+const TOOLS = ["validate", "solve", "play", "graph", "handoff", "build-atlas", "cutout", "shot", "render-music", "studio"];
 mkdirSync(join(dir, "lib/cutaway/tools/lib"), { recursive: true });
 cpSync(join(ENGINE, "src"), join(dir, "lib/cutaway"), { recursive: true });
 cpSync(join(ENGINE, "LICENSE"), join(dir, "lib/cutaway/LICENSE"));

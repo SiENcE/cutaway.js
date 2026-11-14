@@ -1,7 +1,8 @@
 // The Connections tab with the studio, in headless Chrome on a copy of the demo: a graph task makes the data
 // and the tab loads it; the chart shows the demo's steps; a step opens its hotspot with the script the move
 // runs in the Things tab, a fact lists the places in the data that name it, the Things tab shows a hotspot's
-// steps; the state budget shows; and tools/graph.html draws the same data as a page of its own.
+// steps; the state budget shows; the Handoffs tab shows the demo's one act with its run; and tools/graph.html
+// draws the same data as a page of its own.
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,6 +20,8 @@ export default async function (t) {
   writeFileSync(join(dir, "demo", "studio.json"), JSON.stringify({ write: ["layers"], layers: { graph: "graphs", edits: "layers/edits.js" },
     tasks: { "graph: demo": ["node", resolve("tools", "graph.mjs"), "index.html", "--workers", "0", "--out", "graphs/demo.js"], hello: ["node", "-e", "1"] } }));
   mkdirSync(join(dir, "demo", "graphs"), { recursive: true });
+  mkdirSync(join(dir, "demo", "tools", "lib"), { recursive: true });   // where the Handoffs tab looks (beside Cutaway.base)
+  for (const f of ["validate.mjs", "handoff.mjs"]) cpSync(resolve("tools", "lib", f), join(dir, "demo", "tools", "lib", f));
   const s = await studio(page, { quiet: true }).start(0);
   const chrome = await launch({ width: 1400, height: 800 });
   const E = "Cutaway.editor", G = `${E}.modules.graph`;
@@ -57,6 +60,14 @@ export default async function (t) {
     await chrome.ev(`[...document.querySelectorAll("button")].find((b) => /Budget/.test(b.textContent)).click(); 1`);
     await sleep(300);
     t.ok("connections: the budget shows the once-mark that doubles the states", /once:hall\.crate\.use\.0/.test(await chrome.ev(`${E}.centre.textContent`)));
+    // the Handoffs tab: the demo's one act (the first: it keeps nothing) and its run from the graph folder
+    await chrome.ev(`${E}.show("handoffs"); ${E}.refresh(); 1`);
+    for (let i = 0; i < 100 && !(await chrome.ev(`!!${E}.modules.handoffs.report`)); i++) await sleep(100);
+    await sleep(200);
+    const ho = await chrome.ev(`(() => { const r = ${E}.modules.handoffs.report; return { acts: r?.acts.map((a) => a.id + ":" + a.runs.length).join(" "), errors: r?.errors, text: document.body.textContent }; })()`);
+    const hoButtons = await chrome.ev(`[...document.querySelectorAll("button")].map((b) => b.textContent)`);
+    t.ok("handoffs: the tab shows the act, that it keeps nothing, and its run", ho.acts === "act1:1" && ho.errors === 0 && /act act1/.test(ho.text) && /keeps nothing/.test(ho.text) && /1 run in graphs\/: demo\.js/.test(ho.text)
+      && hoButtons.includes("graph: demo") && !hoButtons.includes("hello"), JSON.stringify({ ...ho, text: ho.text.slice(-400) }));
     // the same data as a page of its own
     const data = join(dir, "demo", "graphs", "demo.js");
     await chrome.send("Page.navigate", { url: `${pathToFileURL(resolve("tools", "graph.html")).href}?data=${encodeURIComponent(pathToFileURL(data).href)}` });

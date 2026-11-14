@@ -5,12 +5,17 @@
 //   node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--max N] [--workers N] [--out out/graph/<act>.js]
 // --act: one act alone, from its start (going on to the next act ends it, as ?alone); --set: flags for its
 // start (one the act before leaves, or one that shuts a part of the game away).
+// It says what solve.mjs --full says (soft-locks, hints) and exits 1 as it does (unsolvable, a soft-lock, a state
+// without a fitting hint, stopped at --max), after writing the data: a game can use its graph runs as its checks.
+// The data also holds what the act hands over (lib/graph.mjs handoffOf: keep, next, nextKeep, start, ends), which
+// tools/handoff.mjs and the editor's Handoffs tab check across the acts' runs.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { makeSolver, loadFor } from "./lib/solver.mjs";
-import { buildGraph } from "./lib/graph.mjs";
+import { buildGraph, handoffOf } from "./lib/graph.mjs";
+import { verdicts } from "./lib/verdict.mjs";
 
 const args = process.argv.slice(2);
 const valued = ["--act", "--set", "--max", "--workers", "--out"];
@@ -28,7 +33,8 @@ const progress = (/** @type {string} */ text) => { if (Date.now() - shown > 3000
 const r = /** @type {any} */ (await solver.search({ full: true, maxStates: Number(opt("--max", "1000000")), progress }));
 console.log(`${r.states} states in ${Date.now() - t0} ms${r.complete ? "" : " (stopped at the limit: the graph shows only what was reached)"}`);
 
-const data = { page: path.basename(page), act: act || null, set: kept ? kept.split(",") : [], made: new Date().toISOString(), ...buildGraph(r, g.C.state.views?.() ?? []) };
+const views = g.C.state.views?.() ?? [];
+const data = { page: path.basename(page), act: act || null, set: kept ? kept.split(",") : [], made: new Date().toISOString(), ...handoffOf(g.C, act || null, r, views), ...buildGraph(r, views) };
 mkdirSync(path.dirname(out), { recursive: true });
 // a script, not JSON: the viewer runs from file:// and loads it with a <script> tag (no fetch)
 writeFileSync(out, `// made by tools/graph.mjs\nwindow.CUTAWAY_GRAPH = ${JSON.stringify(data)};\n`);
@@ -36,4 +42,7 @@ console.log(`${data.moves.length} moves that change something, ${data.facts.leng
 console.log("what multiplies the states most:");
 for (const f of data.factors.slice(0, 12)) console.log(`  x${f.factor.toFixed(2).padEnd(6)} ${f.part} (${f.values} values)`);
 const viewer = path.join(path.dirname(fileURLToPath(import.meta.url)), "graph.html");
+if (data.ends && data.nextKeep?.length) console.log(`hands over to ${data.next} in ${data.ends.variants} way${data.ends.variants === 1 ? "" : "s"} (of ${data.ends.wins} end states; it keeps ${data.nextKeep.join(", ")})`);
 console.log(`wrote ${out}\nopen ${pathToFileURL(viewer)}?data=${encodeURIComponent(pathToFileURL(out).href)}`);
+if (!r.solved) { console.log("UNSOLVABLE: no way to the end found"); process.exitCode = 1; }
+if (verdicts(r, g.C)) process.exitCode = 1;

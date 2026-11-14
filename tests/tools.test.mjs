@@ -1,5 +1,6 @@
 // The game tools on the demo: validate passes, broken references fail; solve finds the end, an
-// unsolvable variant fails and a soft-lock is found; graph traces the moves (what each needs and brings about).
+// unsolvable variant fails and a soft-lock is found; graph traces the moves (what each needs and brings about)
+// and what an act hands over; the hand-over between acts is checked statically and from runs (handoff).
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,7 +10,8 @@ import { launch, sleep } from "../tools/lib/chrome.mjs";
 import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
 import { makeSolver, loadFor } from "../tools/lib/solver.mjs";
-import { buildGraph } from "../tools/lib/graph.mjs";
+import { buildGraph, handoffOf } from "../tools/lib/graph.mjs";
+import { handoff, parseGraph, flagOf } from "../tools/lib/handoff.mjs";
 import { makeTracer } from "../tools/lib/trace.mjs";
 
 async function demo(patch) {
@@ -205,6 +207,77 @@ export default async function (t) {
   t.ok("validate warns: { show } on a prop with if", showIf.some((w) => /window/.test(w) && /if/.test(w) && /door/.test(w)), showIf.join(" | "));
   t.ok("validate: the demo has no such warning", !(await warnsOf()).some((w) => /prop with if/.test(w)));
   t.ok("graph: the state budget names the once-mark that doubles the states", G.factors.some((f) => f.part === "once:hall.crate.use.0" && Math.abs(f.factor - 2) < 0.01), JSON.stringify(G.factors.slice(0, 3)));
+
+  // ---- the hand-over between acts: the lamp goes on to act2, which is fresh and keeps flags; the window waves (optional)
+  const twoActs = (/** @type {string[]} */ keep) => (/** @type {any} */ C) => {
+    const lit = C.room.get("yard").hotspots.lamp.with.bulb_clean;
+    lit[lit.length - 1] = { act: "next" };
+    C.room.get("hall").hotspots.window.use = [{ set: "waved" }, "Hello out there."];
+    C.act("act2", { title: "Act 2", room: "hall", actor: "pip", fresh: true, keep, start: C.act.get("act1").start });
+  };
+  {
+    const g = await demo(twoActs(["got_bulb", "never_set", "waved"]));
+    await boot(g, { instant: true });
+    const v = validate(g.C, { languages: g.options.languages });
+    t.ok("validate fails: an act keeps a flag nothing sets", v.issues.some((i) => i.level === "error" && i.where === "act act2.keep" && /keeps "never_set", which nothing sets/.test(i.msg)), JSON.stringify(v.issues.filter((i) => /keep/.test(i.where))));
+    t.ok("validate warns: an act keeps a flag nothing tests", v.issues.some((i) => i.level === "warning" && i.where === "act act2.keep" && /"waved"/.test(i.msg)) && !v.issues.some((i) => /"got_bulb"/.test(i.msg)));
+    const a2 = v.acts.find((a) => a.id === "act2"), bulb = a2?.keep.find((k) => k.flag === "got_bulb");
+    t.ok("validate: a kept flag's values and where it is set and tested", !!bulb && JSON.stringify(bulb.values) === '["true"]' && bulb.setAt.some((w) => /mailbox\.use/.test(w)) && bulb.testedAt.some((w) => /mailbox\.use/.test(w)), JSON.stringify(bulb));
+    t.ok("validate: the flags' values, set and tested places", JSON.stringify(v.flags.values.waved) === '["true"]' && v.flags.setAt.waved?.[0] === "room hall.hotspots.window.use.0" && !!v.flags.testedAt.got_key?.length);
+    t.ok("validate: the acts' hand-over variants (each kept flag's values and unset; the first act: one)", v.acts[0].variants === 1 && a2?.variants === 4, JSON.stringify(v.acts.map((a) => a.variants)));
+    const counted = await demo((/** @type {any} */ C) => { twoActs(["n"])(C); C.room.get("hall").hotspots.window.use = [{ inc: "n" }, { if: "n>=2", then: "Twice." }]; });
+    await boot(counted, { instant: true });
+    t.ok("validate: a kept flag that counts makes the variants many (null)", validate(counted.C, {}).acts[1].variants === null);
+  }
+  {
+    // a traced search of act1 alone: what it keeps, the next act and what that keeps, its start, its ends projected
+    const g = await demo(twoActs(["got_bulb", "waved"]));
+    Object.assign(g.options, { act: "act1", demo: { acts: ["act1"] } });
+    const rt = await (await makeSolver(g, { trace: true })).search({ full: true });
+    const H = handoffOf(g.C, "act1", /** @type {any} */ (rt), []);
+    t.ok("graph: the data says the act, its keep, the next act and what it keeps", H.from === "act1" && JSON.stringify(H.keep) === "[]" && H.next === "act2" && JSON.stringify(H.nextKeep) === '["got_bulb","waved"]', JSON.stringify({ ...H, ends: null }));
+    t.ok("graph: the start's flags (none in the demo)", Array.isArray(H.start) && H.start.length === 0, JSON.stringify(H.start));
+    const ways = H.ends?.projections.map((p) => JSON.stringify(p.flags)).sort().join(" ");
+    t.ok("graph: the ends projected onto the next act's keep (waved or not, the bulb always)", !!H.ends && H.ends.wins > 0 && H.ends.variants === 2 && ways === '{"got_bulb":true,"waved":true} {"got_bulb":true}'
+      && H.ends.projections.reduce((n, p) => n + p.n, 0) === H.ends.wins, JSON.stringify(H.ends));
+    // act2 alone, waved given (as the act before may leave it): it is in its start, and it has no next
+    const g2 = await demo(twoActs(["got_bulb", "waved"]));
+    Object.assign(g2.options, { act: "act2", demo: { acts: ["act2"] } });
+    g2.C.act.get("act2").start = [...g2.C.act.get("act2").start, { set: "waved" }];
+    const r2 = await (await makeSolver(g2, { trace: true })).search({ full: true });
+    const H2 = handoffOf(g2.C, "act2", /** @type {any} */ (r2), []);
+    t.ok("graph: a run's start holds what --set gave it; the last act has no next", H2.start.includes("waved") && H2.next === null && H2.nextKeep === null && H2.ends?.variants === null, JSON.stringify({ ...H2, ends: H2.ends?.wins }));
+  }
+  {
+    // handoff() on runs made up for it
+    const run = (/** @type {any} */ o) => ({ act: o.act, from: o.act, set: o.set ?? [], keep: o.keep ?? null, next: o.next ?? null, nextKeep: o.nextKeep ?? null, start: o.start ?? [],
+      ends: o.ends ?? null, states: 10, complete: true,
+      moves: (o.moves ?? []).map((/** @type {any} */ m, /** @type {number} */ i) => ({ id: `r|m${i}`, room: "r", move: m.move ?? `act m${i}`, reads: (m.reads ?? []).map((/** @type {string} */ f) => [f, 1]), neg: (m.neg ?? []).map((/** @type {string} */ f) => [f, 1]), writes: m.writes ?? [] })) });
+    const acts = [{ id: "a1", fresh: false, keep: [] }, { id: "a2", fresh: true, keep: [{ flag: "k" }] }];
+    const a1 = run({ act: "a1", keep: [], next: "a2", nextKeep: ["k"], moves: [{ writes: ["x", "c", "k"] }],
+      ends: { wins: 3, variants: 2, projections: [{ flags: { k: true }, n: 2 }, { flags: {}, n: 1 }] } });
+    const a2 = run({ act: "a2", keep: ["k"], moves: [{ move: "use door", neg: ["x", "has:key", "~dlg.a"] }] });
+    const r1 = handoff([a1, a2], { acts, flags: { set: ["x", "c", "k"], tested: ["x", "c"] } });
+    const p2 = r1.acts[1].problems, p1 = r1.acts[0].problems;
+    t.ok("handoff: an act reads what an earlier act sets but doesn't keep (an error, with its steps)", r1.errors === 1 && p2.some((p) => p.level === "error" && p.flag === "x" && /earlier act sets, but doesn't keep it/.test(p.msg) && p.at?.[0] === "r: use door"), JSON.stringify(r1.problems));
+    t.ok("handoff: a kept flag no run reads, in the last act: kept for nothing", p2.some((p) => p.level === "warning" && p.flag === "k" && /kept for nothing/.test(p.msg)));
+    t.ok("handoff: set, tested in the game, read nowhere here, not kept by the next: a consequence that never arrives", p1.some((p) => p.level === "warning" && p.flag === "c" && /never arrives/.test(p.msg)) && !p1.some((p) => p.flag === "k"), JSON.stringify(p1));
+    t.ok("handoff: the ways an act hands over", p1.some((p) => p.level === "info" && /in 2 ways/.test(p.msg)) && r1.acts[0].variants?.count === 2);
+    t.ok("handoff: other facts and marks aren't flags", flagOf("has:key") === null && flagOf("!door_open") === "door_open" && flagOf("chits=…") === "chits" && !r1.acts[1].reads.includes("~dlg.a"));
+    // two runs of a2 (parts shut apart): one writes x, so it is no error; the other reading it is a warning
+    const a2w = run({ act: "a2", set: ["off_q"], keep: ["k"], start: ["off_q"], moves: [{ writes: ["x"] }, { reads: ["k"] }] });
+    const a2r = run({ act: "a2", set: ["off_p"], keep: ["k"], start: ["off_p"], moves: [{ move: "use door", neg: ["x"] }] });
+    const r2 = handoff([a1, a2w, a2r], { acts, flags: { set: ["x", "c", "k"], tested: ["x", "c"] } });
+    t.ok("handoff: no error when another run of the same act writes the flag", r2.errors === 0, JSON.stringify(r2.problems));
+    t.ok("handoff: a run reads what only another run of its act sets (a warning naming it)", r2.problems.some((p) => p.level === "warning" && p.flag === "x" && /the run \[off_p\] reads "x", which only the run \[off_q\] sets/.test(p.msg)), JSON.stringify(r2.problems));
+    t.ok("handoff: the runs merged by act, in the acts' order", r2.acts.map((a) => `${a.id}:${a.runs.map((x) => x.label).join("")}`).join(" ") === "a1:[all] a2:[off_q][off_p]");
+    // without the game: the order from the runs' next, the flags from the runs; the data file's text read back
+    const r3 = handoff([a2, a1].map((d) => parseGraph(`window.CUTAWAY_GRAPH = ${JSON.stringify(d)};\n`)));
+    t.ok("handoff: without the game, the order from the runs and the same error", r3.acts.map((a) => a.id).join(" ") === "a1 a2" && r3.errors === 1, JSON.stringify(r3.problems));
+    // a whole game's run spans acts: left out with a note
+    const r4 = handoff([{ ...a1, act: null }]);
+    t.ok("handoff: a whole game's run (no --act) is left out, said in a note", r4.notes.length === 1 && r4.acts.every((a) => !a.runs.length));
+  }
 
   // validate: a step with if or once carries only its own keys (the engine does nothing with the others)
   const use = (/** @type {any} */ steps) => (/** @type {any} */ C) => { C.room.get("hall").hotspots.window.use = steps; };

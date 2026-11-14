@@ -1,6 +1,7 @@
 // The game's connections as data, from a traced search (solver.mjs with `trace`): which moves need which
 // facts and which facts they bring about (the puzzle dependency chart), and how much each part of the
-// state multiplies the states (the state budget). tools/graph.mjs writes it; tools/graph.html shows it.
+// state multiplies the states (the state budget), and what the act searched hands over to the next one
+// (handoffOf). tools/graph.mjs writes it; tools/graph.html and the editor show it, tools/lib/handoff.mjs checks it.
 import { unpack } from "./solver.mjs";
 
 /** A flag with more values than this is a quantity (money, the time): its values are one fact, "name=…". */
@@ -65,6 +66,43 @@ export function buildGraph(r, views) {
     way,
     factors: stateFactors(r.snaps, views),
   };
+}
+
+/**
+ * What a run hands over between acts. `from`: the act the search began in; `keep`: what it keeps from the act
+ * before ([] for the first act, which a new game begins; null for an act that isn't fresh: everything comes
+ * along); `next`: the act after it in the order they are defined, and `nextKeep` what that one keeps (as `keep`);
+ * `start`: the start state's flags as facts ("name", "name=value"; no view flags, no dialogue marks), after the
+ * act's start steps and what the search was given (--set); `ends`: the states that end the search, projected onto
+ * `nextKeep` (each distinct set of kept flags with how many end states have it; none when the next act isn't
+ * fresh, null for a search of a whole game with several acts, whose end is no hand-over).
+ * @param {any} C the engine @param {string | null} act the act searched alone, or null (the whole game)
+ * @param {{from: any, wins: Uint8Array[]}} r a traced search's result @param {string[]} views
+ */
+export function handoffOf(C, act, r, views) {
+  const ids = C.act.ids(), from = act ?? C.acts.first() ?? null, i = ids.indexOf(from);
+  /** @param {string} id @returns {string[] | null} */
+  const keepOf = (id) => { const a = C.act.get(id); return ids.indexOf(id) === 0 ? [] : a?.fresh ? [...(a.keep ?? [])].map(String) : null; };
+  const keep = from ? keepOf(from) : [], next = i >= 0 ? ids[i + 1] ?? null : null, nextKeep = next ? keepOf(next) : null;
+  const skip = new Set(views);
+  const flags = r.from?.state?.flags ?? {};
+  const start = Object.keys(flags).filter((k) => !skip.has(k) && !k.startsWith("~dlg.") && flags[k] !== undefined && flags[k] !== null && flags[k] !== false)
+    .map((k) => (flags[k] === true ? k : `${k}=${flags[k]}`)).sort();
+  let ends = null;
+  if (act || ids.length <= 1) {
+    /** @type {Map<string, {flags: Record<string, any>, n: number}>} */
+    const seen = new Map();
+    if (nextKeep) for (const p of r.wins ?? []) {
+      const f = unpack(p).state?.flags ?? {};
+      const proj = Object.fromEntries(nextKeep.filter((k) => f[k] !== undefined).map((k) => [k, f[k]]));
+      const k = JSON.stringify(proj);
+      const e = seen.get(k);
+      if (e) e.n++; else seen.set(k, { flags: proj, n: 1 });
+    }
+    const projections = [...seen.values()].sort((a, b) => b.n - a.n);
+    ends = { wins: (r.wins ?? []).length, variants: nextKeep ? projections.length : null, projections };
+  }
+  return { from, keep, next, nextKeep, start, ends };
 }
 
 /** Two 32-bit hashes of a text (FNV-1a with two seeds). @param {string} s @returns {[number, number]} */

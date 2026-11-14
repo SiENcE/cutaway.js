@@ -35,7 +35,7 @@ The editor docks around the game in its own page, like most editors:
 - **The menu bar** on top: File, Edit, View, Room, Art, Play, Tools, Help (below). On its right: the
   room to open, **▶ Play**, and whether the studio is connected.
 - **The left panel**: the **workspaces** (Room, Texts, Things, Art, Sound, Voices, Dialogue, State,
-  Issues, Checks, Connections, Map, Schedule, Sequences; a ● marks one with unsaved work; the help isn't one of them:
+  Issues, Checks, Connections, Handoffs, Map, Schedule, Sequences; a ● marks one with unsaved work; the help isn't one of them:
   the Help menu and F1 open it), the **rooms** (click one to open it: only to look at, so no enter script runs,
   the room doesn't count as visited and no autosave is written over the player's), and what
   is in the room: hotspots, props, actors, lamps, effects. A click selects it in Room (its shape) or in
@@ -85,7 +85,7 @@ the same way at their headings (also with Enter or Space on the heading).
 | Room | the rooms (open one), **+ Walk area**, **+ Hole**, **+ Hotspot**, save the shapes |
 | Art | **Edit pixels** (the selected sprite), **New sprite**, **Revert** to the game's art, **Import PNG**, **Export PNG**, **Reload art**, the pxl sources (with the studio) |
 | Play | **Pause game** (Ctrl+P), **Step** (F8: 100 ms), **Play from here** (F10); the **sequences**: each one, and each from one of its shot marks (the game runs while it plays, then is paused again), **Stop sequence** (as Esc in the game: `after` runs), **Next shot** (as Space); begin an act as a new game, **Test dialogue** (the one picked in Dialogue) |
-| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, Map, State, and the game's own tabs |
+| Tools | the game's tasks from `studio.json` (their output goes to the output pane), Issues, Checks, Connections, Handoffs, Map, State, and the game's own tabs |
 | Help | the editor guide (F1), the reference, the keys, and a game's own guides (its tabs') |
 
 **Inspector in its own window** moves the inspector into a window of its own (the game gets the room
@@ -345,6 +345,27 @@ The wheel zooms, a drag moves, a double click fits everything in.
   loaded); a click shows the step in the chart.
 
 The same chart opens as a page of its own: `tools/graph.html?data=<the file's URL>` (graph.mjs prints the link).
+
+## Handoffs
+What each act hands over to the next, act by act in their order (each folds; its note counts the errors
+and warnings). Errors are red, warnings yellow, as in Issues. It needs the studio.
+
+- **What it keeps** (the validator on the game as it is now): the first act keeps nothing (a new game
+  begins it); an act that isn't `fresh` takes everything the act before leaves; a fresh act lists its
+  `keep` flags, each with the values the data sets it to (`true`, a value; "counts" for one that is
+  counted up) and where it is set and tested (click one to open it, as in Issues), and how many ways it
+  can begin: each kept flag's values and unset, multiplied ("many" when one counts). A kept flag nothing
+  sets is an error, one nothing tests a warning.
+- **What the runs found:** the traced searches in the studio's `graph` folder, one per act and per `--set`
+  (`tools/graph.mjs index.html --act <act> [--set f,g] --out out/graph/<name>.js`), checked across the acts
+  (`tools/handoff.mjs`): an act that reads a flag an earlier act sets but it doesn't keep (an error: there
+  it is always unset), a kept flag no run of the act reads and the next act doesn't keep (kept for
+  nothing), a flag the act sets and the game tests that nothing here reads and the next act doesn't keep
+  (a consequence that never arrives), a run that reads what only another run of the same act sets (parts
+  meant to stay apart that touch), and the ways the act ends for the next (its end states as the next act
+  keeps them, with how many end states each).
+- **Check again** runs the validator and reads the runs again; the game's tasks whose names begin with
+  "graph" or "handoff" run from here (each searches every state: minutes in a big game), then it checks again.
 
 ## Map
 Every room at once, each as a picture of its background with its name, and the ways between them:

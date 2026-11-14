@@ -115,6 +115,7 @@ hand-written is overwritten). Its workspaces:
 - **State** (go anywhere, set flags, give items: the developer's menu)
 - **Issues** (the validator on the live data), **Checks** (the game's tasks), **Connections** (the puzzle
   dependency chart and the state budget; a step opens its script, a fact lists where it is set and asked),
+  **Handoffs** (what each act keeps from the one before, and what the acts' traced runs say about it),
   **Map** (every room as a picture with its exits and script warps; what can't be reached, what leads nowhere)
 - A game's own tabs (`studio.json` "editor"), which can take a drag on the picture and run its tasks with names filled in
 - **Help** (F1: the editor guide and this reference, with search)
@@ -165,6 +166,7 @@ npm run validate         # the demo's data
 npm run solve            # prove the demo can be finished, find soft-locks, check its hints
 npm run play             # play it through in headless Chrome (add --touch: as a phone)
 node tools/graph.mjs demo/index.html   # the demo's connections: open the graph.html link it prints
+node tools/handoff.mjs out/graph --page demo/index.html   # the hand-over between acts, from the acts' graph runs
 node tools/build-editor-help.mjs   # after changing docs/editor.md or docs/reference.md
 ```
 
