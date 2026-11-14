@@ -3,12 +3,14 @@
 // walk polygons (valid, reachable points) and strings in every language; sequences (their steps, the
 // rooms they show, the props they move) and the intro and gate start options.
 // Acts that keep flags (`fresh` with `keep`): a kept flag must be set somewhere (an error) and tested
+// somewhere (a warning); a flag it leaves behind on purpose (`leave`) is not kept too (an error) and is set
 // somewhere (a warning); each flag's values as the data sets them, and where it is set and tested, are
 // returned with the acts' hand-over variants (tools/lib/handoff.mjs checks the hand-over from traced runs).
 /** @typedef {{level: "error" | "warning", where: string, msg: string}} Issue */
 /** @typedef {{flag: string, values: string[] | null, setAt: string[], testedAt: string[]}} KeptFlag
  *   values: what the data sets it to (true, a value), null when it counts (inc) or a game's action sets it */
-/** @typedef {{id: string, fresh: boolean, keep: KeptFlag[], variants: number | null}} ActHandoff
+/** @typedef {{id: string, fresh: boolean, keep: KeptFlag[], leave: KeptFlag[], variants: number | null}} ActHandoff
+ *   leave: what the act leaves behind on purpose (the act's `leave`), told as the kept flags are
  *   variants: how many ways the act can begin (each kept flag's values and unset); 1 for the first act, null when a
  *   kept flag counts, or when the act isn't fresh after another (all the act before leaves comes along) */
 
@@ -581,9 +583,18 @@ export function validate(C, o = {}) {
       if (!flagsSet.has(f)) err(w, `keeps "${f}", which nothing sets`);
       else if (!flagsTested.has(f)) warn(w, `keeps "${f}", which nothing tests`);
     }
-    const kept = keep.map((f) => ({ flag: f, values: valuesOf(f), setAt: setAt.get(f) ?? [], testedAt: testedAt.get(f) ?? [] }));
+    // what it leaves behind on purpose (an earlier act sets it, this one reads it as unset): not kept, and set somewhere
+    const lw = `act ${id}.leave`, leave = Array.isArray(a.leave) ? a.leave.map(String) : [];
+    if (a.leave !== undefined && !Array.isArray(a.leave)) err(lw, "leave is a list of flags");
+    if (leave.length && !a.fresh) warn(lw, "leave says nothing without fresh: true (everything the act before leaves comes along)");
+    for (const f of leave) {
+      if (keep.includes(f)) err(lw, `"${f}" is both kept and left behind`);
+      else if (!flagsSet.has(f)) warn(lw, `leaves "${f}" behind, which nothing sets`);
+    }
+    const info = (/** @type {string} */ f) => ({ flag: f, values: valuesOf(f), setAt: setAt.get(f) ?? [], testedAt: testedAt.get(f) ?? [] });
+    const kept = keep.map(info);
     const variants = i === 0 ? 1 : !a.fresh || kept.some((k) => k.values === null) ? null : kept.reduce((n, k) => n * (/** @type {string[]} */ (k.values).length + 1), 1);
-    return { id, fresh: !!a.fresh, keep: kept, variants };
+    return { id, fresh: !!a.fresh, keep: kept, leave: leave.map(info), variants };
   });
 
   // texts the game shows through its own code (Cutaway.i18n.declare)

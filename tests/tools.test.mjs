@@ -228,6 +228,13 @@ export default async function (t) {
     const counted = await demo((/** @type {any} */ C) => { twoActs(["n"])(C); C.room.get("hall").hotspots.window.use = [{ inc: "n" }, { if: "n>=2", then: "Twice." }]; });
     await boot(counted, { instant: true });
     t.ok("validate: a kept flag that counts makes the variants many (null)", validate(counted.C, {}).acts[1].variants === null);
+    // leave: what the act leaves behind on purpose, not kept too, set somewhere
+    const left = await demo((/** @type {any} */ C) => { twoActs(["got_bulb"])(C); C.act.get("act2").leave = ["got_bulb", "door_open", "nowhere_set"]; });
+    await boot(left, { instant: true });
+    const lv = validate(left.C, {});
+    t.ok("validate fails: a flag both kept and left behind", lv.issues.some((i) => i.level === "error" && i.where === "act act2.leave" && /"got_bulb" is both kept and left/.test(i.msg)), JSON.stringify(lv.issues.filter((i) => /leave/.test(i.where))));
+    t.ok("validate warns: a flag left behind that nothing sets", lv.issues.some((i) => i.level === "warning" && i.where === "act act2.leave" && /"nowhere_set"/.test(i.msg)) && !lv.issues.some((i) => /"door_open"/.test(i.msg)));
+    t.ok("validate: an act's leave, told as its keep", lv.acts[1].leave.map((k) => k.flag).join(",") === "got_bulb,door_open,nowhere_set" && lv.acts[1].leave[1].setAt.length > 0);
   }
   {
     // a traced search of act1 alone: what it keeps, the next act and what that keeps, its start, its ends projected
@@ -244,9 +251,10 @@ export default async function (t) {
     const g2 = await demo(twoActs(["got_bulb", "waved"]));
     Object.assign(g2.options, { act: "act2", demo: { acts: ["act2"] } });
     g2.C.act.get("act2").start = [...g2.C.act.get("act2").start, { set: "waved" }];
+    g2.C.act.get("act2").leave = ["door_open"];
     const r2 = await (await makeSolver(g2, { trace: true })).search({ full: true });
     const H2 = handoffOf(g2.C, "act2", /** @type {any} */ (r2), []);
-    t.ok("graph: a run's start holds what --set gave it; the last act has no next", H2.start.includes("waved") && H2.next === null && H2.nextKeep === null && H2.ends?.variants === null, JSON.stringify({ ...H2, ends: H2.ends?.wins }));
+    t.ok("graph: a run's start holds what --set gave it, its leave; the last act has no next", H2.start.includes("waved") && JSON.stringify(H2.leave) === '["door_open"]' && H2.next === null && H2.nextKeep === null && H2.ends?.variants === null, JSON.stringify({ ...H2, ends: H2.ends?.wins }));
   }
   {
     // handoff() on runs made up for it
@@ -260,7 +268,16 @@ export default async function (t) {
     const r1 = handoff([a1, a2], { acts, flags: { set: ["x", "c", "k"], tested: ["x", "c"] } });
     const p2 = r1.acts[1].problems, p1 = r1.acts[0].problems;
     t.ok("handoff: an act reads what an earlier act sets but doesn't keep (an error, with its steps)", r1.errors === 1 && p2.some((p) => p.level === "error" && p.flag === "x" && /earlier act sets, but doesn't keep it/.test(p.msg) && p.at?.[0] === "r: use door"), JSON.stringify(r1.problems));
-    t.ok("handoff: a kept flag no run reads, in the last act: kept for nothing", p2.some((p) => p.level === "warning" && p.flag === "k" && /kept for nothing/.test(p.msg)));
+    t.ok("handoff: a kept flag no run reads and nothing tests, in the last act: kept for nothing", p2.some((p) => p.level === "warning" && p.flag === "k" && /nothing in the game tests/.test(p.msg) && /kept for nothing/.test(p.msg)));
+    // ... but the game tests it somewhere (a look that only talks, a drawn screen): an info naming where
+    const r1t = handoff([a1, a2], { acts, flags: { set: ["x", "c", "k"], tested: ["x", "c", "k"], testedAt: { k: ["room r.hotspots.bao.look.0"] } } });
+    const kt = r1t.acts[1].problems.find((p) => p.flag === "k");
+    t.ok("handoff: a kept flag no run reads but the game tests: an info, read where the solver doesn't go", kt?.level === "info" && /where the solver doesn't go: room r\.hotspots\.bao\.look\.0/.test(kt.msg) && !r1t.problems.some((p) => p.flag === "k" && p.level === "warning"), JSON.stringify(r1t.problems));
+    // left behind on purpose: no error, an info
+    const r1l = handoff([a1, a2], { acts: [acts[0], { ...acts[1], leave: [{ flag: "x" }] }], flags: { set: ["x", "c", "k"], tested: ["x", "c"] } });
+    t.ok("handoff: a flag the act leaves behind on purpose is no error (an info)", r1l.errors === 0 && r1l.acts[1].problems.some((p) => p.level === "info" && /left behind on purpose \(leave\): x/.test(p.msg)) && r1l.acts[1].leave.includes("x"), JSON.stringify(r1l.problems));
+    const r1lr = handoff([a1, { ...a2, leave: ["x"] }]);
+    t.ok("handoff: without the game, leave from the run's data", r1lr.errors === 0, JSON.stringify(r1lr.problems));
     t.ok("handoff: set, tested in the game, read nowhere here, not kept by the next: a consequence that never arrives", p1.some((p) => p.level === "warning" && p.flag === "c" && /never arrives/.test(p.msg)) && !p1.some((p) => p.flag === "k"), JSON.stringify(p1));
     t.ok("handoff: the ways an act hands over", p1.some((p) => p.level === "info" && /in 2 ways/.test(p.msg)) && r1.acts[0].variants?.count === 2);
     t.ok("handoff: other facts and marks aren't flags", flagOf("has:key") === null && flagOf("!door_open") === "door_open" && flagOf("chits=…") === "chits" && !r1.acts[1].reads.includes("~dlg.a"));
@@ -269,7 +286,13 @@ export default async function (t) {
     const a2r = run({ act: "a2", set: ["off_p"], keep: ["k"], start: ["off_p"], moves: [{ move: "use door", neg: ["x"] }] });
     const r2 = handoff([a1, a2w, a2r], { acts, flags: { set: ["x", "c", "k"], tested: ["x", "c"] } });
     t.ok("handoff: no error when another run of the same act writes the flag", r2.errors === 0, JSON.stringify(r2.problems));
-    t.ok("handoff: a run reads what only another run of its act sets (a warning naming it)", r2.problems.some((p) => p.level === "warning" && p.flag === "x" && /the run \[off_p\] reads "x", which only the run \[off_q\] sets/.test(p.msg)), JSON.stringify(r2.problems));
+    t.ok("handoff: a run reads what only another run of its act sets (a warning naming them)", r2.problems.some((p) => p.level === "warning" && p.flag === "x" && /"x" is set only by the run \[off_q\] but read by 1 other run \(\[off_p\]\)/.test(p.msg)), JSON.stringify(r2.problems));
+    // four runs reading it: one warning for the flag, counted; the runs and their steps in the data
+    const readers = ["p1", "p2", "p3", "p4"].map((n) => run({ act: "a2", set: [`off_${n}`], keep: ["k"], start: [`off_${n}`], moves: [{ move: `look ${n}`, neg: ["x"] }] }));
+    const r5 = handoff([a1, a2w, ...readers], { acts, flags: { set: ["x", "c", "k"], tested: ["x", "c"] } });
+    const cross = r5.acts[1].problems.filter((p) => p.flag === "x" && p.level === "warning");
+    t.ok("handoff: runs reading what only another run sets: one warning per flag, the runs counted", cross.length === 1 && /set only by the run \[off_q\] but read by 4 other runs$/.test(cross[0].msg)
+      && cross[0].runs?.length === 4 && JSON.stringify(cross[0].writers) === '["[off_q]"]' && cross[0].detail?.[3]?.at[0] === "r: look p4", JSON.stringify(cross));
     t.ok("handoff: the runs merged by act, in the acts' order", r2.acts.map((a) => `${a.id}:${a.runs.map((x) => x.label).join("")}`).join(" ") === "a1:[all] a2:[off_q][off_p]");
     // without the game: the order from the runs' next, the flags from the runs; the data file's text read back
     const r3 = handoff([a2, a1].map((d) => parseGraph(`window.CUTAWAY_GRAPH = ${JSON.stringify(d)};\n`)));

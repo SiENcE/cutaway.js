@@ -6,7 +6,8 @@
 // The step { act: "next" } (or { act: "act2" }) ends the act being played and begins that one; after the
 // last act it ends the game (the "end.text" card). An act with `fresh: true` begins from a clean state
 // even then, and its `start` gives what it carries over; `keep: ["flag"]` lists flags that come along
-// when the act before goes on into it (not when it is started from the title screen). The act being played is in the save; acts
+// when the act before goes on into it (not when it is started from the title screen); `leave: ["flag"]` names
+// flags an act before sets that it leaves behind on purpose (for the tools only). The act being played is in the save; acts
 // begun once stay unlocked (in localStorage, like the settings) and can be started from the title screen.
 // The end: { end: "Thanks for playing!" } shows a card and emits "game.end". A demo
 // (Cutaway.start({ demo: { acts: ["act1"], link: "https://...", text: "..." } })) ends where it
@@ -42,6 +43,8 @@
  *                               and from the end of the one before, and one state for the solver)
  * @property {string[]} [keep]   with `fresh`: flags that come along when the act before goes on into this one
  *                               (an optional deed that pays off later); started from the title, they're unset
+ * @property {string[]} [leave]  with `fresh`: flags an act before sets that this one reads but leaves behind on purpose
+ *                               (always unset here); only the tools read it (validate, handoff), the game does nothing with it
  */
 /**
  * @typedef {object} TitleOptions

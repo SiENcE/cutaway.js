@@ -355,14 +355,16 @@ and warnings). Errors are red, warnings yellow, as in Issues. It needs the studi
   `keep` flags, each with the values the data sets it to (`true`, a value; "counts" for one that is
   counted up) and where it is set and tested (click one to open it, as in Issues), and how many ways it
   can begin: each kept flag's values and unset, multiplied ("many" when one counts). A kept flag nothing
-  sets is an error, one nothing tests a warning.
+  sets is an error, one nothing tests a warning. Beside them what it leaves behind on purpose (`leave`),
+  told the same way; a flag both kept and left is an error.
 - **What the runs found:** the traced searches in the studio's `graph` folder, one per act and per `--set`
   (`tools/graph.mjs index.html --act <act> [--set f,g] --out out/graph/<name>.js`), checked across the acts
-  (`tools/handoff.mjs`): an act that reads a flag an earlier act sets but it doesn't keep (an error: there
-  it is always unset), a kept flag no run of the act reads and the next act doesn't keep (kept for
-  nothing), a flag the act sets and the game tests that nothing here reads and the next act doesn't keep
-  (a consequence that never arrives), a run that reads what only another run of the same act sets (parts
-  meant to stay apart that touch), and the ways the act ends for the next (its end states as the next act
+  (`tools/handoff.mjs`): an act that reads a flag an earlier act sets but it neither keeps nor leaves (an
+  error: there it is always unset; a left one is an info), a kept flag no run of the act reads and the next
+  act doesn't keep (kept for nothing; an info naming where when the game tests it, since the solver doesn't
+  play looks that only talk), a flag the act sets and the game tests that nothing here reads and the next
+  act doesn't keep (a consequence that never arrives), a flag only some runs of the act set that others
+  read (parts meant to stay apart that touch: one per flag, with the runs that set and read it), and the ways the act ends for the next (its end states as the next act
   keeps them, with how many end states each).
 - **Check again** runs the validator and reads the runs again; the game's tasks whose names begin with
   "graph" or "handoff" run from here (each searches every state: minutes in a big game), then it checks again.

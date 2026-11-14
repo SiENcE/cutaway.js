@@ -1,6 +1,7 @@
 // Cutaway.js editor, Handoffs tab: what each act hands over to the next. Statically, from the validator
 // (tools/lib/validate.mjs) on the live data: what a fresh act keeps, each kept flag's values and where it is
-// set and tested (a click opens the place, as in the Issues tab), how many ways it can begin. From the runs:
+// set and tested (a click opens the place, as in the Issues tab), what it leaves behind on purpose (`leave`),
+// how many ways it can begin. From the runs:
 // the traced searches in the studio's "graph" folder (tools/graph.mjs data, one per act and `--set`, made by
 // the game's tasks whose names begin with "graph" or "handoff", which run from here), checked across the acts by
 // tools/lib/handoff.mjs: what an act reads that an earlier one sets but it doesn't keep, what is kept for
@@ -47,7 +48,7 @@
         }
       }
       report = h.handoff(graphs, { acts: checked.acts, flags: checked.flags });
-      const keeps = checked.issues.filter((/** @type {any} */ i) => /^act \S+\.keep$/.test(i.where));
+      const keeps = checked.issues.filter((/** @type {any} */ i) => /^act \S+\.(keep|leave)$/.test(i.where));
       const n = (/** @type {string} */ lv) => keeps.filter((/** @type {any} */ i) => i.level === lv).length;
       E.setStatus(`handoffs: ${report.errors + n("error")} errors, ${report.warnings + n("warning")} warnings (${graphs.length} runs)`);
     } catch (e) {
@@ -75,7 +76,7 @@
   function act(a, i) {
     const def = Cutaway.act.get(a.id), dyn = report?.acts.find((/** @type {any} */ x) => x.id === a.id);
     // the validator's word on its keep (a kept flag nothing sets or tests), then what the runs found
-    const probs = [...(checked?.issues ?? []).filter((/** @type {any} */ x) => x.where === `act ${a.id}.keep`), ...(dyn?.problems ?? [])];
+    const probs = [...(checked?.issues ?? []).filter((/** @type {any} */ x) => x.where === `act ${a.id}.keep` || x.where === `act ${a.id}.leave`), ...(dyn?.problems ?? [])];
     const n = (/** @type {string} */ lv) => probs.filter((/** @type {any} */ p) => p.level === lv).length;
     const note = [n("error") ? `${n("error")} errors` : "", n("warning") ? `${n("warning")} warnings` : ""].filter(Boolean).join(", ");
     return E.fold(`handoff.${a.id}`, `act ${a.id}${def?.title ? ` · ${Cutaway.i18n.t(def.title)}` : ""}`, () => {
@@ -86,10 +87,17 @@
         : a.keep.length ? `keeps ${a.keep.length} flag${a.keep.length === 1 ? "" : "s"}: up to ${a.variants ?? "many"} hand-over variants`
         : "keeps nothing: it begins clean";
       out.push(el("div", { style: { margin: "2px 0" } }, [keeps]));
-      for (const k of a.keep) {
-        out.push(el("div", { style: { marginTop: "4px" } }, [el("b", {}, [k.flag]), el("span", { className: "cw-dim" }, [`  ${k.values === null ? "counts (many values)" : k.values.length ? k.values.join(" | ") : "set nowhere"} or unset`])]));
+      /** a kept or left flag: its values, where it is set and tested @param {any} k @param {boolean} left */
+      const flag = (k, left) => {
+        out.push(el("div", { style: { marginTop: "4px" } }, [el("b", {}, [k.flag]), el("span", { className: "cw-dim" }, [left ? "  left behind: always unset here"
+          : `  ${k.values === null ? "counts (many values)" : k.values.length ? k.values.join(" | ") : "set nowhere"} or unset`])]));
         out.push(el("div", { className: "cw-dim", style: { fontSize: "11px" } }, [k.setAt.length ? "set at" : "set nowhere"]), ...k.setAt.map(place));
         out.push(el("div", { className: "cw-dim", style: { fontSize: "11px" } }, [k.testedAt.length ? "tested at" : "tested nowhere"]), ...k.testedAt.map(place));
+      };
+      for (const k of a.keep) flag(k, false);
+      if (a.leave?.length) {
+        out.push(el("div", { style: { marginTop: "6px" } }, [`leaves ${a.leave.length} flag${a.leave.length === 1 ? "" : "s"} behind on purpose`]));
+        for (const k of a.leave) flag(k, true);
       }
       if (!dyn || !dyn.runs.length) out.push(el("div", { className: "cw-dim", style: { marginTop: "6px" } }, ["no runs of this act (make them with graph.mjs --act " + a.id + ")"]));
       else {
@@ -98,6 +106,7 @@
       }
       for (const p of probs) {
         out.push(el("div", { style: { padding: "2px 4px", borderBottom: "1px solid #2a2340", color: /** @type {any} */ (COLOR)[p.level] } }, [p.msg,
+          ...(p.writers ? [el("div", { className: "cw-dim", style: { fontSize: "11px" } }, [`set by ${p.writers.join(", ")}; read by ${p.runs.join(", ")}`])] : []),
           ...(p.at ?? []).map((/** @type {string} */ s) => el("div", { style: { color: "#8a84a0", fontSize: "11px", paddingLeft: "10px" } }, [s])),
           ...(p.flag && checked?.flags.setAt[p.flag] ? [el("div", { className: "cw-dim", style: { fontSize: "11px" } }, [`"${p.flag}" set at`]), ...checked.flags.setAt[p.flag].map(place)] : [])]));
       }

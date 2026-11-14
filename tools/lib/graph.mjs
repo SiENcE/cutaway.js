@@ -71,7 +71,7 @@ export function buildGraph(r, views) {
 /**
  * What a run hands over between acts. `from`: the act the search began in; `keep`: what it keeps from the act
  * before ([] for the first act, which a new game begins; null for an act that isn't fresh: everything comes
- * along); `next`: the act after it in the order they are defined, and `nextKeep` what that one keeps (as `keep`);
+ * along); `leave`: what it leaves behind on purpose (the act's `leave`); `next`: the act after it in the order they are defined, and `nextKeep` what that one keeps (as `keep`);
  * `start`: the start state's flags as facts ("name", "name=value"; no view flags, no dialogue marks), after the
  * act's start steps and what the search was given (--set); `ends`: the states that end the search, projected onto
  * `nextKeep` (each distinct set of kept flags with how many end states have it; none when the next act isn't
@@ -102,7 +102,7 @@ export function handoffOf(C, act, r, views) {
     const projections = [...seen.values()].sort((a, b) => b.n - a.n);
     ends = { wins: (r.wins ?? []).length, variants: nextKeep ? projections.length : null, projections };
   }
-  return { from, keep, next, nextKeep, start, ends };
+  return { from, keep, leave: from ? [...(C.act.get(from)?.leave ?? [])].map(String) : [], next, nextKeep, start, ends };
 }
 
 /** Two 32-bit hashes of a text (FNV-1a with two seeds). @param {string} s @returns {[number, number]} */
