@@ -94,6 +94,9 @@ export default async function (t) {
       writeFileSync(join(dir, "demo", "graphs", "a_old.js"), text.replace(/,"replay":\{.*\}\};\s*$/s, "};\n"));
       await chrome.ev(`${G}.listFiles()`);
       await sleep(300);
+      const shownList = await chrome.ev(`[...document.querySelectorAll(".cw-lst")].map((l) => l.textContent).find((t) => /demo_b/.test(t)) ?? ""`);
+      t.ok("watch: the file list shows the order they play in, numbered, a file without ways after them",
+        /1\. demo\.js.*2\. demo_b\.js.*a_old\.js \(no ways: make it again\)/.test(shownList), shownList);
       await chrome.ev(`[...document.querySelectorAll("button")].find((b) => /Play all runs/.test(b.textContent)).click(); 1`);
       for (let i = 0; i < 50 && !(await chrome.ev(`${R}.plan?.turns.some((t) => t.run === "demo_b.js")`)); i++) await sleep(100);
       const list = await chrome.ev(`(() => { const p = ${R}.plan; const runs = [...new Set(p.turns.map((t) => t.run))]; return { runs, begins: p.turns.filter((t) => t.begin).length }; })()`);

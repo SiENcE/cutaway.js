@@ -360,8 +360,8 @@ The wheel zooms, a drag moves, a double click fits everything in.
   the game's end): by act in the game's order (a run of the whole game first), in an act the run that shuts least
   away first (its `--set`: the main way before the threads that shut the rest), then by name; the moves are grouped
   by run in the dock, **Show in chart** opens that run's data. Runs searched apart don't go on from each other: each
-  is the solver's own way from where it began. A file made before the ways were kept is left out (the status says
-  which).
+  is the solver's own way from where it began. The folder's list shows the files in this order, numbered (a file's
+  tooltip: its act and `--set`); a file made before the ways were kept stands after them, dim, and is left out.
 
 The same chart opens as a page of its own: `tools/graph.html?data=<the file's URL>` (graph.mjs prints the link).
 

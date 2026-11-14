@@ -11,6 +11,8 @@
 // moves and what plays them in the dock under it.
 "use strict";
 
+/** A data file in the folder: what its place in the order needs. @typedef {{name: string, act: string | null, set: string[], ways: boolean}} RunFile */
+
 (function () {
   const E = Cutaway.editor, el = E.el, button = E.button;
   /** @type {ReturnType<typeof Cutaway.graphView.create> | null} */
@@ -18,7 +20,7 @@
   /** @type {GraphData | null} */
   let data = null;
   let source = "", mode = "chart", running = "", listed = false;
-  /** @type {{name: string}[]} */
+  /** the folder's data files, in the order "Play all runs" plays them (those without ways at the end) @type {RunFile[]} */
   let files = [];
   /** @type {EditorView | null} */
   let chartView = null;
@@ -63,8 +65,25 @@
   /** The data files in the studio's folder. */
   async function listFiles() {
     if (!E.studio.available) return;
-    try { files = (await E.studio.list(folder())).filter((/** @type {any} */ f) => !f.dir && f.name.endsWith(".js")); } catch { files = []; }
+    /** @type {RunFile[]} */
+    const found = [];
+    try {
+      for (const f of (await E.studio.list(folder())).filter((/** @type {any} */ f) => !f.dir && f.name.endsWith(".js")))
+        found.push(about(f.name, await E.studio.read(`${folder()}/${f.name}`)));
+    } catch { /* a folder that isn't there yet: no files */ }
+    files = ordered(found);
     E.refresh();
+  }
+
+  /**
+   * What the order needs of a data file, read from its text without parsing all of it (the act and --set are among
+   * its first keys; whether it keeps the ways: a replay with turns). @param {string} name @param {string} text
+   * @returns {RunFile}
+   */
+  function about(name, text) {
+    let act = null, set = [];
+    try { act = JSON.parse(/"act":(null|"[^"]*")/.exec(text)?.[1] ?? "null"); set = JSON.parse(/"set":(\[[^\]]*\])/.exec(text)?.[1] ?? "[]"); } catch { /* not a data file: last */ }
+    return { name, act, set, ways: /"replay":\{/.test(text) && !/"replay":\{[^]*?"turns":\[\]/.test(text) };
   }
 
   /** Load one of the folder's files. @param {string} name */
@@ -201,29 +220,29 @@
   }
 
   /**
-   * The runs in the folder in the order they are played: by act as the game has them (a run of the whole game
-   * first), in an act the run that shuts least away (its --set: the main way before the threads, which shut the
-   * rest), then by name. Files made before the ways were kept are left out (named).
-   * @param {{name: string, data: GraphData}[]} runs
+   * The runs in the order "Play all runs" plays them: by act as the game has them (a run of the whole game first),
+   * in an act the run that shuts least away (its --set: the main way before the threads, which shut the rest), then
+   * by name; files made before the ways were kept at the end (not played). @param {RunFile[]} runs
    */
   function ordered(runs) {
     const acts = Cutaway.act.ids();
-    return runs.filter((r) => r.data.replay?.turns?.length).sort((a, b) =>
-      (a.data.act ? acts.indexOf(a.data.act) : -1) - (b.data.act ? acts.indexOf(b.data.act) : -1)
-      || a.data.set.length - b.data.set.length || a.name.localeCompare(b.name));
+    return [...runs].sort((a, b) => Number(b.ways) - Number(a.ways)
+      || (a.act ? acts.indexOf(a.act) : -1) - (b.act ? acts.indexOf(b.act) : -1)
+      || a.set.length - b.set.length || a.name.localeCompare(b.name));
   }
 
   /** Every run in the folder, its winning way, one after another (each from its own start). */
   async function watchAll() {
     if (running) return;
     running = "all runs"; E.refresh();
+    await listFiles();
     /** @type {{name: string, data: GraphData}[]} */
-    const runs = [];
+    const list = [];
     try {
-      for (const f of files) runs.push({ name: f.name, data: parse(await E.studio.read(`${folder()}/${f.name}`)) });
+      for (const f of files.filter((f) => f.ways)) list.push({ name: f.name, data: parse(await E.studio.read(`${folder()}/${f.name}`)) });
     } catch (e) { E.setStatus(`connections: ${/** @type {any} */ (e).message}`); }
     running = "";
-    const list = ordered(runs), left = runs.filter((r) => !list.includes(r)).map((r) => r.name);
+    const left = files.filter((f) => !f.ways).map((f) => f.name);
     if (!list.length) { E.setStatus("connections: no run in the folder keeps its ways: make them again"); E.refresh(); return; }
     mode = "game";
     E.refresh();
@@ -283,13 +302,16 @@
     if (E.studio.available && !listed) { listed = true; listFiles(); }
     if (E.studio.available) {
       sec.append(el("div", { className: "cw-dim" }, [`data in ${folder()}/ (the studio's "graph" layer)`]));
-      if (files.length) sec.append(E.list({ id: "graph.files", items: files.map((f) => ({ key: f.name, label: f.name, mark: f.name === source ? "●" : "" })), selected: source, height: "110px", pick: (k) => { open(k); } }));
+      // in the order "Play all runs" plays them, numbered; those without ways after them, dim
+      if (files.length) sec.append(E.list({ id: "graph.files", items: files.map((f, i) => ({ key: f.name, label: f.ways ? `${i + 1}. ${f.name}` : `${f.name} (no ways: make it again)`,
+        dim: !f.ways, mark: f.name === source ? "●" : "", title: `${f.act ?? "the whole game"}${f.set.length ? ` · set ${f.set.join(",")}` : ""}` })),
+        selected: source, height: "110px", pick: (k) => { open(k); } }));
       else sec.append(el("div", { className: "cw-dim" }, ["no data yet: make it with a task below"]));
       sec.append(el("div", { style: { margin: "4px 0" } }, [
         ...tasks.map((t) => button(running === t ? t + " ..." : t, () => { if (!running) make(t); }, (E.studio.config.tasks[t] ?? []).join(" ") + " (searches every state: it can take minutes)")),
         button("↻", () => { listFiles(); }, "list the folder again")]));
       if (files.length > 1) sec.append(el("div", { style: { margin: "4px 0" } }, [button(running === "all runs" ? "▶ All runs ..." : `▶ Play all runs (${files.length})`, () => { watchAll(); },
-        "every run's winning way in the game, one after another, each from its own start: by act, the main way before the threads, then by name")]));
+        "every run's winning way in the game, one after another, each from its own start, in the order of the list above: by act, then the run that shuts least away (its --set), then by name")]));
       if (!tasks.length) sec.append(el("div", { className: "cw-dim" }, ['No tasks to make it: add one to studio.json, e.g. "graph": ["node", "lib/cutaway/tools/graph.mjs", "index.html"].']));
     } else {
       // without the studio this page can't run a task nor list a folder: it says how to make a file, and where it goes
