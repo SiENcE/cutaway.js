@@ -70,7 +70,8 @@
     ambience: [{ sfx: "wind", gain: 0.6 }, { sfx: "hum", gain: 1.5, at: [270, 120], reach: 160 }, { sfx: "mailbox_radio", at: [200, 140], reach: 120 }],
     scale: { far: [126, 0.86], near: [177, 1] },
     // the lamp post's light is not in the art: it comes on with the lamp (an added, flickering lamp)
-    light: { lamps: [{ id: "lamp", at: [270, 80], r: 46, power: 1.15, color: "#ffe28a", flicker: 0.06, add: true, glow: 9, if: "state:lamp=lit" }] },
+    // late in the day: a cool sky light on everyone (ambient), so the one who takes none of it (lit: false) stands out
+    light: { ambient: 0.8, color: "#d8e0ff", lamps: [{ id: "lamp", at: [270, 80], r: 46, power: 1.15, color: "#ffe28a", flicker: 0.06, add: true, glow: 9, if: "state:lamp=lit" }] },
     fx: [{ kind: "dust", rect: [250, 60, 40, 50], count: 10, color: "#fff2b0", lamp: "lamp" }],
     walk: [[6, 134, 52, 134, 316, 126, 316, 177, 4, 177]],
     holes: [[193, 145, 207, 145, 207, 152, 193, 152]],
@@ -82,6 +83,8 @@
       { costume: { idle: "pip_idle_r" }, at: [112, 152], facing: "right", space: [7, 4] },
       // one stands up on the crate in the middle of the yard, where nobody walks (apart: on purpose, not a mistake)
       { costume: { idle: "bolt_idle_r" }, at: [200, 148], facing: "left", apart: true },
+      // one by the lamp post takes none of the yard's light (lit: false): he keeps the colours he was drawn in, as if he glowed
+      { costume: { idle: "bolt_idle_r" }, at: [292, 152], facing: "left", lit: false },
     ],
     props: [
       { id: "mailbox", image: "mailbox", states: { open: "mailbox_open" }, at: [200, 150] },

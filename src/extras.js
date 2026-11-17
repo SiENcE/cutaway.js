@@ -24,6 +24,7 @@
  * @property {boolean} [block]            a standing extra is an obstacle: its space is cut out of the walk map
  * @property {boolean} [apart]            a standing extra stands where nobody walks, on purpose (behind a counter, on a crate, on a stage):
  *                                        validate doesn't take it for a mistake
+ * @property {boolean | number} [lit]     how much the room's light tints it, as an actor's `lit` (default all; false: its own colours)
  * @property {Cond} [if]                  only there while this holds (not asked of the walk map: a blocking one always blocks)
  */
 
@@ -63,7 +64,7 @@ Cutaway.extras = (function () {
 
   /** @param {ExtraDef} d @param {number} i @returns {Extra} */
   function make(d, i) {
-    const a = new Cutaway.actor.Actor(`extra:${i}`, { costume: d.costume, speed: d.speed, at: d.at, facing: d.facing ?? "right" });
+    const a = new Cutaway.actor.Actor(`extra:${i}`, { costume: d.costume, speed: d.speed, at: d.at, facing: d.facing ?? "right", lit: d.lit });
     const pts = [{ x: d.at[0], y: d.at[1] }, ...(d.path ?? []).map(([x, y]) => ({ x, y }))];
     if (d.path?.length && (d.loop ?? "around") === "around") pts.push({ x: d.at[0], y: d.at[1] });
     const at = [0];

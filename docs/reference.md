@@ -198,6 +198,7 @@ extras: [
 - `apart: true`: a standing extra stands where nobody walks, on purpose (a vendor behind a counter, someone on a
   crate or a stage): outside the walk map, which validate otherwise warns about. It still idles, turns and looks.
 - `if: cond` shows it only while the condition holds.
+- `lit` as an actor's: how much the room's light tints it (Light and effects).
 
 ## Items
 
@@ -553,6 +554,9 @@ still be reached has a hint, and that its `about` (hotspots, actors, items) is s
 - `light: { ambient, color, max, lamps: [...] }`: actors take on the light where they stand. A lamp:
   `id, at, r` (reach), `power`, `color`, `flicker` (0..1), `rate`, `add` (not in the art: its pool is
   added), `glow: { r, strength }`, `if`. Use the same lamp numbers as the art was lit with.
+- An actor's (or an extra's) `lit` says how much of that light tints it: `true` or `1` all of it (the default), `false` or `0`
+  none, so it keeps the colours it was drawn in (something that glows, or white that must stay white in a dark room), a number
+  between as much of it (`lit: 0.3`: the light moved a third of the way from white toward what the room gives there).
 - `fx: [...]` (every particle is a function of time, so screenshots repeat):
   `{ kind: "haze", poly, color, alpha, fade }`, `{ kind: "dust", rect, count, color }`,
   `{ kind: "rain", rect, count, speed, slant, length }`, `{ kind: "drip", at, to, every }`,

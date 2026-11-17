@@ -21,6 +21,8 @@
  * @property {string} [name]       display name
  * @property {string} [color]      subtitle colour
  * @property {Costume} [costume]  none: a voice only, never in a room
+ * @property {boolean | number} [lit]  how much of a lit room's light tints it: true or 1 all (default), false or 0 none (it keeps its
+ *                                 own colours: something that glows), a number between as much of it
  * @property {[number, number]} [speed]  pixels per second along x and y (default [24, 12])
  * @property {number} [run]        running speed as a multiple of walking (default 2; double click, { walk, run: true })
  * @property {string} [room]       where the actor starts
@@ -273,11 +275,25 @@ Cutaway.actor = (function () {
     }
 
     /**
-     * Draw the actor, tinted by the light where it stands (the scene passes the room's light).
+     * The room's light as this actor takes it (its `lit`): all of it, none (undefined: drawn in its own colours), or part, the
+     * light moved that far from white toward what the room gives.
+     * @param {[number, number, number]} [light] @returns {[number, number, number] | undefined}
+     */
+    litBy(light) {
+      const k = this.def.lit;
+      if (!light || k === undefined || k === true || k === 1) return light;
+      if (k === false || !(k > 0)) return undefined;
+      const f = Math.min(1, k);
+      return [1 + (light[0] - 1) * f, 1 + (light[1] - 1) * f, 1 + (light[2] - 1) * f];
+    }
+
+    /**
+     * Draw the actor, tinted by the light where it stands (the scene passes the room's light) as much as its `lit` lets it.
      * @param {CanvasRenderingContext2D} ctx
      * @param {[number, number, number]} [light]
      */
     draw(ctx, light) {
+      light = this.litBy(light);
       const { anim, flip } = this.look(), scale = this.scale();
       if (!anim) return;                                      // a voice only
       if (!light) { Cutaway.assets.draw(ctx, anim, Math.round(this.x), Math.round(this.y), { t: this.t, flip, scale }); return; }

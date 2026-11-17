@@ -15,7 +15,7 @@ function recorder() {
 }
 
 export default async function (t) {
-  const C = load(["assets.js", "i18n.js", "state.js", "walk.js", "room.js", "light.js", "fx.js"]);
+  const C = load(["assets.js", "i18n.js", "state.js", "walk.js", "room.js", "actor.js", "light.js", "fx.js"]);
   C.display = { width: 320, height: 180 };
   C.room("lit", {
     light: { ambient: 0.8, color: "#ffffff", lamps: [
@@ -46,6 +46,13 @@ export default async function (t) {
   t.ok("light: flicker stays within its range", fl.every((x) => x >= 0.8 - 1e-9 && x <= 1.2 + 1e-9), fl.join());
   t.ok("light: flicker steps on the 100 ms grid", C.light.flicker(lamp, 1, 100) === C.light.flicker(lamp, 1, 199) && new Set(fl).size > 3);
   t.ok("light: flicker repeats exactly", C.light.flicker(lamp, 1, 12345) === C.light.flicker(lamp, 1, 12345));
+
+  // an actor's lit: how much of the room's light tints it (something that glows keeps its own colours)
+  const litBy = (lit) => new C.actor.Actor("lamp_man", { costume: { idle: "none" }, lit }).litBy([0.6, 0.8, 1.2]);
+  t.ok("light: an actor takes all of the light by default", JSON.stringify(litBy(undefined)) === "[0.6,0.8,1.2]" && JSON.stringify(litBy(true)) === "[0.6,0.8,1.2]");
+  t.ok("light: lit false (or 0) keeps the actor's own colours", litBy(false) === undefined && litBy(0) === undefined);
+  const half = litBy(0.5);
+  t.ok("light: lit 0.5 takes half of it, from white", near(half[0], 0.8) && near(half[1], 0.9) && near(half[2], 1.1), String(half));
 
   t.ok("colours: #rgb and #rrggbb", JSON.stringify(C.light.rgb("#000")) === "[0,0,0]" && JSON.stringify(C.light.rgb("#ff0000")) === "[1,0,0]");
   let bad = false; try { C.light.rgb("black"); } catch { bad = true; }
