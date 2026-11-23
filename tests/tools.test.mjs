@@ -284,6 +284,8 @@ export default async function (t) {
     t.ok("starts: none from runs that go on to another act", startsFrom([H], "act3").length === 0);
     t.ok("starts: a flag only the game's own code reads (readBy) makes no start of its own", startsFrom([H], "act2", { testedAt: { got_bulb: ["room hall.hotspots.mailbox.use.0"], waved: ["code the postcard screen"] } }).length === 1);
     t.ok("starts: a flag the game's data tests does", startsFrom([H], "act2", { testedAt: { waved: ["room hall.hotspots.window.if"] } }).length === 2);
+    const held = startsFrom([H], "act2", undefined, ["waved"]);
+    t.ok("starts: a flag held is taken over by no start (hold)", held.length === 1 && JSON.stringify(held[0].flags) === '{"got_bulb":true}' && held[0].n === H.ends?.wins, JSON.stringify(held));
     const two = await demo(twoActs(["got_bulb", "waved"]));
     Object.assign(two.options, { act: "act2", demo: { acts: ["act2"] } });
     // waved or not (the window, all the way); the bulb taken in act1 but not carried over (no item is kept): act2 can't be won
