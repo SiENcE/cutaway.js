@@ -48,24 +48,31 @@ export function parseGraph(text) {
  * The ways the runs of the act before end, as start states for `act` (the solver's `starts`): their end states as `act`
  * keeps them (graph.mjs `ends.projections`), one each. Ends that differ only in flags nothing in the game asks about but
  * its own code (Cutaway.state.readBy: a screen it draws), or nothing at all, make one start, with the first one's
- * values: no move can tell them apart. Flags `hold` names are left out of every start (a run that shuts a part of the
- * act away holds what would open it, and gives it with its own start steps where it wants it).
+ * values: no move can tell them apart. A run that is about a part of the act narrows them (o):
+ * - `hold`: flags left out of every start (a run that shuts a part of the act away holds what would open it, and gives it with
+ *   its own start steps where it wants it);
+ * - `vary`: only these flags make starts of their own (set or not, each value); the rest are one real end's, the most common
+ *   one for those values (a run about one answer of the act before, the others as they most often end);
+ * - `only`: only the ends in which these flags are set (a run about what one of them opens).
  * @param {{next?: string | null, ends?: {projections: {flags: Record<string, any>, n: number}[]} | null}[]} graphs the runs' data
  * @param {string} act
  * @param {{testedAt?: Record<string, string[]>}} [flags] the validator's flags (where each is tested); without them every flag counts
- * @param {string[]} [hold] flags no start takes over
+ * @param {{hold?: string[], vary?: string[], only?: string[]}} [o]
  * @returns {{flags: Record<string, any>, n: number}[]} n: how many end states it stands for
  */
-export function startsFrom(graphs, act, flags, hold = []) {
+export function startsFrom(graphs, act, flags, o = {}) {
+  const hold = o.hold ?? [], vary = o.vary ?? null, only = o.only ?? [];
   /** @param {string} f */
   const counts = (f) => !flags || (flags.testedAt?.[f] ?? []).some((w) => !w.startsWith("code "));
   /** @type {Map<string, {flags: Record<string, any>, n: number}>} */
   const seen = new Map();
   for (const g of graphs) {
     if (g.next !== act) continue;
-    for (const p of g.ends?.projections ?? []) {
+    // the most common ends first (graph.mjs sorts each run's that way; across runs too)
+    for (const p of [...(g.ends?.projections ?? [])].sort((a, b) => b.n - a.n)) {
+      if (only.some((f) => !p.flags[f])) continue;
       const own = Object.fromEntries(Object.entries(p.flags).filter(([f]) => !hold.includes(f)));
-      const k = JSON.stringify(Object.keys(own).filter(counts).sort().map((f) => [f, own[f]]));
+      const k = JSON.stringify(vary ? vary.filter((f) => !hold.includes(f)).map((f) => [f, own[f] ?? null]) : Object.keys(own).filter(counts).sort().map((f) => [f, own[f]]));
       const e = seen.get(k);
       if (e) e.n += p.n; else seen.set(k, { flags: own, n: p.n });
     }

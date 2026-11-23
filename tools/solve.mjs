@@ -1,5 +1,5 @@
 // Prove that a Cutaway game can be finished, and find soft-locks.
-//   node tools/solve.mjs <index.html> [--full] [--max 100000] [--json path.json] [--workers N] [--act id] [--set f,g=v] [--from graph files] [--hold f,g]
+//   node tools/solve.mjs <index.html> [--full] [--max 100000] [--json path.json] [--workers N] [--act id] [--set f,g=v] [--from graph files] [--hold f,g] [--vary f,g] [--only f,g]
 // Prints the shortest winning path (player moves). --full explores every reachable state and lists
 // soft-locks: states from which the end can no longer be reached, and checks the game's hints (every
 // state that can still be won has one that holds, about something still needed). Exit code 1 if unsolvable,
@@ -8,26 +8,25 @@
 // --act: one act alone, from its start (going on to the next act ends it); --set: flags for its start (flag or flag=value).
 // --from: the runs of the act before (tools/graph.mjs data files or folders, comma between them): the act is begun from every
 // way they end, as it keeps them (lib/handoff.mjs startsFrom), and searched from all at once; with --full each start must be won.
-// --hold: flags of the act before no start takes over (a run that shuts a part of the act away; --set gives them where it wants them).
+// --hold, --vary, --only narrow the starts for a run about a part of the act (lib/handoff.mjs startsFrom): flags no start takes over,
+// the only flags that make starts of their own, the only ends that count (those with these flags set).
 import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { makeSolver, loadFor, describe } from "./lib/solver.mjs";
 import { verdicts } from "./lib/verdict.mjs";
-import { startsFor } from "./lib/starts.mjs";
+import { startsFromArgs, STARTS_OPTIONS } from "./lib/starts.mjs";
 
 const args = process.argv.slice(2);
-const valued = ["--max", "--json", "--workers", "--act", "--set", "--from", "--hold"];
+const valued = ["--max", "--json", "--workers", "--act", "--set", ...STARTS_OPTIONS];
 const page = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));
-if (!page) { console.error("usage: node tools/solve.mjs <index.html> [--full] [--max N] [--json out.json] [--act id] [--set f,g=v] [--from graph files] [--hold f,g]"); process.exit(2); }
+if (!page) { console.error("usage: node tools/solve.mjs <index.html> [--full] [--max N] [--json out.json] [--act id] [--set f,g=v] [--from graph files] [--hold f,g] [--vary f,g] [--only f,g]"); process.exit(2); }
 const opt = (/** @type {string} */ n, /** @type {string | undefined} */ d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
 
-const act = opt("--act", ""), kept = opt("--set", ""), from = opt("--from", "");
-if (from && !act) { console.error("--from needs --act: the act the runs go on to"); process.exit(2); }
+const act = opt("--act", ""), kept = opt("--set", "");
 /** a flag, or flag=value (a number when it reads as one) @param {string} f */
 const step = (f) => { const [k, v] = f.split("="); return v === undefined ? { set: k } : { set: k, value: Number.isNaN(Number(v)) ? v : Number(v) }; };
 const setup = { page, options: act ? { act, demo: { acts: [act] } } : {}, start: kept ? kept.split(",").map(step) : [] };
-const hold = opt("--hold", ""), starts = from ? await startsFor(page, act, from.split(","), hold ? hold.split(",") : []) : undefined;
-if (starts) console.log(`${starts.length} starts from the runs before (${starts.reduce((n, s) => n + s.n, 0)} end states)`);
+const starts = await startsFromArgs(page, act, args);
 const workers = Number(opt("--workers", String(Math.min(12, availableParallelism() - 1))));
 const g = loadFor(setup), solver = await makeSolver(g, { workers, setup, starts: starts?.map((s) => s.flags) });
 const t0 = Date.now();

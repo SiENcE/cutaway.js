@@ -284,8 +284,16 @@ export default async function (t) {
     t.ok("starts: none from runs that go on to another act", startsFrom([H], "act3").length === 0);
     t.ok("starts: a flag only the game's own code reads (readBy) makes no start of its own", startsFrom([H], "act2", { testedAt: { got_bulb: ["room hall.hotspots.mailbox.use.0"], waved: ["code the postcard screen"] } }).length === 1);
     t.ok("starts: a flag the game's data tests does", startsFrom([H], "act2", { testedAt: { waved: ["room hall.hotspots.window.if"] } }).length === 2);
-    const held = startsFrom([H], "act2", undefined, ["waved"]);
+    const held = startsFrom([H], "act2", undefined, { hold: ["waved"] });
     t.ok("starts: a flag held is taken over by no start (hold)", held.length === 1 && JSON.stringify(held[0].flags) === '{"got_bulb":true}' && held[0].n === H.ends?.wins, JSON.stringify(held));
+    // a run about one answer: only it makes starts, the rest as the most common end has it
+    const fake = { next: "act2", ends: { projections: [{ flags: { a: 1, b: "x" }, n: 5 }, { flags: { a: 2, b: "x" }, n: 1 }, { flags: { a: 1, b: "y" }, n: 9 }, { flags: { b: "y" }, n: 2 }] } };
+    const byB = startsFrom([fake], "act2", undefined, { vary: ["b"] });
+    t.ok("starts: vary makes starts only of its flags, each the most common end for its values", byB.length === 2 && JSON.stringify(byB.map((s) => s.flags)) === '[{"a":1,"b":"y"},{"a":1,"b":"x"}]' && byB[0].n === 11 && byB[1].n === 6, JSON.stringify(byB));
+    const byA = startsFrom([fake], "act2", undefined, { vary: ["a"] });
+    t.ok("starts: vary counts a flag not set as a value of its own", byA.length === 3 && byA.some((s) => s.flags.a === undefined), JSON.stringify(byA));
+    const onlyA = startsFrom([fake], "act2", undefined, { only: ["a"], vary: ["b"] });
+    t.ok("starts: only takes the ends in which its flags are set", onlyA.length === 2 && onlyA.every((s) => s.flags.a) && onlyA.reduce((n, s) => n + s.n, 0) === 15, JSON.stringify(onlyA));
     const two = await demo(twoActs(["got_bulb", "waved"]));
     Object.assign(two.options, { act: "act2", demo: { acts: ["act2"] } });
     // waved or not (the window, all the way); the bulb taken in act1 but not carried over (no item is kept): act2 can't be won

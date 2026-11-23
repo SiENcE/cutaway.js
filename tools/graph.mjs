@@ -2,10 +2,10 @@
 // every move it plays: what it needed of the state and what it changed. Out comes a data file for
 // tools/graph.html: the puzzle dependency chart (moves, the facts they need and bring about, the winning
 // way through them) and the state budget (how much each flag, item or once-mark multiplies the states).
-//   node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--from graph files] [--hold f,g] [--max N] [--workers N] [--out out/graph/<act>.js]
+//   node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--from graph files] [--hold f,g] [--vary f,g] [--only f,g] [--max N] [--workers N] [--out out/graph/<act>.js]
 // --act: one act alone, from its start (going on to the next act ends it, as ?alone); --set: flags for its
 // start (one the act before leaves, or one that shuts a part of the game away); --from: the runs of the act before
-// (data files or folders, comma between them): the act begun from every way they end, as solve.mjs --from (and --hold).
+// (data files or folders, comma between them): the act begun from every way they end, as solve.mjs --from (and --hold, --vary, --only).
 // It says what solve.mjs --full says (soft-locks, hints) and exits 1 as it does (unsolvable, a soft-lock, a state
 // without a fitting hint, stopped at --max), after writing the data: a game can use its graph runs as its checks.
 // The data also holds what the act hands over (lib/graph.mjs handoffOf: keep, next, nextKeep, start, ends), which
@@ -17,20 +17,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { makeSolver, loadFor } from "./lib/solver.mjs";
 import { buildGraph, handoffOf } from "./lib/graph.mjs";
 import { verdicts } from "./lib/verdict.mjs";
-import { startsFor } from "./lib/starts.mjs";
+import { startsFromArgs, STARTS_OPTIONS } from "./lib/starts.mjs";
 
 const args = process.argv.slice(2);
-const valued = ["--act", "--set", "--from", "--hold", "--max", "--workers", "--out"];
+const valued = ["--act", "--set", "--max", "--workers", "--out", ...STARTS_OPTIONS];
 const opt = (/** @type {string} */ n, /** @type {string} */ d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
 const page = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));
 if (!page) { console.error("usage: node tools/graph.mjs <index.html> [--act id] [--set flag,flag] [--max N] [--workers N] [--out file.js]"); process.exit(2); }
 const act = opt("--act", ""), kept = opt("--set", ""), out = path.resolve(opt("--out", `out/graph/${act || "game"}.js`));   // out/graph: the studio's "graph" folder, where the editor looks
 
 const setup = { page, options: act ? { act, demo: { acts: [act] } } : {}, start: kept ? kept.split(",").map((f) => ({ set: f })) : [] };
-const from = opt("--from", "");
-if (from && !act) { console.error("--from needs --act: the act the runs go on to"); process.exit(2); }
-const hold = opt("--hold", ""), starts = from ? await startsFor(page, act, from.split(","), hold ? hold.split(",") : []) : undefined;
-if (starts) console.log(`${starts.length} starts from the runs before (${starts.reduce((n, s) => n + s.n, 0)} end states)`);
+const starts = await startsFromArgs(page, act, args);
 const g = loadFor(setup);
 const solver = await makeSolver(g, { workers: Number(opt("--workers", String(Math.min(12, availableParallelism() - 1)))), setup, trace: true, starts: starts?.map((s) => s.flags) });
 const t0 = Date.now();
