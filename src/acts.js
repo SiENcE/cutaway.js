@@ -162,6 +162,8 @@ Cutaway.acts = (function () {
     for (const [f, v] of kept) Cutaway.state.set(f, v);
     current = id;
     unlock(id);
+    // whoever plays the act already plays its start: a give or a place without an actor is theirs (after a fresh begin nobody plays)
+    if (a.actor) Cutaway.scene.setActive(a.actor);
     if (film) await prologue(film);
     Cutaway.events.emit("act", { id });
     const steps = a.start === undefined ? [] : Array.isArray(a.start) ? a.start : [a.start];

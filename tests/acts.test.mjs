@@ -91,6 +91,12 @@ export default async function (t) {
     t.ok("acts: a fresh act keeps the flags it lists", e.C.state.flag("got_key") === true && !e.C.state.flag("bulb_clean") && !("lamp_lit" in e.C.state.snapshot().flags));
     await e.C.acts.begin("act2", { fresh: true });
     t.ok("acts: started anew, a fresh act keeps nothing", !e.C.state.flag("got_key"));
+    // its start gives what a kept flag says was carried: to whoever plays the act, already in the start
+    const f = await demo((C) => C.act("act2", { room: "yard", actor: "bolt", fresh: true, keep: ["got_key"], start: [{ if: "got_key", then: [{ give: "key" }] }] }));
+    const errs = /** @type {string[]} */ ([]), oe = console.error;
+    console.error = (/** @type {any[]} */ ...a) => { errs.push(a.join(" ")); };
+    try { f.C.state.set("got_key"); await ride(f.C); } finally { console.error = oe; }
+    t.ok("acts: a fresh act's start gives to the act's actor", errs.length === 0 && f.C.state.has("key", "bolt"), errs.join(" | ") || JSON.stringify(f.C.state.snapshot().inv));
   }
   {
     const { C } = await demo();
