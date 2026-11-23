@@ -19,6 +19,10 @@
 // (`wins`, packed: what an act hands over to the next), the state it began from (`from`) and the winning
 // way's moves by room (`way`), for tools/graph.mjs; and to play it again in the editor: the winning way turn by turn with
 // the state each begins from (`turns`), the state it ends in (`end`) and the nearest soft-locks with their states (`lost`).
+// With `starts` (the flags an act before hands over, each list one way it can end: tools/lib/handoff.mjs startsFrom), the
+// act is begun once from each, those flags set before its start steps as Cutaway.acts.begin sets what it keeps, and the
+// search goes from all of them at once: a state reached from two starts is one state. With `full`, each start says
+// whether it can be won and how many soft-locks and states without a fitting hint it was the first to reach (`starts`).
 import { Worker } from "node:worker_threads";
 import { createHash } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
@@ -71,14 +75,30 @@ export function describe(m) {
 
 /**
  * @param {{C: any, options: any}} g a loaded game (loadGame, or loadFor(setup))
- * @param {{workers?: number, setup?: Parameters<typeof loadFor>[0], trace?: boolean}} [opts]  workers: threads that
- *   expand states (each loads the game from `setup`, which must describe `g`); 0 or none: this thread;
- *   trace: watch every move (see the top)
+ * @param {{workers?: number, setup?: Parameters<typeof loadFor>[0], trace?: boolean, starts?: Record<string, any>[]}} [opts]
+ *   workers: threads that expand states (each loads the game from `setup`, which must describe `g`); 0 or none: this
+ *   thread; trace: watch every move (see the top); starts: the flags the act before hands over, one start state each
  */
 export async function makeSolver(g, opts = {}) {
   const run = await boot(g, { instant: true });
   const C = g.C;
   const start = C.save.capture();
+  /** @type {{flags: Record<string, any>, snap: any}[]} the act begun again from each hand-over (see the top) */
+  const starts = [];
+  if (opts.starts?.length) {
+    const id = g.options.act ?? C.acts.first(), a = C.act.get(id), own = a.start;
+    const steps = own === undefined ? [] : Array.isArray(own) ? own : [own];
+    try {
+      for (const flags of opts.starts) {
+        a.start = [...Object.entries(flags).map(([k, v]) => (v === true ? { set: k } : { set: k, value: v })), ...steps];
+        await C.acts.begin(id, { fresh: true });
+        starts.push({ flags, snap: C.save.capture() });
+      }
+    } finally {
+      a.start = own;
+      run.reset();
+    }
+  }
   /** the game's view flags (Cutaway.state.view): not part of a state's key */
   const views = C.state.views?.() ?? [];
   /** a snapshot's views, as one string @param {any} snap */
@@ -205,15 +225,18 @@ export async function makeSolver(g, opts = {}) {
   }
 
   /**
-   * Search from a state. Returns the shortest winning path, and with `full`, the soft-locks
-   * (reachable states from which the end can't be reached any more).
+   * Search from a state, or from several at once (`from` a list; by default the `starts`, if any). Returns the
+   * shortest winning path, and with `full`, the soft-locks (reachable states from which the end can't be reached any more).
    * @param {{from?: any, maxStates?: number, full?: boolean, progress?: (text: string) => void}} [o]  progress: how far it has got, after each level
    */
   async function search(o = {}) {
-    const from = o.from ?? start, maxStates = o.maxStates ?? 100000;
+    const from = o.from ?? (starts.length ? starts.map((s) => s.snap) : start), maxStates = o.maxStates ?? 100000;
     const pool = opts.workers && opts.workers > 0 ? await startPool(opts.workers) : null;
     try {
-      return await searchWith(pool, from, maxStates, o);
+      const r = await searchWith(pool, from, maxStates, o);
+      // the starts' own flags, when it searched from them
+      if (r.starts && !o.from) r.starts = r.starts.map((s, i) => ({ ...s, flags: starts[i].flags }));
+      return r;
     } finally {
       pool?.close();
     }
@@ -335,17 +358,22 @@ export async function makeSolver(g, opts = {}) {
 
   /**
    * The search itself, level by level (breadth first).
-   * @param {any} pool @param {any} from @param {number} maxStates @param {{full?: boolean, progress?: (text: string) => void}} o
+   * @param {any} pool @param {any} from a state or a list of them @param {number} maxStates @param {{full?: boolean, progress?: (text: string) => void}} o
    */
   async function searchWith(pool, from, maxStates, o) {
-    /** @type {Map<string, {snap: Uint8Array, room: string, parent: string | null, move: Move | null, next: Map<string, Move>, win: boolean}>} */
+    /** @type {Map<string, {snap: Uint8Array, room: string, parent: string | null, move: Move | null, next: Map<string, Move>, win: boolean, root: number}>} */
     const nodes = new Map();
-    const k0 = key(from), t0 = Date.now();
+    const roots = Array.isArray(from) ? from : [from], t0 = Date.now();
     const say = (/** @type {string} */ text) => o.progress?.(`${Math.round((Date.now() - t0) / 1000)}s ${text}`);
-    nodes.set(k0, { snap: pack(from), room: from.room, parent: null, move: null, next: new Map(), win: false });
+    // two starts that are the same state are one (root: the first start that reached a state)
+    const rootKeys = roots.map((s, i) => {
+      const k = key(s);
+      if (!nodes.has(k)) nodes.set(k, { snap: pack(s), room: s.room, parent: null, move: null, next: new Map(), win: false, root: i });
+      return k;
+    });
     /** @type {string | null} */
     let winKey = null;
-    let level = [k0], complete = true, stop = false;
+    let level = [...new Set(rootKeys)], complete = true, stop = false;
     while (level.length && !stop) {
       /** @type {string[]} */
       const nextLevel = [];
@@ -359,7 +387,7 @@ export async function makeSolver(g, opts = {}) {
             if (!node.next.has(r.rk)) node.next.set(r.rk, r.move);
             if (nodes.has(r.rk)) continue;
             if (r.snap === null) throw new Error("solver: a worker sent a state the search doesn't have");
-            nodes.set(r.rk, { snap: r.snap, room: r.room, parent: k, move: r.move, next: new Map(), win: r.ended });
+            nodes.set(r.rk, { snap: r.snap, room: r.room, parent: k, move: r.move, next: new Map(), win: r.ended, root: node.root });
             if (r.ended) { winKey ??= r.rk; if (!o.full) { stop = true; return; } continue; }
             nextLevel.push(r.rk);
           }
@@ -384,6 +412,8 @@ export async function makeSolver(g, opts = {}) {
     let hints = null;
     /** @type {{path: Move[], snap: Uint8Array}[]} the nearest soft-locks with their states (the editor opens them) */
     let lost = [];
+    /** @type {{same: number | null, solved: boolean, softlocks: number, hints: number, flags?: Record<string, any>}[] | null} each start, with `full` and more than one */
+    let perStart = null;
     if (o.full && complete) {
       // moves to the end from every state: a breadth-first search backwards from the wins
       /** @type {Map<string, number>} */
@@ -400,8 +430,16 @@ export async function makeSolver(g, opts = {}) {
       say("the way back from the end done; the hints");
       if (C.hints.any()) hints = await checkHints(pool, nodes, dist, pathTo, depthOf);
       say("the hints done");
+      if (roots.length > 1) {
+        perStart = roots.map((_, i) => {
+          const first = rootKeys.indexOf(rootKeys[i]);
+          return { same: first === i ? null : first, solved: dist.has(rootKeys[i]), softlocks: 0, hints: 0 };
+        });
+        for (const l of locked) perStart[/** @type {any} */ (nodes.get(l.k)).root].softlocks++;
+        for (const p of hints?.problems ?? []) perStart[p.root].hints++;
+      }
     }
-    const out = { solved: !!winKey, path: pathTo(winKey), states: nodes.size, complete, softlocks, hints };
+    const out = { solved: !!winKey, path: pathTo(winKey), states: nodes.size, complete, softlocks, hints, starts: perStart };
     if (!tracer) return out;
     // the winning way turn by turn (a state to the next: the clicks into a view, then the move), each with the state it
     // begins from and its step (tracer.stepOf; null for a move that changed nothing): the editor plays it and jumps in it
@@ -414,24 +452,24 @@ export async function makeSolver(g, opts = {}) {
     /** @type {string[]} the winning way's steps (moves that changed nothing left out) */
     const way = turns.map((t) => t.step).filter((s) => s !== null);
     const end = winKey ? /** @type {any} */ (nodes.get(winKey)).snap : null;
-    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), wins: [...nodes.values()].filter((n) => n.win).map((n) => n.snap), from, way, turns, end, lost };
+    return { ...out, trace: tracer.take(), snaps: [...nodes.values()].map((n) => n.snap), wins: [...nodes.values()].filter((n) => n.win).map((n) => n.snap), from: roots[0], way, turns, end, lost };
   }
 
   /**
    * Every state that can still be won needs a hint, and the hint's `about` must be on a shortest way
    * from there to the end.
    * @param {any} pool
-   * @param {Map<string, {snap: Uint8Array, next: Map<string, Move>, win: boolean}>} nodes
+   * @param {Map<string, {snap: Uint8Array, next: Map<string, Move>, win: boolean, root: number}>} nodes
    * @param {Map<string, number>} dist
    * @param {(k: string) => Move[]} pathTo
    * @param {(k: string) => number} depthOf
    */
   async function checkHints(pool, nodes, dist, pathTo, depthOf) {
     const list = C.hints.all(), uses = list.map(() => 0);
-    /** @type {{path: Move[], depth: number, hint: number, problem: string}[]} */
+    /** @type {{path: Move[], depth: number, hint: number, problem: string, root: number}[]} */
     const problems = [];
     /** A problem; its path (the moves to it) is made when asked for: there may be very many. @param {string} k @param {number} hint @param {string} problem */
-    const found = (k, hint, problem) => problems.push({ hint, problem, depth: depthOf(k), get path() { return pathTo(k); }, get snap() { return /** @type {any} */ (nodes.get(k)).snap; } });
+    const found = (k, hint, problem) => problems.push({ hint, problem, depth: depthOf(k), root: /** @type {any} */ (nodes.get(k)).root, get path() { return pathTo(k); }, get snap() { return /** @type {any} */ (nodes.get(k)).snap; } });
     const keys = [...nodes].filter(([k, n]) => !n.win && dist.has(k)).map(([k]) => k);
     /** @type {Map<string, number>} */
     const current = new Map();
@@ -459,5 +497,5 @@ export async function makeSolver(g, opts = {}) {
     return { uses, problems };
   }
 
-  return { C, start, moves, play, search, key, expandState, takeTrace: () => tracer?.take() ?? null };
+  return { C, start, starts, moves, play, search, key, expandState, takeTrace: () => tracer?.take() ?? null };
 }

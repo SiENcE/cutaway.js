@@ -44,6 +44,32 @@ export function parseGraph(text) {
   return JSON.parse(text.slice(a + 1, b + 1));
 }
 
+/**
+ * The ways the runs of the act before end, as start states for `act` (the solver's `starts`): their end states as `act`
+ * keeps them (graph.mjs `ends.projections`), one each. Ends that differ only in flags nothing in the game asks about but
+ * its own code (Cutaway.state.readBy: a screen it draws), or nothing at all, make one start, with the first one's
+ * values: no move can tell them apart.
+ * @param {{next?: string | null, ends?: {projections: {flags: Record<string, any>, n: number}[]} | null}[]} graphs the runs' data
+ * @param {string} act
+ * @param {{testedAt?: Record<string, string[]>}} [flags] the validator's flags (where each is tested); without them every flag counts
+ * @returns {{flags: Record<string, any>, n: number}[]} n: how many end states it stands for
+ */
+export function startsFrom(graphs, act, flags) {
+  /** @param {string} f */
+  const counts = (f) => !flags || (flags.testedAt?.[f] ?? []).some((w) => !w.startsWith("code "));
+  /** @type {Map<string, {flags: Record<string, any>, n: number}>} */
+  const seen = new Map();
+  for (const g of graphs) {
+    if (g.next !== act) continue;
+    for (const p of g.ends?.projections ?? []) {
+      const k = JSON.stringify(Object.keys(p.flags).filter(counts).sort().map((f) => [f, p.flags[f]]));
+      const e = seen.get(k);
+      if (e) e.n += p.n; else seen.set(k, { flags: { ...p.flags }, n: p.n });
+    }
+  }
+  return [...seen.values()];
+}
+
 /** A fact's flag ("name", "name=3", "name=…", "!name"), or null for other facts (has:, state:, ...). @param {string} fact */
 export function flagOf(fact) {
   const f = fact.replace(/^!/, "");

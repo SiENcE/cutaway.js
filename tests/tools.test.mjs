@@ -11,7 +11,8 @@ import { loadGame, boot } from "../tools/lib/game.mjs";
 import { validate } from "../tools/lib/validate.mjs";
 import { makeSolver, loadFor, describe } from "../tools/lib/solver.mjs";
 import { buildGraph, handoffOf } from "../tools/lib/graph.mjs";
-import { handoff, parseGraph, flagOf } from "../tools/lib/handoff.mjs";
+import { handoff, parseGraph, flagOf, startsFrom } from "../tools/lib/handoff.mjs";
+import { verdicts } from "../tools/lib/verdict.mjs";
 import { makeTracer } from "../tools/lib/trace.mjs";
 
 async function demo(patch) {
@@ -276,6 +277,28 @@ export default async function (t) {
     const r2 = await (await makeSolver(g2, { trace: true })).search({ full: true });
     const H2 = handoffOf(g2.C, "act2", /** @type {any} */ (r2), []);
     t.ok("graph: a run's start holds what --set gave it, its leave; the last act has no next", H2.start.includes("waved") && JSON.stringify(H2.leave) === '["door_open"]' && H2.next === null && H2.nextKeep === null && H2.ends?.variants === null, JSON.stringify({ ...H2, ends: H2.ends?.wins }));
+
+    // ---- the solver across the act line: act2 begun from every way act1 ends (startsFrom), searched from all at once
+    const ends = startsFrom([H], "act2");
+    t.ok("starts: one per way the act before ends, as the next act keeps it", ends.length === 2 && ends.reduce((n, s) => n + s.n, 0) === H.ends?.wins, JSON.stringify(ends));
+    t.ok("starts: none from runs that go on to another act", startsFrom([H], "act3").length === 0);
+    t.ok("starts: a flag only the game's own code reads (readBy) makes no start of its own", startsFrom([H], "act2", { testedAt: { got_bulb: ["room hall.hotspots.mailbox.use.0"], waved: ["code the postcard screen"] } }).length === 1);
+    t.ok("starts: a flag the game's data tests does", startsFrom([H], "act2", { testedAt: { waved: ["room hall.hotspots.window.if"] } }).length === 2);
+    const two = await demo(twoActs(["got_bulb", "waved"]));
+    Object.assign(two.options, { act: "act2", demo: { acts: ["act2"] } });
+    // waved or not (the window, all the way); the bulb taken in act1 but not carried over (no item is kept): act2 can't be won
+    const sm = await makeSolver(two, { starts: [{ waved: true }, {}, { got_bulb: true }, { waved: true }] });
+    t.ok("starts: the act begun from each, the kept flags set before its start", sm.starts.length === 4 && sm.starts.every((s) => s.snap.state.inv.pip?.includes("sticker")) && sm.starts[0].snap.state.flags.waved === true && sm.starts[1].snap.state.flags.waved === undefined && sm.starts[2].snap.state.flags.got_bulb === true, JSON.stringify(sm.starts.map((s) => s.snap.state.flags)));
+    const rs = await sm.search({ full: true });
+    const solo = await demo(twoActs(["got_bulb", "waved"]));
+    Object.assign(solo.options, { act: "act2", demo: { acts: ["act2"] } });
+    const alone = await (await makeSolver(solo)).search({ full: true });
+    t.ok("starts: searched from all at once, more states than from the act's own start", rs.complete && rs.states > alone.states, `${rs.states} vs ${alone.states}`);
+    t.ok("starts: each that can be won says so, without soft-locks", rs.starts?.[0].solved === true && rs.starts?.[1].solved === true && rs.starts[0].softlocks === 0 && rs.starts[1].softlocks === 0, JSON.stringify(rs.starts));
+    t.ok("starts: one that can't be won is told by itself, as a soft-lock at the start", rs.starts?.[2].solved === false && rs.starts[2].softlocks > 0 && rs.softlocks.some((p) => p.length === 0), JSON.stringify(rs.starts));
+    t.ok("starts: two starts that are one state are one (same)", rs.starts?.[3].same === 0, JSON.stringify(rs.starts));
+    const lines = /** @type {string[]} */ ([]);
+    t.ok("starts: the verdict fails and names the start with a problem", verdicts(rs, two.C, (l) => lines.push(l)) && lines.some((l) => /^starts: 4 \(1 the same state as one before\), 1 with a problem/.test(l)) && lines.some((l) => /start 2 \{"got_bulb":true\}: CAN'T BE WON/.test(l)), lines.join(" | "));
   }
   {
     // handoff() on runs made up for it

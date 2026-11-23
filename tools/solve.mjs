@@ -1,25 +1,37 @@
 // Prove that a Cutaway game can be finished, and find soft-locks.
-//   node tools/solve.mjs <index.html> [--full] [--max 100000] [--json path.json] [--workers N]
+//   node tools/solve.mjs <index.html> [--full] [--max 100000] [--json path.json] [--workers N] [--act id] [--set f,g=v] [--from graph files]
 // Prints the shortest winning path (player moves). --full explores every reachable state and lists
 // soft-locks: states from which the end can no longer be reached, and checks the game's hints (every
 // state that can still be won has one that holds, about something still needed). Exit code 1 if unsolvable,
 // soft-locked, a state without a fitting hint, or --full stopped at the limit (nothing is proved then). --json writes the winning path for tools/play.mjs. --workers: threads that search (default:
 // one less than the machine's cores, at most 12; 0: this one only).
+// --act: one act alone, from its start (going on to the next act ends it); --set: flags for its start (flag or flag=value).
+// --from: the runs of the act before (tools/graph.mjs data files or folders, comma between them): the act is begun from every
+// way they end, as it keeps them (lib/handoff.mjs startsFrom), and searched from all at once; with --full each start must be won.
 import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { makeSolver, loadFor, describe } from "./lib/solver.mjs";
 import { verdicts } from "./lib/verdict.mjs";
+import { startsFor } from "./lib/starts.mjs";
 
 const args = process.argv.slice(2);
-const page = args.find((a) => !a.startsWith("--") && !/^\d+$/.test(a) && !a.endsWith(".json"));
-if (!page) { console.error("usage: node tools/solve.mjs <index.html> [--full] [--max N] [--json out.json]"); process.exit(2); }
-const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
+const valued = ["--max", "--json", "--workers", "--act", "--set", "--from"];
+const page = args.find((a, i) => !a.startsWith("--") && !valued.includes(args[i - 1]));
+if (!page) { console.error("usage: node tools/solve.mjs <index.html> [--full] [--max N] [--json out.json] [--act id] [--set f,g=v] [--from graph files]"); process.exit(2); }
+const opt = (/** @type {string} */ n, /** @type {string | undefined} */ d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
 
-const setup = { page }, workers = Number(opt("--workers", String(Math.min(12, availableParallelism() - 1))));
-const g = loadFor(setup), solver = await makeSolver(g, { workers, setup });
+const act = opt("--act", ""), kept = opt("--set", ""), from = opt("--from", "");
+if (from && !act) { console.error("--from needs --act: the act the runs go on to"); process.exit(2); }
+/** a flag, or flag=value (a number when it reads as one) @param {string} f */
+const step = (f) => { const [k, v] = f.split("="); return v === undefined ? { set: k } : { set: k, value: Number.isNaN(Number(v)) ? v : Number(v) }; };
+const setup = { page, options: act ? { act, demo: { acts: [act] } } : {}, start: kept ? kept.split(",").map(step) : [] };
+const starts = from ? await startsFor(page, act, from.split(",")) : undefined;
+if (starts) console.log(`${starts.length} starts from the runs before (${starts.reduce((n, s) => n + s.n, 0)} end states)`);
+const workers = Number(opt("--workers", String(Math.min(12, availableParallelism() - 1))));
+const g = loadFor(setup), solver = await makeSolver(g, { workers, setup, starts: starts?.map((s) => s.flags) });
 const t0 = Date.now();
 let shown = 0;   // now and then, how far it has got (on stderr)
-const progress = (text) => { if (Date.now() - shown > 30000) { shown = Date.now(); process.stderr.write(`  ... ${text}\n`); } };
+const progress = (/** @type {string} */ text) => { if (Date.now() - shown > 30000) { shown = Date.now(); process.stderr.write(`  ... ${text}\n`); } };
 const r = await solver.search({ full: args.includes("--full"), maxStates: Number(opt("--max", "100000")), progress });
 console.log(`${r.states} states searched in ${Date.now() - t0} ms${r.complete ? "" : " (stopped at the limit)"}`);
 if (!r.solved) {
@@ -28,7 +40,7 @@ if (!r.solved) {
 } else {
   console.log(`solved in ${r.path.length} moves:`);
   r.path.forEach((m, i) => console.log(`  ${String(i + 1).padStart(2)}. ${describe(m)}`));
-  const out = opt("--json");
+  const out = opt("--json", undefined);
   if (out) { writeFileSync(out, JSON.stringify(r.path, null, 1)); console.log("wrote " + out); }
 }
 if (args.includes("--full") && verdicts(r, g.C)) process.exitCode = 1;
